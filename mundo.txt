@@ -1,0 +1,11 @@
+Cada zona representa un auspiciador
+
+W = Wakaler
+A = Airesite
+S = Serpenta
+D = Droolbot
+
+WA = Weters & Agilos
+AS = Aspiro Silicon   
+SD = Don Salas
+WD = Wako Duck

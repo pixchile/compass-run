@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Compass Run – Map Editor v0.3</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Estilos adicionales para el editor */
+    .editor-info {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      padding: 8px 12px;
+      font-family: monospace;
+      font-size: 12px;
+      border-radius: 4px;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .editor-controls {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 11px;
+      border-radius: 4px;
+      pointer-events: none;
+      z-index: 100;
+      text-align: right;
+    }
+    button {
+      pointer-events: auto;
+      margin: 2px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
