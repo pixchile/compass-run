@@ -14,17 +14,14 @@ export default class Player {
         this.jumping = false; this.jumpT = 0; this.jumpDur = 0; this.jumpHMax = 0; this.jumpVx = 0; this.jumpVy = 0; this.jumpLv = 1;
         this.landFx = 0;
 
-        this.dashing = false; this.dashT = 0; this.dashVx = 0; this.dashVy = 0; this.dashCD = 0;
+        this.dashing = false; this.dashT = 0; this.dashVx = 0; this.dashVy = 0; this.dashCD = 0; this.dashInitialSpeed = 0;
         this.stunT = 0;
 
-        // Wall Jump System
-        this.wallJump = new WallJumpSystem();
+        this.wallJump = new WallJumpSystem(scene, this);
 
-        // Invincibilidad
         this.isInvincible = false;
         this.invincibleTimer = 0;
 
-        // Vida
         this.hp = HP_MAX;
         this.hpRegenT = 0;
         this.hpHitFlash = 0;
@@ -34,10 +31,10 @@ export default class Player {
 
         this.wasJumpingWhenDashed = false;
 
-this.canSlam = true;              // Habilidad desbloqueada (siempre true)
-this.hasSlammedThisJump = false;  // Una vez por salto
-this.slamCooldown = 0;            // Cooldown después de slam
-this.preSlamSpeed = 0;            // Velocidad guardada (debug/efectos)
+        this.canSlam = true;              
+        this.hasSlammedThisJump = false;  
+        this.slamCooldown = 0;            
+        this.preSlamSpeed = 0;            
 
         this.kb = scene.input.keyboard.addKeys('W,A,S,D,SPACE,SHIFT');
     }
@@ -104,29 +101,26 @@ this.preSlamSpeed = 0;            // Velocidad guardada (debug/efectos)
     }
 
     stickToWall(wallNormalAngle, currentSpeed) {
-    // No pegar si está en cooldown
-    if (this.wallJump.wallStickCooldown > 0) return false;
+        if (this.wallJump.wallStickCooldown > 0) return false;
 
-    if (!this.wallJump.canStick(this.jumping, this.wallJump.wallStickCooldown)) return false;
+        if (!this.wallJump.canStick(this.jumping, this.wallJump.wallStickCooldown)) return false;
 
-    // Congelar movimiento
-    this.vx = 0;
-    this.vy = 0;
-    this.jumpVx = 0;
-    this.jumpVy = 0;
-    this.dashing = false;
-    this.jumping = false;  // Salir de estado jumping
+        this.vx = 0;
+        this.vy = 0;
+        this.jumpVx = 0;
+        this.jumpVy = 0;
+        this.dashing = false;
+        this.jumping = false;  
 
-    return this.wallJump.stick(wallNormalAngle, currentSpeed);
-}
+        return this.wallJump.stick(wallNormalAngle, currentSpeed);
+    }
 
     update(delta, momentum, enemyManager) {
         const dt = delta / 1000;
         const lv = momentum.level;
         const now = this.scene.time.now;
 
-    // Decrementar cooldown de slam
-    this.slamCooldown = Math.max(0, this.slamCooldown - delta);
+        this.slamCooldown = Math.max(0, this.slamCooldown - delta);
 
         const U = this.kb.W.isDown, Dn = this.kb.S.isDown;
         const L = this.kb.A.isDown, R = this.kb.D.isDown;
@@ -140,9 +134,7 @@ this.preSlamSpeed = 0;            // Velocidad guardada (debug/efectos)
         if (ix && iy) { ix *= 0.7071; iy *= 0.7071; }
         const moving = ix !== 0 || iy !== 0;
 
-        // Actualizar wall stick (timeout)
         const wallResult = this.wallJump.update(delta, (vx, vy) => {
-            // Callback cuando el timer expira sin input
             this.vx = vx;
             this.vy = vy;
             this.jumping = true;
@@ -178,95 +170,103 @@ this.preSlamSpeed = 0;            // Velocidad guardada (debug/efectos)
         this.landFx = Math.max(0, this.landFx - delta);
         this.hpHitFlash = Math.max(0, this.hpHitFlash - delta);
 
-        // TRIGGER: SPACE (Jump / Wall Jump)
-if (spaceJust && !this.isStunned && !this.dashing) {
-    // Prioridad 1: Wall Jump si está pegado
-    if (this.wallJump.wallStick) {
-        const jumpResult = this.wallJump.tryJump(
-            this.getMoveDirection(),
-            momentum,
-            () => this.getMoveDirection(),
-            (m) => this.isMovingInCompassDirection(m)
-        );
-        if (jumpResult?.success) {
-            this.vx = jumpResult.vx;
-            this.vy = jumpResult.vy;
-            this.jumping = true;
-            this.jumpT = 0;
-            this.jumpDur = JUMP_DUR[lv];
-            this.jumpLv = lv;
-            this.jumpVx = this.vx;
-            this.jumpVy = this.vy;
-            // Resetear flag de slam para este nuevo salto
-            this.hasSlammedThisJump = false;
+        if (spaceJust && !this.isStunned) {
+            if (this.wallJump.wallStick) {
+                const jumpResult = this.wallJump.tryJump(
+                    this.getMoveDirection(),
+                    momentum,
+                    () => this.getMoveDirection(),
+                    (m) => this.isMovingInCompassDirection(m),
+                    now
+                );
+                if (jumpResult?.success) {
+                    this.vx = jumpResult.vx;
+                    this.vy = jumpResult.vy;
+                    this.jumping = true;
+                    this.jumpT = 0;
+                    this.jumpDur = JUMP_DUR[lv];
+                    this.jumpLv = lv;
+                    this.jumpVx = this.vx;
+                    this.jumpVy = this.vy;
+                    this.hasSlammedThisJump = false;
+                }
+            }
+            else if (this.jumping && !this.hasSlammedThisJump && this.slamCooldown <= 0) {
+                const currentSpeed = Math.hypot(this.vx, this.vy);
+                if (currentSpeed >= SLAM.MIN_SPEED) {
+                    this.performSlam(currentSpeed, momentum);
+                }
+            }
+            else if (this.dashing && !this.jumping) {
+                this.jumping = true;
+                this.jumpT = 0;
+                this.jumpDur = JUMP_DUR[lv];
+                this.jumpHMax = JUMP_HMAX[lv];
+                this.jumpLv = lv;
+                this.jumpVx = this.vx;   
+                this.jumpVy = this.vy;
+                this.dashing = false;    
+                this.hasSlammedThisJump = false;
+            }
+            else if (!this.jumping && !this.wallJump.wallStick) {
+                this.jumping = true;
+                this.jumpT = 0;
+                this.jumpDur = JUMP_DUR[lv];
+                this.jumpHMax = JUMP_HMAX[lv];
+                this.jumpLv = lv;
+                const spd = Math.hypot(this.vx, this.vy);
+                if (spd > 8) {
+                    this.jumpVx = this.vx * JUMP_DIST_K[lv];
+                    this.jumpVy = this.vy * JUMP_DIST_K[lv];
+                } else {
+                    this.jumpVx = Math.cos(this.facing) * MAX_SPD[1] * 0.45;
+                    this.jumpVy = Math.sin(this.facing) * MAX_SPD[1] * 0.45;
+                }
+                this.hasSlammedThisJump = false;
+            }
         }
-    }
-    // Prioridad 2: Slam (aterrizaje forzoso) - solo en aire y si no se ha usado este salto
-    else if (this.jumping && !this.hasSlammedThisJump && this.slamCooldown <= 0) {
-        const currentSpeed = Math.hypot(this.vx, this.vy);
-        if (currentSpeed >= SLAM.MIN_SPEED) {
-            this.performSlam(currentSpeed, momentum);
+
+        if (shiftJust && !this.dashing && !this.isStunned && this.dashCD === 0 && !this.wallJump.wallStick) {
+            this.dashing = true;
+            this.dashT = 0;
+            this.dashCD = DASH_CD;
+            this.wasJumpingWhenDashed = this.jumping;
+
+            if (enemyManager && enemyManager.resetDashDamageTracking) {
+                enemyManager.resetDashDamageTracking();
+            }
+
+            const currentSpeed = Math.hypot(this.vx, this.vy);
+            const dashSpeed = currentSpeed * DASH_SPD;
+            this.dashInitialSpeed = dashSpeed;  
+            const dirX = currentSpeed > 8 ? this.vx / currentSpeed : Math.cos(this.facing);
+            const dirY = currentSpeed > 8 ? this.vy / currentSpeed : Math.sin(this.facing);
+            this.dashVx = dirX * dashSpeed;
+            this.dashVy = dirY * dashSpeed;
+
+            if (this.jumping) {
+                this.jumpVx = this.dashVx;
+                this.jumpVy = this.dashVy;
+            }
         }
-    }
-    // Prioridad 3: Normal jump (suelo)
-    else if (!this.jumping && !this.wallJump.wallStick) {
-        this.jumping = true;
-        this.jumpT = 0;
-        this.jumpDur = JUMP_DUR[lv];
-        this.jumpHMax = JUMP_HMAX[lv];
-        this.jumpLv = lv;
-        const spd = Math.hypot(this.vx, this.vy);
-        if (spd > 8) {
-            this.jumpVx = this.vx * JUMP_DIST_K[lv];
-            this.jumpVy = this.vy * JUMP_DIST_K[lv];
-        } else {
-            this.jumpVx = Math.cos(this.facing) * MAX_SPD[1] * 0.45;
-            this.jumpVy = Math.sin(this.facing) * MAX_SPD[1] * 0.45;
+
+        if (this.dashing && enemyManager) {
+            const isAirDash = this.wasJumpingWhenDashed;
+
+            const { hitAny, killedAny } = enemyManager.checkDashCollisions(
+                this,
+                this.dashInitialSpeed,  
+                now,
+                (enemyType) => { } // VACÍO. El EnemyManager ya se encarga de dar los stacks.
+            );
+
+            if (hitAny && !killedAny && !isAirDash) {
+                momentum.halveStacks();
+            }
         }
-        // Resetear flag de slam para el próximo salto
-        this.hasSlammedThisJump = false;
-    }
-}
 
-// DASH
-if (shiftJust && !this.dashing && !this.isStunned && this.dashCD === 0 && !this.wallJump.wallStick) {
-    this.dashing = true;
-    this.dashT = 0;
-    this.dashCD = DASH_CD;
-    this.wasJumpingWhenDashed = this.jumping;
-
-    if (enemyManager && enemyManager.resetDashDamageTracking) {
-        enemyManager.resetDashDamageTracking();
-    }
-
-    const currentSpeed = Math.hypot(this.vx, this.vy);
-    const dashSpeed = currentSpeed * DASH_SPD;  // Multiplica velocidad actual por 3
-    const dirX = currentSpeed > 8 ? this.vx / currentSpeed : Math.cos(this.facing);
-    const dirY = currentSpeed > 8 ? this.vy / currentSpeed : Math.sin(this.facing);
-    this.dashVx = dirX * dashSpeed;
-    this.dashVy = dirY * dashSpeed;
-}
-
-// COLISIONES DE DASH
-if (this.dashing && enemyManager) {
-    const currentSpeed = Math.hypot(this.vx, this.vy);
-    const isAirDash = this.wasJumpingWhenDashed;
-
-    const { hitAny, killedAny } = enemyManager.checkDashCollisions(
-        this,
-        currentSpeed,  // ← velocidad actual
-        now,
-        (enemyType) => { }
-    );
-
-    if (hitAny && !killedAny && !isAirDash) {
-        momentum.halveStacks();
-    }
-}
-        // FÍSICAS (solo si no está pegado al muro)
         if (!this.isStunned && !this.wallJump.wallStick) {
             if (this.jumping) {
-                // Durante el salto, se puede steer ligeramente
                 const steer = moving ? 0.04 : 0;
                 this.vx = this.jumpVx + (moving ? ix * MAX_SPD[this.jumpLv] * steer : 0);
                 this.vy = this.jumpVy + (moving ? iy * MAX_SPD[this.jumpLv] * steer : 0);
@@ -276,7 +276,6 @@ if (this.dashing && enemyManager) {
                 this.vx = this.dashVx * ease;
                 this.vy = this.dashVy * ease;
             } else {
-                // Movimiento normal en suelo
                 const vLen = Math.hypot(this.vx, this.vy);
                 let af = 1;
                 if (moving && vLen > 15) {
@@ -298,7 +297,6 @@ if (this.dashing && enemyManager) {
             this.px += this.vx * dt;
             this.py += this.vy * dt;
 
-            // Colisiones con enemigos
             if (enemyManager) {
                 enemyManager.checkPierceKills(this, lv);
 
@@ -314,7 +312,6 @@ if (this.dashing && enemyManager) {
             }
         }
 
-        // Regeneración pasiva de vida
         if (this.hp < HP_MAX && this.hp > 0 && !this.wallJump.wallStick) {
             this.hpRegenT += delta;
             if (this.hpRegenT >= HP_REGEN_DELAY) {
@@ -322,54 +319,37 @@ if (this.dashing && enemyManager) {
             }
         }
 
-        // Trail para efectos visuales
         this.trail.push({ x: this.px, y: this.py, lv, dash: this.dashing, jump: this.jumping, wallStick: this.wallJump.wallStick });
         if (this.trail.length > TRAIL_MAX) this.trail.shift();
     }
-performSlam(speed, momentum) {
-    // Guardar velocidad para posibles efectos visuales
-    this.preSlamSpeed = speed;
-    
-    // Punto de impacto (posición actual)
-    const slamX = this.px;
-    const slamY = this.py;
-    
-    // Verificar si es high speed (para efectos extra)
-    const isHighSpeed = speed >= SLAM.HIGH_SPEED_THRESHOLD;
-    
-    // Verificar si puede pagar el costo de vida (para high speed)
-    const canPayHealth = this.hp > SLAM.SELF_DAMAGE;
-    const applyKnockback = isHighSpeed && canPayHealth;
-    
-    // Aplicar efectos a enemigos (daño y knockback condicional)
-    if (this.scene.enemyManager) {
-        this.scene.enemyManager.applySlamDamage(slamX, slamY, speed, applyKnockback);
+
+    performSlam(speed, momentum) {
+        this.preSlamSpeed = speed;
+        
+        const slamX = this.px;
+        const slamY = this.py;
+        
+        const isHighSpeed = speed >= SLAM.HIGH_SPEED_THRESHOLD;
+        
+        const canPayHealth = this.hp > SLAM.SELF_DAMAGE;
+        const applyKnockback = isHighSpeed && canPayHealth;
+        
+        if (this.scene.enemyManager) {
+            this.scene.enemyManager.applySlamDamage(slamX, slamY, speed, applyKnockback);
+        }
+        
+        if (isHighSpeed && canPayHealth) {
+            this.takeDamage(SLAM.SELF_DAMAGE);
+        }
+        
+        if (this.scene.renderer) {
+            this.scene.renderer.addSlamEffect(slamX, slamY, isHighSpeed && canPayHealth);
+        }
+        
+        this.vx = 0;
+        this.vy = 0;
+        this.jumping = false;
+        this.hasSlammedThisJump = true;
+        this.slamCooldown = SLAM.COOLDOWN;
     }
-    
-    // Aplicar daño propio solo si es high speed y puede pagar
-    if (isHighSpeed && canPayHealth) {
-        this.takeDamage(SLAM.SELF_DAMAGE);
-    }
-    
-    // Efecto visual (onda expansiva)
-    if (this.scene.renderer) {
-        this.scene.renderer.addSlamEffect(slamX, slamY, isHighSpeed && canPayHealth);
-    }
-    
-    // Resetear velocidad (aterrizaje forzoso)
-    this.vx = 0;
-    this.vy = 0;
-    
-    // Forzar estado en suelo
-    this.jumping = false;
-    
-    // Marcar que ya se usó slam en este salto
-    this.hasSlammedThisJump = true;
-    
-    // Activar cooldown
-    this.slamCooldown = SLAM.COOLDOWN;
-}
-    
-    // Opcional: Reducir momentum al hacer slam (para balance)
-    // momentum.halveStacks(); // Descomentar si se desea
 }

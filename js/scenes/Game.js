@@ -51,6 +51,9 @@ export default class Game extends Phaser.Scene {
     this.orbManager   = new OrbManager();
     this.enemyManager.setRewardHandlers(this.rewardSystem, this.orbManager);
     this.momentum.setRewardSystem(this.rewardSystem);
+
+    // NUEVO: conectar momentum al enemyManager para dar stacks al matar enemigos
+    this.enemyManager.setMomentumSystem(this.momentum);
   }
 
   update(t, delta) {
@@ -121,7 +124,6 @@ export default class Game extends Phaser.Scene {
                        this.player.wallJump.wallStickCooldown <= 0 && 
                        (this.player.jumping || !this.player.wallJump.wallStick); 
 
-      // Primero, verificar colisiones para wall stick
       if (canStick) {
         for (const line of lines) {
           const collision = this.lineCollisionBetween(
@@ -151,25 +153,23 @@ export default class Game extends Phaser.Scene {
             const finalNy = lado > 0 ? ny : -ny;
             const normalAngle = Math.atan2(finalNy, finalNx);
 
-            // Empujar hacia afuera para garantizar que quede apoyado y no incrustado
             const overlap = (playerRadius + line.thickness / 2) - collision.distance;
             if (overlap > 0) {
               this.player.px += finalNx * overlap;
               this.player.py += finalNy * overlap;
             }
 
-            // CRÍTICO: Detener la velocidad actual para no acelerar "estando quieto"
+            const currentSpeed = Math.hypot(this.player.vx, this.player.vy);
+            
             this.player.vx = 0;
             this.player.vy = 0;
 
-            this.player.stickToWall(normalAngle, 0);
+            this.player.stickToWall(normalAngle, currentSpeed);
             return; 
           }
         }
       }
 
-      // Segundo, colisiones normales (físicas rígidas de rechazo)
-      // FIX: Ahora esto se ejecuta SIEMPRE (aunque estés pegado) para prevenir que te cueles por el muro
       for (const line of lines) {
         const collision = this.lineCollisionBetween(
           { x: this.player.prevX, y: this.player.prevY },
@@ -197,26 +197,22 @@ export default class Game extends Phaser.Scene {
           const finalNx = lado > 0 ? nx : -nx;
           const finalNy = lado > 0 ? ny : -ny;
 
-          // Separar completamente para evitar stuck
           const overlap = (playerRadius + line.thickness / 2) - collision.distance;
           if (overlap > 0) {
             this.player.px += finalNx * overlap;
             this.player.py += finalNy * overlap;
           }
 
-          // CRÍTICO: Cancelar la fuerza de velocidad hacia el muro (Wall slide)
-          // Esto evita que construyas "velocidad infinita" y te quedes "acelerando en el sitio"
           const dotV = this.player.vx * finalNx + this.player.vy * finalNy;
-          let impactSpeed = 0; // Guardaremos la fuerza de impacto perpendicular al muro
+          let impactSpeed = 0;
           
           if (dotV < 0) { 
-            impactSpeed = -dotV; // Velocidad de choque frontal ANTES de anularse
+            impactSpeed = -dotV;
             this.player.vx -= dotV * finalNx;
             this.player.vy -= dotV * finalNy;
           }
 
           if (this.player.dashing) {
-              // Basamos el daño puramente en la fuerza del impacto contra el muro
               const wallDamage = Math.floor(HP_DMG_DASH_WALL * impactSpeed);
               
               this.player.stunT = DASH_WALL_STUN_DUR;
@@ -226,7 +222,7 @@ export default class Game extends Phaser.Scene {
               this.player.vx = 0;
               this.player.vy = 0;
           }
-          break; // Solo evaluar una colisión por frame
+          break;
         }
       }
   }
@@ -245,17 +241,15 @@ export default class Game extends Phaser.Scene {
     const moveY = p2.y - p1.y;
     const moveLen = Math.hypot(moveX, moveY);
 
-    // FIX: Si el jugador ya está tocando la pared (<= radius)
     if (distToClosest < radius) {
       const dotInit = moveX * toClosestX + moveY * toClosestY;
       
-      // Si intenta moverse más adentro de la pared
       if (moveLen === 0 || dotInit > 0) {
         return {
           collided: true,
           hitX: p1.x,
           hitY: p1.y,
-          distance: distToClosest // CRÍTICO: Pasar la distancia real para poder sacarlo (Overlap)
+          distance: distToClosest
         };
       }
     }
@@ -285,7 +279,7 @@ export default class Game extends Phaser.Scene {
       collided: true,
       hitX: hitX,
       hitY: hitY,
-      distance: radius // Al hacer sweeping perfecto, la distancia justo en el choque es equivalente al radio
+      distance: radius
     };
   }
 
@@ -326,6 +320,9 @@ export default class Game extends Phaser.Scene {
 
     this.enemyManager.clearAll();
     this.enemyManager.setSpawnList(this.currentMap.enemies || []);
+
+    // NUEVO: reconectar momentum tras el restart
+    this.enemyManager.setMomentumSystem(this.momentum);
 
     this.renderer.clearGameOver();
   }

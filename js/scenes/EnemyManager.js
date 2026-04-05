@@ -1,5 +1,5 @@
-import Enemy from './Enemy.js';
-import { SLAM } from '../constants.js';
+import { SmallEnemy, MediumEnemy, BigEnemy } from './EnemyTypes.js';
+import { SLAM, KILL_STACKS } from '../constants.js';
 
 export default class EnemyManager {
   constructor(scene, arenaBounds) {
@@ -13,21 +13,29 @@ export default class EnemyManager {
     
     this.damagedThisDash = new Set();
 
-    // ─── Sistemas de recompensa (se inyectan desde Game.js) ───────────
     this.rewardSystem = null;
     this.orbManager   = null;
+    this.momentum     = null; // <-- NUEVO: referencia al sistema de momentum
   }
 
-  // Llamar desde Game.js tras crear los sistemas
   setRewardHandlers(rewardSystem, orbManager) {
     this.rewardSystem = rewardSystem;
     this.orbManager   = orbManager;
   }
 
-  // ─── Hook central de muerte ───────────────────────────────────────────
+  // NUEVO: llamar desde Game.js para que EnemyManager pueda dar stacks al matar
+  setMomentumSystem(momentum) {
+    this.momentum = momentum;
+  }
+
   _onEnemyDied(enemy) {
     if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
     if (this.orbManager && enemy.type === 'big') this.orbManager.scheduleOrb(enemy.x, enemy.y);
+
+    // NUEVO: dar stacks de momentum según el tipo de enemigo
+    if (this.momentum && KILL_STACKS[enemy.type] !== undefined) {
+      this.momentum.addStacks(KILL_STACKS[enemy.type]);
+    }
   }
   
   setSpawnList(enemies) {
@@ -48,7 +56,23 @@ export default class EnemyManager {
       if (enemyData.spawnTime <= elapsedSeconds) {
         if (!enemyData.active) {
           enemyData.active = true;
-          this.enemies.push(new Enemy(enemyData.x, enemyData.y, enemyData.type, this.scene));
+
+          let newEnemy = null;
+          switch(enemyData.type) {
+            case 'small':
+              newEnemy = new SmallEnemy(enemyData.x, enemyData.y, this.scene);
+              break;
+            case 'medium':
+              newEnemy = new MediumEnemy(enemyData.x, enemyData.y, this.scene);
+              break;
+            case 'big':
+              newEnemy = new BigEnemy(enemyData.x, enemyData.y, this.scene);
+              break;
+          }
+
+          if (newEnemy) {
+            this.enemies.push(newEnemy);
+          }
         }
         this.nextSpawnIndex++;
       } else {
@@ -57,18 +81,13 @@ export default class EnemyManager {
     }
   }
   
-  spawnRandomEnemy() {}
-  spawnInitialEnemies(count = 5) {}
-  
   resetDashDamageTracking() {
     this.damagedThisDash.clear();
   }
   
-  // ─── COLISIONES DE DASH ──────────────────────────────────────────────
-checkDashCollisions(player, dashSpeed, now, onEnemyKilled) {  // dashLevel → dashSpeed
+  checkDashCollisions(player, dashSpeed, now, onEnemyKilled) {
     let killedAny = false;
     let hitAny = false;
-    
     const isAirDash = player.wasJumpingWhenDashed === true;
     
     for (let i = this.enemies.length - 1; i >= 0; i--) {
@@ -77,47 +96,42 @@ checkDashCollisions(player, dashSpeed, now, onEnemyKilled) {  // dashLevel → d
         
         if (enemy.collidesWith(player.px, player.py)) {
             hitAny = true;
-            if (enemy.canTakeDashDamage(isAirDash)) {
-                const damage = enemy.getDashDamage(dashSpeed, isAirDash);  // ← pasa velocidad
-                if (damage > 0) {
-                    this.damagedThisDash.add(enemy);
-                    const isDead = enemy.takeDamage(damage, dashSpeed, isAirDash);  // ← también aquí
-                    if (isDead) {
-                        this._onEnemyDied(enemy);
-                        this.enemies.splice(i, 1);
-                        killedAny = true;
-                        if (onEnemyKilled) onEnemyKilled(enemy.type);
-                    }
+            this.damagedThisDash.add(enemy); 
+
+            const damage = enemy.getDashDamage(dashSpeed, isAirDash);
+            if (damage > 0) {
+                const isDead = enemy.takeDamage(damage, dashSpeed, isAirDash);
+                if (isDead) {
+                    this._onEnemyDied(enemy);
+                    this.enemies.splice(i, 1);
+                    killedAny = true;
+                    if (onEnemyKilled) onEnemyKilled(enemy.type);
                 }
             }
         }
     }
-    
     return { hitAny, killedAny };
-}
+  }
   
-  // ─── PIERCE ──────────────────────────────────────────────────────────
   checkPierceKills(player, momentumLevel) {
     let killedAny = false;
-    
     if (momentumLevel === 3) {
       for (let i = this.enemies.length - 1; i >= 0; i--) {
         const enemy = this.enemies[i];
-        if (enemy.type === 'small' && enemy.collidesWith(player.px, player.py)) {
-          this._onEnemyDied(enemy);
-          this.enemies.splice(i, 1);
-          killedAny = true;
+        if (enemy.collidesWith(player.px, player.py)) {
+          if (enemy.kill()) {
+            this._onEnemyDied(enemy);
+            this.enemies.splice(i, 1);
+            killedAny = true;
+          }
         }
       }
     }
-    
     return killedAny;
   }
   
-  // ─── COLISIONES NORMALES (daño al jugador) ────────────────────────────
   checkNormalCollisions(player, now, onDamage) {
     let tookDamage = false;
-    
     for (const enemy of this.enemies) {
       if (enemy.collidesWith(player.px, player.py)) {
         if (enemy.canDamage(now)) {
@@ -127,14 +141,11 @@ checkDashCollisions(player, dashSpeed, now, onEnemyKilled) {  // dashLevel → d
         }
       }
     }
-    
     return tookDamage;
   }
   
-  // ─── COLISIÓN SÓLIDA (empuje) ─────────────────────────────────────────
   checkSolidCollision(player, playerRadius = 12) {
     let collided = false;
-    
     for (const enemy of this.enemies) {
       const dx = player.px - enemy.x;
       const dy = player.py - enemy.y;
@@ -147,6 +158,7 @@ checkDashCollisions(player, dashSpeed, now, onEnemyKilled) {  // dashLevel → d
         const overlap = minDistance - distance;
         player.px += Math.cos(angle) * overlap;
         player.py += Math.sin(angle) * overlap;
+        
         const pushX = Math.cos(angle), pushY = Math.sin(angle);
         const velDot = player.vx * pushX + player.vy * pushY;
         if (velDot < 0) {
@@ -155,11 +167,9 @@ checkDashCollisions(player, dashSpeed, now, onEnemyKilled) {  // dashLevel → d
         }
       }
     }
-    
     return collided;
   }
   
-  // ─── SLAM ─────────────────────────────────────────────────────────────
   applySlamDamage(slamX, slamY, playerSpeed, applyKnockback = true) {
     const isHighSpeed = playerSpeed >= SLAM.HIGH_SPEED_THRESHOLD;
     const { RADIUS: radius, DAMAGE: damage, KNOCKBACK_DIST: knockbackDist, WALL_COLLISION_DAMAGE: wallDamage } = SLAM;
@@ -169,13 +179,12 @@ checkDashCollisions(player, dashSpeed, now, onEnemyKilled) {  // dashLevel → d
       const dx = enemy.x - slamX, dy = enemy.y - slamY;
       if (Math.hypot(dx, dy) > radius) continue;
 
-      const wasDead = enemy.hp <= 0;
       const died = enemy.takeSlamDamage(damage, isHighSpeed);
       
-      if (!wasDead && died) {
+      if (died) {
         this._onEnemyDied(enemy);
         this.enemies.splice(i, 1);
-        continue;  // ya eliminado, no procesar knockback
+        continue; 
       }
       
       if (isHighSpeed && applyKnockback) {
@@ -188,9 +197,7 @@ checkDashCollisions(player, dashSpeed, now, onEnemyKilled) {  // dashLevel → d
         let hitWall = false;
         
         for (const line of lines) {
-          const collision = this._checkLineCollision(
-            { x: oldX, y: oldY }, { x: enemy.x, y: enemy.y }, line, enemy.radius || 15
-          );
+          const collision = this._checkLineCollision({ x: oldX, y: oldY }, { x: enemy.x, y: enemy.y }, line, enemy.radius);
           if (collision.collided) {
             hitWall = true;
             enemy.x = collision.hitX;
@@ -199,28 +206,12 @@ checkDashCollisions(player, dashSpeed, now, onEnemyKilled) {  // dashLevel → d
           }
         }
         
-        if (hitWall && !enemy.isDead && enemy.hp > 0) {
+        if (hitWall) {
           const wallDied = enemy.takeSlamDamage(wallDamage, isHighSpeed);
           if (wallDied) {
+            this._onEnemyDied(enemy);
             const idx = this.enemies.indexOf(enemy);
-            if (idx !== -1) {
-              this._onEnemyDied(enemy);
-              this.enemies.splice(idx, 1);
-            }
-          }
-        }
-        
-        const arenaBounds = this.scene.currentMap?.arena || this.arenaBounds;
-        if (arenaBounds) {
-          const margin = 200;
-          const oob = enemy.y < arenaBounds.y - margin || enemy.y > arenaBounds.y + arenaBounds.h + margin ||
-                      enemy.x < arenaBounds.x - margin || enemy.x > arenaBounds.x + arenaBounds.w + margin;
-          if (oob && enemy.hp > 0) {
-            const idx = this.enemies.indexOf(enemy);
-            if (idx !== -1) {
-              this._onEnemyDied(enemy);
-              this.enemies.splice(idx, 1);
-            }
+            if (idx !== -1) this.enemies.splice(idx, 1);
           }
         }
       }
@@ -233,8 +224,7 @@ checkDashCollisions(player, dashSpeed, now, onEnemyKilled) {  // dashLevel → d
     const len2 = abx * abx + aby * aby;
     if (len2 === 0) return { collided: false };
     
-    let t = ((p1.x - start.x) * abx + (p1.y - start.y) * aby) / len2;
-    t = Math.max(0, Math.min(1, t));
+    let t = Math.max(0, Math.min(1, ((p1.x - start.x) * abx + (p1.y - start.y) * aby) / len2));
     const closestX = start.x + t * abx, closestY = start.y + t * aby;
     if (Math.hypot(closestX - p1.x, closestY - p1.y) >= radius) return { collided: false };
     

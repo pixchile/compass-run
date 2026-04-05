@@ -50,6 +50,27 @@ export default class MomentumSystem {
     this.stacks = this._floorStacks(Math.floor(this.stacks / 2));
   }
 
+addStacks(amount) {
+  this.stacks = Math.min(SMAX, this.stacks + amount);
+}
+
+  calculateStackMode(player) {
+    if (player.dashing) return 'neutral';
+    
+    const currentSpeed = Math.hypot(player.vx, player.vy);
+    if (currentSpeed <= 5) return 'drain';
+    
+    const cd = DIRS[this.cIdx];
+    let diff = Math.abs(Math.atan2(player.vy, player.vx) - Math.atan2(cd.dy, cd.dx));
+    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+    const degDiff = diff * (180 / Math.PI);
+    
+    if (degDiff <= 22.5) return 'gain';
+    if (degDiff <= 45)   return 'neutral';
+    return 'drain';
+  }
+
+
   calculateStackMode(player) {
     if (player.dashing) return 'neutral';
     
