@@ -1,5 +1,5 @@
 import { W, H } from '../constants.js';
-
+import enemyRegistry from '../enemies/EnemyRegistry.js';
 // ══════════════════════════════════════════════════════════════════════════════
 //  STYLES — inyectados en el DOM una sola vez
 // ══════════════════════════════════════════════════════════════════════════════
@@ -398,8 +398,34 @@ export default class MapEditorUI {
     const isEdit = editIndex !== null && editIndex !== undefined;
     const ex     = isEdit ? e.enemies[editIndex] : null;
     let selectedType = ex?.type || 'small';
-
+    
+    // Obtener todos los tipos de enemigos del registry
+    const allTypes = this.editor.getAllEnemyTypes();
+    
     const overlay = this._createModalOverlay();
+    
+    // Generar botones dinámicamente para cada tipo de enemigo
+    let typeButtonsHtml = '';
+    const sizeMap = { small: 10, medium: 17, big: 26 };
+    
+    for (const type of allTypes) {
+        // Determinar tamaño del círculo (por defecto 14 si no está en el mapa)
+        const circleSize = sizeMap[type] || 14;
+        // Color según tipo (por defecto gris)
+        let typeClass = '';
+        if (type === 'small') typeClass = 's';
+        else if (type === 'medium') typeClass = 'm';
+        else if (type === 'big') typeClass = 'b';
+        
+        typeButtonsHtml += `
+            <div class="cr-type-btn ${selectedType === type ? typeClass : ''}" data-type="${type}">
+                <span class="cr-circle" style="width:${circleSize}px;height:${circleSize}px;background:${this.getTypeColor(type)}"></span>
+                ${type.charAt(0).toUpperCase() + type.slice(1)}<br>
+                <span style="font-size:8px;opacity:.55">${type}</span>
+            </div>
+        `;
+    }
+    
     overlay.innerHTML = `
       <div class="cr-modal ${isEdit ? '' : 'grn'}">
         <div class="cr-mhdr">
@@ -408,19 +434,8 @@ export default class MapEditorUI {
         </div>
         <div class="cr-mbody">
           <label class="cr-flbl">Tipo</label>
-          <div class="cr-type-row">
-            <div class="cr-type-btn ${selectedType==='small'?'s':''}" data-type="small">
-              <span class="cr-circle" style="width:10px;height:10px"></span>
-              Small<br><span style="font-size:8px;opacity:.55">HP: 1</span>
-            </div>
-            <div class="cr-type-btn ${selectedType==='medium'?'m':''}" data-type="medium">
-              <span class="cr-circle" style="width:17px;height:17px"></span>
-              Medium<br><span style="font-size:8px;opacity:.55">HP: 100</span>
-            </div>
-            <div class="cr-type-btn ${selectedType==='big'?'b':''}" data-type="big">
-              <span class="cr-circle" style="width:26px;height:26px"></span>
-              Big<br><span style="font-size:8px;opacity:.55">HP: 300</span>
-            </div>
+          <div class="cr-type-row" style="flex-wrap:wrap;">
+            ${typeButtonsHtml}
           </div>
           <label class="cr-flbl" style="margin-top:18px">Spawn (segundos desde inicio)</label>
           <input id="cr-spawn-input" class="cr-finput sm" type="number"
@@ -432,24 +447,30 @@ export default class MapEditorUI {
           <button class="cr-btn cr-btn-ok" id="cr-en-save">Guardar</button>
         </div>
       </div>`;
+    
     document.body.appendChild(overlay);
-
+    
     const typeBtns = overlay.querySelectorAll('.cr-type-btn');
-    const classMap = { small:'s', medium:'m', big:'b' };
     typeBtns.forEach(btn => {
       btn.addEventListener('click', () => {
         selectedType = btn.dataset.type;
-        typeBtns.forEach(b => b.className = 'cr-type-btn');
-        btn.classList.add(classMap[selectedType]);
+        typeBtns.forEach(b => {
+          b.className = 'cr-type-btn';
+          // Añadir clase de color si es small/medium/big
+          if (selectedType === 'small') b.classList.add('s');
+          else if (selectedType === 'medium') b.classList.add('m');
+          else if (selectedType === 'big') b.classList.add('b');
+        });
       });
     });
-
+    
     overlay.querySelector('#cr-spawn-input').focus();
-
+    
     overlay.querySelector('#cr-en-save').onclick = () => {
       const spawnTime = parseInt(overlay.querySelector('#cr-spawn-input').value);
       if (isNaN(spawnTime) || spawnTime < 0 || spawnTime > e.timeLimit) {
-        this.showNotification('Tiempo de spawn inválido', 'err'); return;
+        this.showNotification('Tiempo de spawn inválido', 'err'); 
+        return;
       }
       if (isEdit) {
         e.enemies[editIndex] = { ...e.enemies[editIndex], type: selectedType, spawnTime };
@@ -461,7 +482,7 @@ export default class MapEditorUI {
       this.updateInfoText();
       this._closeModal(overlay);
     };
-
+    
     if (isEdit) {
       overlay.querySelector('#cr-en-del').onclick = () => {
         e.enemies.splice(editIndex, 1);
@@ -471,8 +492,35 @@ export default class MapEditorUI {
       };
     }
     overlay.querySelector('#cr-en-cancel').onclick = () => this._closeModal(overlay);
-    overlay.addEventListener('keydown', ev => { if (ev.key === 'Escape') this._closeModal(overlay); });
-  }
+    overlay.addEventListener('keydown', ev => { 
+      if (ev.key === 'Escape') this._closeModal(overlay); 
+    });
+}
+
+// Método auxiliar para obtener color según tipo
+getTypeColor(type) {
+    // Intentar obtener del registry primero
+    if (this.editor && this.editor.getAllEnemyTypes) {
+        const color = enemyRegistry.getTypeColor?.(type);
+        if (color) return color;
+    }
+    // Fallback
+    const colors = {
+        'small': '#ff6666',
+        'medium': '#ff4444', 
+        'big': '#aa2222'
+    };
+    return colors[type] || '#8888ff';
+}
+
+getTypeSize(type) {
+    if (this.editor && this.editor.getAllEnemyTypes) {
+        const radius = enemyRegistry.getTypeRadius?.(type);
+        if (radius) return Math.min(32, Math.max(8, radius));
+    }
+    const sizes = { 'small': 10, 'medium': 17, 'big': 26 };
+    return sizes[type] || 14;
+}
 
   // ─── MODAL: SELECTOR DE MAPA ───────────────────────────────────────────────
 

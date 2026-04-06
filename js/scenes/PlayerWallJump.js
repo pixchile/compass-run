@@ -1,9 +1,9 @@
 import { WALL_JUMP } from '../constants.js';
 
 export class WallJumpSystem {
-    constructor(scene, player) {  // ← recibe player
+    constructor(scene, player) {
         this.scene = scene;
-        this.player = player;     // ← lo guarda
+        this.player = player;
         this.wallStick = false;
         this.wallStickTimer = 0;
         this.wallStickCooldown = 0;
@@ -25,9 +25,8 @@ export class WallJumpSystem {
         return jumping && !this.wallStick && cooldown <= 0;
     }
 
-    stick(wallNormalAngle, currentSpeed) {  // ← ya no necesita player como arg
+    stick(wallNormalAngle, currentSpeed) {
         this.impactSpeed = currentSpeed;
-
         this.wallStick = true;
         this.wallStickTimer = WALL_JUMP.STICK_DURATION;
         this.wallNormalAngle = wallNormalAngle;
@@ -36,7 +35,7 @@ export class WallJumpSystem {
         const threshold = WALL_JUMP.STICK_DAMAGE_THRESHOLD ?? 949;
         const damage    = WALL_JUMP.STICK_DAMAGE_AMOUNT ?? 1;
 
-        if (this.impactSpeed >= threshold && this.player?.takeDamage) {  // ← usa this.player
+        if (this.impactSpeed >= threshold && this.player?.takeDamage) {
             this.player.takeDamage(damage);
             console.log(`💥 Wall impact at ${this.impactSpeed.toFixed(1)} speed! Lost ${damage} HP`);
         }
@@ -46,11 +45,9 @@ export class WallJumpSystem {
 
     getPenaltyFactor(now) {
         if (!this.wallStick) return 1.0;
-
         if (!this.wallStickStartTime || !now) return 1.0;
 
         let stickDuration = now - this.wallStickStartTime;
-
         if (stickDuration < 0) return 1.0;
 
         if (stickDuration <= WALL_JUMP.GRACE_WINDOW) {
@@ -66,7 +63,6 @@ export class WallJumpSystem {
         timeInPenalty = Math.max(0, timeInPenalty);
 
         const t = penaltyRange > 0 ? timeInPenalty / penaltyRange : 1.0;
-
         const factor = 1.0 - (t * (1.0 - WALL_JUMP.PENALTY_MIN_FACTOR));
         const finalFactor = Math.max(WALL_JUMP.PENALTY_MIN_FACTOR, Math.min(1.0, factor));
 
@@ -154,4 +150,11 @@ export class WallJumpSystem {
 
         return null;
     }
+    
+    getWallNormalAngle() {
+        return this.wallNormalAngle;
+    }
 }
+
+// Exportación por defecto para compatibilidad
+export default WallJumpSystem;

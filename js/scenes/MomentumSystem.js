@@ -148,8 +148,8 @@ addStacks(amount) {
       
       if (sm === 'gain') {
         this.gainT += delta;
-        const gainRate    = isGrounded ? 100 : AIR_GAIN_RATE;
-        const gainBonus   = isGrounded ? 1.0 : AIR_BONUS_MULT;
+        const gainRate    = isGrounded ? 200 : AIR_GAIN_RATE; // rate (100 = 0.1s)
+        const gainBonus   = isGrounded ? 1.0 : AIR_BONUS_MULT; // stacks al seguir compass
         const effectiveGT = gainRate / gainBonus;
         
         if (this.gainT >= effectiveGT) {
@@ -166,7 +166,7 @@ addStacks(amount) {
       } else { // 'drain'
         this.gainT  = 0;
         this.drainT += delta;
-        const drainRate = isGrounded ? (isMoving ? 200 : 350) : AIR_DRAIN_RATE;
+        const drainRate = isGrounded ? (isMoving ? 500 : 200) : AIR_DRAIN_RATE;
         const atFloorThreshold = (this.stacks === L3 || this.stacks === L2);
         
         if (atFloorThreshold) {
@@ -188,6 +188,6 @@ addStacks(amount) {
       }
     }
     
-    this.levelProtectPct = Math.max(0, this.levelProtect) / 3000;
+    this.levelProtectPct = Math.max(0, this.levelProtect) / 500;
   }
 }

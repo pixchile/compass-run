@@ -2,11 +2,14 @@ import { W, H, ARENA } from '../constants.js';
 import MapLoader from '../systems/MapLoader.js';
 import Camera from './Camera.js';
 import MapEditorUI from './MapEditorUI.js';
+import enemyRegistry from '../enemies/EnemyRegistry.js';
+import { registerAllCustomEnemies } from '../enemies/definitions/index.js';
 
 export default class MapEditor extends Phaser.Scene {
   constructor() { super('MapEditor'); }
 
   create() {
+    registerAllCustomEnemies(enemyRegistry);
     this.camera = new Camera();
     this.mapLoader = new MapLoader();
     this.currentMap = this.mapLoader.loadMap('default');
@@ -86,6 +89,11 @@ export default class MapEditor extends Phaser.Scene {
     }
   }
 
+getAllEnemyTypes() {
+    // Esto requiere modificar EnemyRegistry para que exponga las claves
+    return enemyRegistry.getAllTypes(); // Necesita implementar este método
+}
+
   draw(pointer) {
     if (!this.isDrawing) return;
     const wp = this.camera.screenToWorld(pointer.x, pointer.y);
@@ -136,14 +144,15 @@ export default class MapEditor extends Phaser.Scene {
     return null;
   }
 
-  findEnemyAt(point, threshold = 20) {
-    const radii = { small: 12, medium: 20, big: 32 };
+findEnemyAt(point, threshold = 20) {
     for (let i = 0; i < this.enemies.length; i++) {
-      const e = this.enemies[i];
-      if (Math.hypot(point.x - e.x, point.y - e.y) < (radii[e.type] || 12) + threshold) return i;
+        const e = this.enemies[i];
+        const def = enemyRegistry.getTypeDefinition(e.type);
+        const r = def ? (def.radius || 12) : 12;
+        if (Math.hypot(point.x - e.x, point.y - e.y) < r + threshold) return i;
     }
     return -1;
-  }
+}
 
   distanceToSegment(p, a, b) {
     const abx = b.x - a.x, aby = b.y - a.y;
@@ -210,22 +219,29 @@ export default class MapEditor extends Phaser.Scene {
       this.g.lineBetween(line.start.x, line.start.y, line.end.x, line.end.y);
     }
 
-    // Enemigos
-    const radii = { small: 12, medium: 20, big: 32 }, colors = { small: 0xff6666, medium: 0xff4444, big: 0xaa2222 };
-    for (const enemy of this.enemies) {
-      const r = radii[enemy.type] || 12, c = colors[enemy.type] || 0xff6666;
-      this.g.fillStyle(c, 0.7); this.g.fillCircle(enemy.x, enemy.y, r);
-      this.g.lineStyle(2, 0xff8888, 0.8); this.g.strokeCircle(enemy.x, enemy.y, r);
-      if (this.mode === 'enemy') { this.g.lineStyle(2, 0xff66ff, 0.8); this.g.strokeCircle(enemy.x, enemy.y, r + 4); }
+// Enemigos
+for (const enemy of this.enemies) {
+    const radius = enemyRegistry.getTypeRadius(enemy.type);
+    const color = enemyRegistry.getTypeColor(enemy.type);
+    
+    this.g.fillStyle(color, 0.7);
+    this.g.fillCircle(enemy.x, enemy.y, radius);
+    this.g.lineStyle(2, 0xff8888, 0.8);
+    this.g.strokeCircle(enemy.x, enemy.y, radius);
+    
+    if (this.mode === 'enemy') {
+        this.g.lineStyle(2, 0xff66ff, 0.8);
+        this.g.strokeCircle(enemy.x, enemy.y, radius + 4);
+    }
 
-      const spawnText = enemy.spawnTime === 0 ? '0s' : `${enemy.spawnTime}s`;
-      const textObj = this.add.text(enemy.x, enemy.y - r - 8, spawnText, {
+    const spawnText = enemy.spawnTime === 0 ? '0s' : `${enemy.spawnTime}s`;
+    const textObj = this.add.text(enemy.x, enemy.y - radius - 8, spawnText, {
         fontFamily: 'monospace', fontSize: '11px',
         fill: enemy.spawnTime === 0 ? '#44ff88' : '#ffaa44',
         backgroundColor: '#000000aa', padding: { x: 3, y: 1 }
-      }).setOrigin(0.5).setDepth(100);
-      this.enemyTexts.push(textObj);
-    }
+    }).setOrigin(0.5).setDepth(100);
+    this.enemyTexts.push(textObj);
+}
 
     // Preview línea actual
     if (this.currentLine) {

@@ -1,11 +1,11 @@
 export const W = 880, H = 620;
 export const ARENA = { x: 55, y: 58, w: 4000, h: 4000 };
 export const TRAIL_MAX = 16;
-export const L2 = 30, L3 = 70, SMAX = 90;
+export const L2 = 35, L3 = 55, SMAX = 90;
 
-export const MAX_SPD = [0, 200,  400,  600];
-export const TURN_K  = [0, 0.22, 0.09, 0.04];
-export const STOP_K  = [0, 0.28, 0.12, 0.052];
+export const MAX_SPD = [0, 280,  450,  650];
+export const TURN_K  = [0, 0.22, 0.09, 0.03];
+export const STOP_K  = [0, 0.28, 0.12, 0.045];
 
 // Jump params [_, L1, L2, L3]
 export const JUMP_DUR    = [0,  400,  600,  800];
@@ -13,14 +13,14 @@ export const JUMP_HMAX   = [0,   28,   54,   84]; //salto visual
 export const JUMP_DIST_K = [0,  0.72, 0.92, 1.12]; //salto visual parabólico
 
 // Dash
-export const DASH_DUR = 300;
-export const DASH_CD  = 2000;
+export const DASH_DUR = 400;
+export const DASH_CD  = 2500;
 export const DASH_SPD = 2.0;
 
 // Health
 export const HP_MAX             = 100;
 export const HP_DMG_DASH_WALL   = 0.02;
-export const HP_DMG_ENEMY_HIT   = 10;
+export const HP_DMG_ENEMY_HIT   = 5;
 export const HP_DMG_VOID        = 100;
 export const HP_LOW_SPD         = 29; // que es esto?
 export const HP_REGEN_DELAY     = 4000;
@@ -28,7 +28,7 @@ export const HP_REGEN_RATE      = 0;
 
 // Momentum system - Airborne balance
 export const AIR_GAIN_RATE   = 120;
-export const AIR_DRAIN_RATE  = 600; // creo que está en desuso.
+export const AIR_DRAIN_RATE  = 1000; // creo que está en desuso.
 export const AIR_BONUS_MULT  = 1.8;
 
 export const C = {
@@ -69,42 +69,48 @@ export const WALL_JUMP = {
   PENALTY_MIN_FACTOR: 0.7,
   COMPASS_BONUS: 1.25,
   GRACE_TIME: 300,
-  SPEEDS: [0, 400, 600, 1000],
+  SPEEDS: [0, 400, 800, 1000],
   STACK_BONUS: [0, 3, 4, 5],
   STICK_DAMAGE_THRESHOLD: 940,
   STICK_DAMAGE_AMOUNT: 3
 };
 
 export const KILL_STACKS = {
-  small:  20,   // Enemigo pequeño → 2 stacks
-  medium: 40,   // Enemigo mediano → 8 stacks
-  big:    60,  // Enemigo grande  → 25 stacks
+  small:  4,   
+  medium: 10,  
+  big:    25,  
 };
 
 export const SLAM = {
-    MIN_SPEED: 399,              // Velocidad mínima para activar (px/s)
+    MIN_SPEED: 600,              // Velocidad mínima para activar (px/s)
     HIGH_SPEED_THRESHOLD: 999,   // Umbral para efectos extra (px/s)
     DAMAGE: 20,                  // Daño base a enemigos
     RADIUS: 100,                 // Radio de efecto (px)
     SELF_DAMAGE: 10,             // Daño al jugador (solo high speed)
-    KNOCKBACK_DIST: 80,         // Distancia de knockback (px)
+    KNOCKBACK_DIST: 100,         // Distancia de knockback (px)
     WALL_COLLISION_DAMAGE: 100,  // Daño extra por chocar con pared
-    COOLDOWN: 2000,               // Cooldown después de slam (ms)
+    COOLDOWN: 5000,               // Cooldown después de slam (ms)
     EFFECT_DURATION: 200,        // Duración de efecto visual (ms)
 };
 
 export const REWARDS = {
-  ORB_DELAY:            700,   // ms antes de que aparezca el orbe
+  ORB_DELAY:            550,   // ms antes de que aparezca el orbe
   ORB_RADIUS:             20,   // mismo que enemigo big
   ORB_HEAL_MIN:            1,
   ORB_HEAL_MAX:           25,
   ORB_HEAL_SPEED_CAP:   999,   // px/s para curación máxima
 
-  KILL_FLOOR_CAP:         25,   // máximo floor para no romper el balance
+  KILL_FLOOR_CAP:         15,   // máximo floor para no romper el balance
 
   CREDIT_BASE_PER_SEC:     1,
   CREDIT_TICK_RATE:      100,   // ms entre ticks de velocidad
   CREDIT_SPEED_FACTOR: 0.0002,
+};
+
+// Wall Run Configuration
+export const WALL_RUN = {
+    MAX_DURATION: 2000,        // Duración máxima (compartida con wall stick)
+    SPEEDS: [0, 300, 500, 700], // Velocidad constante según nivel de momentum
 };
 
 // Dash Wall Impact

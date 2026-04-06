@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Creador de Enemigos - Tu Juego</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 Creador de Enemigos</h1>
+            <p>Diseña enemigos personalizados para tu juego</p>
+        </header>
+
+        <div class="editor-layout">
+            <!-- Panel izquierdo: Configuración -->
+            <div class="config-panel">
+                <div class="tabs">
+                    <button class="tab active" data-tab="basic">📊 Básico</button>
+                    <button class="tab" data-tab="movement">🏃 Movimiento</button>
+                    <button class="tab" data-tab="combat">⚔️ Combate</button>
+                    <button class="tab" data-tab="death">💀 Post-Muerte</button>
+                </div>
+
+                <!-- Pestaña Básico -->
+                <div id="tab-basic" class="tab-pane active">
+                    <div class="field">
+                        <label>Nombre del Enemigo</label>
+                        <input type="text" id="enemyName" placeholder="Ej: FireKnight, ShadowCrawler">
+                        <small>Se usará para el nombre del archivo y la clase</small>
+                    </div>
+
+                    <div class="field">
+                        <label>❤️ Vida (HP): <span id="hpVal">100</span></label>
+                        <input type="range" id="hp" min="1" max="1000" value="100">
+                    </div>
+
+                    <div class="field">
+                        <label>📏 Radio/Tamaño: <span id="radiusVal">16</span></label>
+                        <input type="range" id="radius" min="8" max="64" value="16">
+                    </div>
+
+                    <div class="field">
+                        <label>⚡ Velocidad: <span id="speedVal">50</span></label>
+                        <input type="range" id="speed" min="0" max="200" value="50">
+                    </div>
+
+                    <div class="field">
+                        <label>🎨 Color</label>
+                        <input type="color" id="color" value="#ff6666">
+                    </div>
+
+                    <div class="field">
+                        <label>📝 Tipo (identificador)</label>
+                        <input type="text" id="typeId" placeholder="custom_enemy">
+                        <small>Usar minúsculas y guiones, ej: fire_knight</small>
+                    </div>
+                </div>
+
+                <!-- Pestaña Movimiento -->
+                <div id="tab-movement" class="tab-pane">
+                    <div class="field">
+                        <label>¿Es móvil?</label>
+                        <select id="mobile">
+                            <option value="true">Sí</option>
+                            <option value="false">No (estático)</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label>Estilo de movimiento</label>
+                        <select id="movementStyle">
+                            <option value="seek">Perseguir al jugador</option>
+                            <option value="flee">Huir del jugador</option>
+                            <option value="wander">Movimiento errático</option>
+                            <option value="circle">Orbitar alrededor</option>
+                        </select>
+                    </div>
+
+                    <div class="field" id="orbitRadiusField" style="display:none;">
+                        <label>🎯 Radio de órbita</label>
+                        <input type="number" id="orbitRadius" value="120">
+                    </div>
+
+                    <div class="field">
+                        <label>📏 Distancia mínima al jugador</label>
+                        <input type="number" id="distanceMin" value="0" step="5">
+                        <small>0 = sin límite</small>
+                    </div>
+
+                    <div class="field">
+                        <label>📏 Distancia máxima al jugador</label>
+                        <input type="number" id="distanceMax" value="0" step="5">
+                        <small>0 = sin límite</small>
+                    </div>
+
+                    <div class="field">
+                        <label>🧱 ¿Ignorar muros/paredes?</label>
+                        <select id="ignoreWalls">
+                            <option value="false">No (rebota)</option>
+                            <option value="true">Sí (atraviesa)</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label>🔄 Intensidad errática (solo para movimiento errático)</label>
+                        <input type="range" id="wanderSpeed" min="0.1" max="1.5" step="0.05" value="0.5">
+                        <span id="wanderSpeedVal">0.5</span>
+                    </div>
+                </div>
+
+                <!-- Pestaña Combate -->
+                <div id="tab-combat" class="tab-pane">
+                    <div class="field">
+                        <label>⚔️ Daño por Dash (base)</label>
+                        <input type="number" id="dashDamage" value="10" min="0" max="200">
+                    </div>
+
+                    <div class="field">
+                        <label>💥 ¿Vulnerable a Slam?</label>
+                        <select id="slamVulnerable">
+                            <option value="true">Sí</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label>🛡️ Daño por Slam (si es diferente)</label>
+                        <input type="number" id="slamDamage" value="" placeholder="Mismo que dash">
+                    </div>
+
+                    <div class="field">
+                        <label>✨ Teletransporte al recibir daño</label>
+                        <select id="teleportOnHit">
+                            <option value="false">No</option>
+                            <option value="true">Sí (30% probabilidad)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Pestaña Post-Muerte -->
+                <div id="tab-death" class="tab-pane">
+                    <div class="field">
+                        <label>💀 Efecto al morir</label>
+                        <select id="deathEffect">
+                            <option value="none">Ninguno</option>
+                            <option value="dropOrb">Soltar orbe</option>
+                            <option value="extraCredit">Crédito extra</option>
+                            <option value="explode">Explotar</option>
+                            <option value="healPlayer">Curar al jugador</option>
+                            <option value="buffPlayer">Buff al jugador</option>
+                            <option value="spawnMinions">Spawnear minions</option>
+                            <option value="dropLoot">Soltar múltiple loot</option>
+                        </select>
+                    </div>
+
+                    <div id="deathParams" class="death-params">
+                        <!-- Parámetros dinámicos según el efecto -->
+                    </div>
+                </div>
+
+                <button id="generateBtn" class="generate-btn">✨ GENERAR ENEMIGO ✨</button>
+            </div>
+
+            <!-- Panel derecho: Vista previa -->
+            <div class="preview-panel">
+                <h3>📄 Código Generado</h3>
+                <div class="code-preview" id="codePreview">
+                    <span style="color:#888;">Configura los parámetros y haz clic en "Generar"</span>
+                </div>
+                <div class="preview-actions">
+                    <button id="downloadBtn" class="action-btn">💾 Descargar .js</button>
+                    <button id="copyBtn" class="action-btn copy">📋 Copiar código</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="editor.js"></script>
+</body>
+</html>

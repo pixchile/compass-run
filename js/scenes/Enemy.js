@@ -33,8 +33,8 @@ export default class Enemy {
     const dist = Math.hypot(dx, dy);
     
     if (dist > 0.01) {
-      const moveX = (dx / dist) * this.speed * (delta / 16);
-      const moveY = (dy / dist) * this.speed * (delta / 16);
+      const moveX = (dx / dist) * this.speed * (delta / 5000);
+      const moveY = (dy / dist) * this.speed * (delta / 5000);
       
       this.x += moveX;
       if (this.checkLineCollision(lines)) this.x -= moveX;

@@ -1,4 +1,4 @@
-import { SmallEnemy, MediumEnemy, BigEnemy } from './EnemyTypes.js';
+import enemyRegistry from '../enemies/EnemyRegistry.js';
 import { SLAM, KILL_STACKS } from '../constants.js';
 
 export default class EnemyManager {
@@ -6,6 +6,7 @@ export default class EnemyManager {
     this.scene = scene;
     this.arenaBounds = arenaBounds;
     this.enemies = [];
+    this.conditionalSpawns = [];  
     
     this.spawnList = [];
     this.nextSpawnIndex = 0;
@@ -46,7 +47,7 @@ export default class EnemyManager {
     this.gameStartTime = 0;
   }
   
-  update(delta, currentTime) {
+update(delta, currentTime, player, lines) {
     if (this.gameStartTime === 0) this.gameStartTime = currentTime;
     
     const elapsedSeconds = (currentTime - this.gameStartTime) / 1000;
@@ -57,18 +58,9 @@ export default class EnemyManager {
         if (!enemyData.active) {
           enemyData.active = true;
 
-          let newEnemy = null;
-          switch(enemyData.type) {
-            case 'small':
-              newEnemy = new SmallEnemy(enemyData.x, enemyData.y, this.scene);
-              break;
-            case 'medium':
-              newEnemy = new MediumEnemy(enemyData.x, enemyData.y, this.scene);
-              break;
-            case 'big':
-              newEnemy = new BigEnemy(enemyData.x, enemyData.y, this.scene);
-              break;
-          }
+          let newEnemy = null;  // <--- AÑADIR ESTA LÍNEA
+          const enemyType = enemyData.type || enemyData.enemyRef;
+          newEnemy = enemyRegistry.create(enemyType, enemyData.x, enemyData.y, this.scene);
 
           if (newEnemy) {
             this.enemies.push(newEnemy);
@@ -79,7 +71,11 @@ export default class EnemyManager {
         break;
       }
     }
-  }
+
+    for (const enemy of this.enemies) {
+        enemy.update(delta, player, lines);
+    }
+}
   
   resetDashDamageTracking() {
     this.damagedThisDash.clear();
