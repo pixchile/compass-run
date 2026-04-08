@@ -20,13 +20,12 @@ export default class EnemyManager {
     this.orbManager   = null;
     this.momentum     = null;
 
-    // OPTIMIZACIÓN: Pre-asignar objetos para Zero Allocation (GC Free)
-    this._dashAttackObj = { type: 'dash', speed: 0, isAir: false, now: 0 };
-    this._pierceAttackObj = { type: 'pierce', now: 0 };
-    this._slamAttackObj = { type: 'slam', damage: 0, isHighSpeed: false, now: 0 };
-    this._wallAttackObj = { type: 'slam', damage: 0, isHighSpeed: false, now: 0 };
+    // Objetos Zero-Allocation
+    this._dashAttackObj = { type: 'dash', baseDamage: 0, now: 0 };
+    this._pierceAttackObj = { type: 'momentum3', baseDamage: 0, now: 0 };
+    this._slamAttackObj = { type: 'slam', baseDamage: 0, now: 0 };
+    this._wallAttackObj = { type: 'wallCrash', baseDamage: 0, now: 0 };
     
-    // Objetos para colisión matemática
     this._p1 = { x: 0, y: 0 };
     this._p2 = { x: 0, y: 0 };
     this._colResult = { collided: false, hitX: 0, hitY: 0 };
@@ -50,13 +49,30 @@ export default class EnemyManager {
   }
   
   setSpawnList(enemies) {
-    this.spawnList = enemies
-      .map(e => ({ ...e, active: false }))
-      .sort((a, b) => a.spawnTime - b.spawnTime);
+    this.spawnList = enemies.map(e => {
+        const enemyType = e.type || e.enemyRef;
+        let finalSpawnTime = e.spawnTime || 0;
+
+        // Leer la configuración del enemigo V2.0 si la guardamos en configs
+        if (enemyRegistry.configs && enemyRegistry.configs[enemyType]) {
+            const config = enemyRegistry.configs[enemyType];
+            const basic = config.basic || {};
+            const trigger = basic.spawnTrigger || {};
+            
+            // Si el mapa dice 0, pero el enemigo tiene un trigger de tiempo, usamos el del enemigo
+            if (finalSpawnTime === 0 && trigger.type === 'time') {
+                finalSpawnTime = parseFloat(trigger.value) || 0;
+            }
+        }
+
+        return { ...e, spawnTime: finalSpawnTime, active: false };
+    }).sort((a, b) => a.spawnTime - b.spawnTime);
+    
     this.nextSpawnIndex = 0;
     this.gameStartTime = 0;
   }
   
+  // ¡AQUÍ ESTÁ LA FUNCIÓN QUE SE HABÍA BORRADO!
   update(delta, currentTime, player, lines) {
     if (this.gameStartTime === 0) this.gameStartTime = currentTime;
     
@@ -88,13 +104,11 @@ export default class EnemyManager {
   processPlayerInteractions(player, delta, now, momentumLevel) {
     if (player.dashing && !this.wasDashing) {
       this.damagedThisDash.clear();
-      // console.log("⚡ [SISTEMA] Iniciando nuevo Dash. Tracking limpio.");
     }
     this.wasDashing = player.dashing;
 
-    // OPTIMIZACIÓN: Sacar cálculos repetitivos fuera del bucle
     const playerRadius = 12;
-    const currentDashSpeed = player.dashing ? Math.hypot(player.vx, player.vy) : 0;
+    const currentSpeed = Math.hypot(player.vx, player.vy);
 
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
@@ -105,7 +119,6 @@ export default class EnemyManager {
       if (hasCollisionFunc) {
          isColliding = enemy.collidesWith(player.px, player.py, playerRadius);
       } else {
-         // OPTIMIZACIÓN: Math.hypot es lento. Usamos distancia al cuadrado para el chequeo de respaldo.
          const dx = enemy.x - player.px;
          const dy = enemy.y - player.py;
          const minR = enemyRadius + playerRadius;
@@ -114,33 +127,37 @@ export default class EnemyManager {
 
       if (isColliding) {
         let enemyDied = false;
+        let fatalSource = 'any';
 
         if (player.dashing) {
           if (!this.damagedThisDash.has(enemy)) {
             this.damagedThisDash.add(enemy);
             
-            // Reutilizamos el objeto pre-creado
-            this._dashAttackObj.speed = currentDashSpeed;
-            this._dashAttackObj.isAir = player.wasJumpingWhenDashed;
+            this._dashAttackObj.type = player.wasJumpingWhenDashed ? 'aerialDash' : 'dash';
+            this._dashAttackObj.baseDamage = (player.dashInitialSpeed || currentSpeed) * 0.25; 
             this._dashAttackObj.now = now;
             
             if (typeof enemy.receiveDamage === 'function') {
                 enemyDied = enemy.receiveDamage(this._dashAttackObj);
             } else {
-                enemy.hp = (enemy.hp || 1) - 1;
+                enemy.hp = (enemy.hp || 1) - this._dashAttackObj.baseDamage;
                 enemyDied = enemy.hp <= 0;
-                // console.log(`💥 [FALLBACK] Enemigo golpeado a la fuerza! HP: ${enemy.hp}`);
             }
+            fatalSource = this._dashAttackObj.type;
           }
         } 
         else if (momentumLevel === 3) {
+            this._pierceAttackObj.type = 'momentum3';
+            this._pierceAttackObj.baseDamage = currentSpeed * 0.025; 
             this._pierceAttackObj.now = now;
+
             if (typeof enemy.receiveDamage === 'function') {
                 enemyDied = enemy.receiveDamage(this._pierceAttackObj);
             } else if (enemy.pierceable) {
                 enemy.hp = 0;
                 enemyDied = true;
             }
+            fatalSource = 'momentum3';
         }
         else if (!player.isInvincible) {
           if (!enemy.state) enemy.state = {}; 
@@ -151,7 +168,7 @@ export default class EnemyManager {
         }
 
         if (enemyDied) {
-          // console.log(`💀 [SISTEMA] Enemigo destruido.`);
+          if (typeof enemy.kill === 'function') enemy.kill(fatalSource);
           this._onEnemyDied(enemy);
           this.enemies.splice(i, 1);
         }
@@ -168,11 +185,10 @@ export default class EnemyManager {
       const distance = Math.hypot(dx, dy);
       const minDistance = playerRadius + eRadius;
       
-      if (distance < minDistance && distance > 0) { // distance > 0 previene división por 0
+      if (distance < minDistance && distance > 0) {
         collided = true;
         const overlap = minDistance - distance;
         
-        // OPTIMIZACIÓN: Eliminada Trigonometría (Math.atan2, Math.cos, Math.sin)
         const pushX = dx / distance;
         const pushY = dy / distance;
 
@@ -195,13 +211,12 @@ export default class EnemyManager {
     const damage = SLAM.DAMAGE;
     const wallDamage = SLAM.WALL_COLLISION_DAMAGE;
 
-    // Mutamos los objetos cacheados
-    this._slamAttackObj.damage = damage;
-    this._slamAttackObj.isHighSpeed = isHighSpeed;
+    this._slamAttackObj.type = isHighSpeed ? 'slam3' : 'slam';
+    this._slamAttackObj.baseDamage = damage;
     this._slamAttackObj.now = now;
 
-    this._wallAttackObj.damage = wallDamage;
-    this._wallAttackObj.isHighSpeed = isHighSpeed;
+    this._wallAttackObj.type = 'wallCrash';
+    this._wallAttackObj.baseDamage = wallDamage;
     this._wallAttackObj.now = now;
 
     for (let i = this.enemies.length - 1; i >= 0; i--) {
@@ -221,17 +236,16 @@ export default class EnemyManager {
       }
 
       if (enemyDied) {
+        if (typeof enemy.kill === 'function') enemy.kill(this._slamAttackObj.type);
         this._onEnemyDied(enemy);
         this.enemies.splice(i, 1);
         continue;
       }
 
-      // Knockback y choque contra paredes
       if (isHighSpeed && applyKnockback && dist > 0) {
         const oldX = enemy.x;
         const oldY = enemy.y;
         
-        // OPTIMIZACIÓN: Eliminada Trigonometría para el Knockback
         const dirX = dx / dist;
         const dirY = dy / dist;
         enemy.x += dirX * SLAM.KNOCKBACK_DIST;
@@ -240,7 +254,6 @@ export default class EnemyManager {
         const lines = this.scene.currentMap?.lines || [];
         let hitWall = false;
 
-        // Configuramos puntos cacheados sin crear objetos literales {}
         this._p1.x = oldX; this._p1.y = oldY;
         this._p2.x = enemy.x; this._p2.y = enemy.y;
 
@@ -264,6 +277,7 @@ export default class EnemyManager {
           }
 
           if (wallDied) {
+            if (typeof enemy.kill === 'function') enemy.kill(this._wallAttackObj.type);
             this._onEnemyDied(enemy);
             this.enemies.splice(i, 1);
           }
@@ -272,7 +286,6 @@ export default class EnemyManager {
     }
   }
 
-  // OPTIMIZACIÓN: Zero Allocation. Se actualiza this._colResult en vez de retornar {}
   _checkLineCollision(p1, p2, line, radius) {
     this._colResult.collided = false;
 

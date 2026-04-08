@@ -1,33 +1,77 @@
-// Enemigo generado con Enemy Creator
-// Nombre: angel
-// Fecha: 06-04-2026, 9:04:19 p. m.
+// Enemigo generado con Enemy Creator (v2.0)
+// Nombre: bot01
+// Fecha: 08-04-2026, 11:36:03 a. m.
 
 export default {
-    name: 'angel',
+    id: 'bot01',
     config: {
-    type: "angel",
-    radius: 25,
-    maxHp: 300,
-    hp: 300,
-    color: "0xbefefd",
-    speed: 0,
-    movementStyle: "flee",
-    behaviors: {
-        mobile: false
+    id: "bot01",
+    name: "bot01",
+    basic: {
+        hp: 300,
+        hpRegen: 30,
+        color: "0x98FF00",
+        shape: "rectangle",
+        radius: 20,
+        isBoss: false,
+        selfDestruct: {
+            type: "none",
+            value: 0
+        },
+        spawnTrigger: {
+            type: "time",
+            value: "5"
+        }
     },
-    distanceMin: 30,
-    distanceMax: 400,
-    ignoreWalls: true,
-    wanderSpeed: 0.5,
-    dashDamage: 40,
-    slamVulnerable: true,
-    teleportOnHit: false,
-    slamDamage: 350,
+    movement: {
+        mobile: true,
+        speed: 1,
+        scaling: {
+            timeBase: true,
+            timeMultiplier: 1,
+            hpBase: "inverse",
+            hpPercentage: 500
+        },
+        style: "seek",
+        orbitRange: 120,
+        erraticTime: 2000,
+        distanceMin: 8,
+        distanceMax: 300,
+        ignoreWalls: false,
+        isPhantom: false
+    },
+    damageMultipliers: {
+        dash: 1,
+        aerialDash: 4,
+        momentum3: 1,
+        slam: 1,
+        slam3: 2,
+        void: 1000,
+        wallCrash: 400,
+        explosion: 1
+    },
     onDeath: [
         {
-            type: "healPlayer",
-            amount: 100
+            type: "dropOrb",
+            chance: 100,
+            condition: "dash",
+            params: {}
         }
-    ]
+    ],
+    ambitious: {
+        isWall: false,
+        attack: {
+            type: "contact",
+            effect: "none"
+        },
+        defense: {
+            invulnerableAura: false,
+            evade: false
+        },
+        spawn: {
+            pattern: "normal",
+            count: 3
+        }
+    }
 }
 };

@@ -1,3 +1,4 @@
+// js/scenes/Player.js
 import { W, H, TRAIL_MAX, MAX_SPD, TURN_K, STOP_K, JUMP_DUR, JUMP_HMAX, JUMP_DIST_K,
          DASH_DUR, DASH_CD, DASH_SPD,
          HP_MAX, HP_DMG_ENEMY_HIT, HP_DMG_VOID, HP_LOW_SPD,
@@ -30,7 +31,6 @@ export default class Player {
 
         this.prevSpace = false; this.prevShift = false;
         
-        // OPTIMIZACIÓN: Pre-asignamos la dirección para no crear {x, y} todo el tiempo
         this.moveDir = { x: 0, y: 0 };
         this.trail = []; 
 
@@ -39,6 +39,7 @@ export default class Player {
         this.hasSlammedThisJump = false;  
         this.slamCooldown = 0;            
         this.preSlamSpeed = 0;            
+        this.activeSlam = null; // <- Añadido para limpiar estados correctamente
 
         this.currentWallLine = null;
 
@@ -69,11 +70,11 @@ export default class Player {
         this.px = W / 2; this.py = H / 2;
         this.vx = 0; this.vy = 0;
         this.jumping = false; this.dashing = false;
+        this.activeSlam = null;
         this.wallJump.reset();
         this.wallRun.reset();
     }
 
-    // OPTIMIZACIÓN: Actualiza el objeto cacheado en lugar de crear uno nuevo.
     updateMoveDirection() {
         const U = this.kb.W.isDown;
         const Dn = this.kb.S.isDown;
@@ -90,7 +91,6 @@ export default class Player {
         return this.moveDir;
     }
 
-    // Se mantiene por retrocompatibilidad externa
     getMoveDirection() { return this.updateMoveDirection(); }
 
     isMovingInCompassDirection(momentum, currentSpeed) {
@@ -110,6 +110,7 @@ export default class Player {
         this.vx = 0; this.vy = 0;
         this.jumpVx = 0; this.jumpVy = 0;
         this.dashing = false; this.jumping = false;  
+        this.activeSlam = null; // Limpiar hitbox de slam al pegar muro
 
         this.wallRun.reset();
         this.currentWallLine = wallLine;
@@ -139,12 +140,48 @@ export default class Player {
         this.slamCooldown = SLAM.COOLDOWN;
     }
 
+    // --- NUEVO: Construye el Payload de Ataque (Game-feel exacto) ---
+    getCurrentAttackPayload(momentumLevel) {
+        const currentSpeed = Math.hypot(this.vx, this.vy);
+        const now = Date.now();
+
+        // 1. Slam: Tiene máxima prioridad si está activo
+        if (this.activeSlam) {
+            return {
+                type: this.activeSlam.isHighSpeed ? 'slam3' : 'slam',
+                baseDamage: this.activeSlam.speed * 0.1, // Puedes balancear este multplicador base
+                now: now
+            };
+        }
+
+        // 2. Momentum 3: Si tiene nivel máximo, hace el daño % que pediste
+        if (momentumLevel === 3) {
+            return {
+                type: 'momentum3',
+                baseDamage: currentSpeed * 0.025, // Regla exacta: 2.5% de la velocidad al impacto
+                now: now
+            };
+        }
+
+        // 3. Dash: Si está haciendo dash normal o aéreo
+        if (this.dashing) {
+            return {
+                type: this.wasJumpingWhenDashed ? 'aerialDash' : 'dash',
+                baseDamage: this.dashInitialSpeed * 0.1,
+                now: now
+            };
+        }
+
+        // Si no está haciendo nada de lo anterior, el jugador NO ESTÁ ATACANDO
+        return null;
+    }
+    // -------------------------------------------------------------
+
     update(delta, momentum) {
         const dt = delta / 1000;
         const lv = momentum.level;
         const now = this.scene.time.now;
 
-        // OPTIMIZACIÓN: Matemáticas repetitivas calculadas 1 sola vez al principio
         const currentSpeed = Math.hypot(this.vx, this.vy);
         const md = this.updateMoveDirection();
         const moving = md.x !== 0 || md.y !== 0;
@@ -179,6 +216,7 @@ export default class Player {
             this.jumpT += delta;
             if (this.jumpT >= this.jumpDur) {
                 this.jumping = false;
+                this.activeSlam = null; // FIX: Limpiar el estado de Slam al tocar suelo
                 this.landFx = this.jumpLv >= 3 ? 420 : this.jumpLv >= 2 ? 210 : 0;
             }
         }
@@ -190,17 +228,16 @@ export default class Player {
         if (this.wallRun.isWallRunning) {
             if (!this.wallRun.update(delta, md, now, 12)) {
                 if (this.wallRun.wasNaturalExit) {
-                    // Salida suave del extremo del muro: conservar momentum y hacer mini-salto visual
                     this.wallJump._release();
                     this.jumping = true;
                     this.jumpT = 0;
-                    this.jumpDur = 200;          // salto breve, solo visual
-                    this.jumpHMax = 10;           // altura mínima
+                    this.jumpDur = 200;          
+                    this.jumpHMax = 10;           
                     this.jumpLv = lv;
                     this.jumpVx = this.vx;
                     this.jumpVy = this.vy;
                     this.hasSlammedThisJump = false;
-                    this.landFx = 140;            // pequeño ring al aterrizar
+                    this.landFx = 140;            
                     this.wallRun.wasNaturalExit = false;
                 } else {
                     this.vx = 0; this.vy = 0;
@@ -213,7 +250,7 @@ export default class Player {
                 const jumpResult = this.wallJump.tryJump(
                     md, momentum,
                     () => md,
-                    (m) => this.isMovingInCompassDirection(m, currentSpeed), // Pasamos speed precalculada
+                    (m) => this.isMovingInCompassDirection(m, currentSpeed), 
                     now
                 );
                 if (jumpResult?.success) {
@@ -263,7 +300,6 @@ export default class Player {
             }
         }
 
-        // Físicas principales
         if (!this.isStunned && !this.wallJump.wallStick && !this.wallRun.isWallRunning) {
             if (this.jumping) {
                 const steer = moving ? 0.04 : 0;
@@ -305,14 +341,12 @@ export default class Player {
             }
         }
 
-        // OPTIMIZACIÓN: Trail Reciclable (Evita la creación de objetos)
         if (this.trail.length >= TRAIL_MAX) {
-            const t = this.trail.shift(); // Tomamos el objeto más viejo
+            const t = this.trail.shift(); 
             t.x = this.px; t.y = this.py; t.lv = lv; t.dash = this.dashing; 
             t.jump = this.jumping; t.wallStick = this.wallJump.wallStick; t.wallRun = this.wallRun.isWallRunning;
-            this.trail.push(t); // Lo reutilizamos
+            this.trail.push(t); 
         } else {
-            // Solo creamos objetos nuevos los primeros fotogramas del juego
             this.trail.push({ x: this.px, y: this.py, lv, dash: this.dashing, jump: this.jumping, wallStick: this.wallJump.wallStick, wallRun: this.wallRun.isWallRunning });
         }
     }
