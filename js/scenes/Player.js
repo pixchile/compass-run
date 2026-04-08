@@ -29,16 +29,18 @@ export default class Player {
         this.hpHitFlash = 0;
 
         this.prevSpace = false; this.prevShift = false;
-        this.trail = [];
+        
+        // OPTIMIZACIÓN: Pre-asignamos la dirección para no crear {x, y} todo el tiempo
+        this.moveDir = { x: 0, y: 0 };
+        this.trail = []; 
 
         this.wasJumpingWhenDashed = false;
-
         this.canSlam = true;              
         this.hasSlammedThisJump = false;  
         this.slamCooldown = 0;            
         this.preSlamSpeed = 0;            
 
-        this.currentWallLine = null;  // ← guardar la línea para wall run
+        this.currentWallLine = null;
 
         this.kb = scene.input.keyboard.addKeys('W,A,S,D,SPACE,SHIFT');
     }
@@ -54,7 +56,7 @@ export default class Player {
         this.hpRegenT = 0;
         this.hpHitFlash = 280;
         this.isInvincible = true;
-        this.invincibleTimer = 500;
+        this.invincibleTimer = 50;
     }
 
     takeEnemyDamage() {
@@ -71,81 +73,102 @@ export default class Player {
         this.wallRun.reset();
     }
 
-    getMoveDirection() {
+    // OPTIMIZACIÓN: Actualiza el objeto cacheado en lugar de crear uno nuevo.
+    updateMoveDirection() {
         const U = this.kb.W.isDown;
         const Dn = this.kb.S.isDown;
         const L = this.kb.A.isDown;
         const R = this.kb.D.isDown;
-        let ix = (R ? 1 : 0) - (L ? 1 : 0);
-        let iy = (Dn ? 1 : 0) - (U ? 1 : 0);
-        if (ix && iy) { ix *= 0.7071; iy *= 0.7071; }
-        return { x: ix, y: iy };
+        
+        this.moveDir.x = (R ? 1 : 0) - (L ? 1 : 0);
+        this.moveDir.y = (Dn ? 1 : 0) - (U ? 1 : 0);
+        
+        if (this.moveDir.x && this.moveDir.y) { 
+            this.moveDir.x *= 0.7071; 
+            this.moveDir.y *= 0.7071; 
+        }
+        return this.moveDir;
     }
 
-    isMovingInCompassDirection(momentum) {
+    // Se mantiene por retrocompatibilidad externa
+    getMoveDirection() { return this.updateMoveDirection(); }
+
+    isMovingInCompassDirection(momentum, currentSpeed) {
         if (!momentum || momentum.cIdx === undefined) return false;
-        const currentSpeed = Math.hypot(this.vx, this.vy);
         if (currentSpeed < 15) return false;
         const cd = DIRS[momentum.cIdx];
         if (!cd) return false;
         let diff = Math.abs(Math.atan2(this.vy, this.vx) - Math.atan2(cd.dy, cd.dx));
         if (diff > Math.PI) diff = Math.PI * 2 - diff;
-        const degDiff = diff * (180 / Math.PI);
-        return degDiff <= 22.5;
+        return (diff * (180 / Math.PI)) <= 22.5;
     }
 
     stickToWall(wallNormalAngle, currentSpeed, wallLine) {
         if (this.wallJump.wallStickCooldown > 0) return false;
         if (!this.wallJump.canStick(this.jumping, this.wallJump.wallStickCooldown)) return false;
 
-        this.vx = 0;
-        this.vy = 0;
-        this.jumpVx = 0;
-        this.jumpVy = 0;
-        this.dashing = false;
-        this.jumping = false;  
+        this.vx = 0; this.vy = 0;
+        this.jumpVx = 0; this.jumpVy = 0;
+        this.dashing = false; this.jumping = false;  
 
         this.wallRun.reset();
-        this.currentWallLine = wallLine;  // guardamos la línea
+        this.currentWallLine = wallLine;
 
-        console.log("✅ stickToWall called, wallLine guardada:", wallLine);
         return this.wallJump.stick(wallNormalAngle, currentSpeed);
     }
 
-    update(delta, momentum, enemyManager) {
+    performSlam(speed, momentum) {
+        this.preSlamSpeed = speed;
+        const isHighSpeed = speed >= SLAM.HIGH_SPEED_THRESHOLD;
+        const canPayHealth = this.hp > SLAM.SELF_DAMAGE;
+        const applyKnockback = isHighSpeed && canPayHealth;
+        
+        if (applyKnockback) this.takeDamage(SLAM.SELF_DAMAGE);
+        if (this.scene.renderer) this.scene.renderer.addSlamEffect(this.px, this.py, applyKnockback);
+        
+        this.activeSlam = {
+            x: this.px, y: this.py,
+            speed: speed,
+            isHighSpeed: isHighSpeed,
+            applyKnockback: applyKnockback
+        };
+
+        this.vx = 0; this.vy = 0;
+        this.jumping = false;
+        this.hasSlammedThisJump = true;
+        this.slamCooldown = SLAM.COOLDOWN;
+    }
+
+    update(delta, momentum) {
         const dt = delta / 1000;
         const lv = momentum.level;
         const now = this.scene.time.now;
 
-        this.slamCooldown = Math.max(0, this.slamCooldown - delta);
+        // OPTIMIZACIÓN: Matemáticas repetitivas calculadas 1 sola vez al principio
+        const currentSpeed = Math.hypot(this.vx, this.vy);
+        const md = this.updateMoveDirection();
+        const moving = md.x !== 0 || md.y !== 0;
 
-        const U = this.kb.W.isDown, Dn = this.kb.S.isDown;
-        const L = this.kb.A.isDown, R = this.kb.D.isDown;
         const spaceJust = this.kb.SPACE.isDown && !this.prevSpace;
         const shiftJust = this.kb.SHIFT.isDown && !this.prevShift;
         this.prevSpace = this.kb.SPACE.isDown;
         this.prevShift = this.kb.SHIFT.isDown;
 
-        let ix = (R ? 1 : 0) - (L ? 1 : 0);
-        let iy = (Dn ? 1 : 0) - (U ? 1 : 0);
-        if (ix && iy) { ix *= 0.7071; iy *= 0.7071; }
-        const moving = ix !== 0 || iy !== 0;
-        const moveDirection = { x: ix, y: iy };
-
-        const wallResult = this.wallJump.update(delta, (vx, vy) => {
-            this.vx = vx;
-            this.vy = vy;
-            this.jumping = true;
-        });
-        if (wallResult?.timeout) this.jumping = true;
-
+        this.slamCooldown = Math.max(0, this.slamCooldown - delta);
         this.stunT = Math.max(0, this.stunT - delta);
         this.dashCD = Math.max(0, this.dashCD - delta);
+        this.landFx = Math.max(0, this.landFx - delta);
+        this.hpHitFlash = Math.max(0, this.hpHitFlash - delta);
 
         if (this.isInvincible) {
             this.invincibleTimer -= delta;
             if (this.invincibleTimer <= 0) this.isInvincible = false;
         }
+
+        const wallResult = this.wallJump.update(delta, (vx, vy) => {
+            this.vx = vx; this.vy = vy; this.jumping = true;
+        });
+        if (wallResult?.timeout) this.jumping = true;
 
         if (this.dashing) {
             this.dashT += delta;
@@ -159,77 +182,62 @@ export default class Player {
                 this.landFx = this.jumpLv >= 3 ? 420 : this.jumpLv >= 2 ? 210 : 0;
             }
         }
-        this.landFx = Math.max(0, this.landFx - delta);
-        this.hpHitFlash = Math.max(0, this.hpHitFlash - delta);
 
-        // ========== WALL RUN ACTIVATION ==========
         if (this.wallJump.wallStick && moving && !this.wallRun.isWallRunning && !this.isStunned) {
-            console.log("🚀 Attempting wall run, wallLine:", this.currentWallLine);
-            const started = this.wallRun.tryStartWallRun(
-                this.wallJump.getWallNormalAngle(), 
-                lv, 
-                moveDirection,
-                this.currentWallLine
-            );
-            console.log("   Wall run started:", started);
+            this.wallRun.tryStartWallRun(this.wallJump.getWallNormalAngle(), lv, md, this.currentWallLine);
         }
 
-        // Update wall run
         if (this.wallRun.isWallRunning) {
-            const stillRunning = this.wallRun.update(delta, moveDirection, now, 12);
-            if (!stillRunning) {
-                this.vx = 0;
-                this.vy = 0;
-                console.log("🏁 Wall run ended by update");
-            }
-        }
-
-        // ========== JUMP ==========
-        if (spaceJust && !this.isStunned) {
-            if (this.wallJump.wallStick) {
-                const jumpResult = this.wallJump.tryJump(
-                    this.getMoveDirection(),
-                    momentum,
-                    () => this.getMoveDirection(),
-                    (m) => this.isMovingInCompassDirection(m),
-                    now
-                );
-                if (jumpResult?.success) {
-                    this.vx = jumpResult.vx;
-                    this.vy = jumpResult.vy;
+            if (!this.wallRun.update(delta, md, now, 12)) {
+                if (this.wallRun.wasNaturalExit) {
+                    // Salida suave del extremo del muro: conservar momentum y hacer mini-salto visual
+                    this.wallJump._release();
                     this.jumping = true;
                     this.jumpT = 0;
-                    this.jumpDur = JUMP_DUR[lv];
+                    this.jumpDur = 200;          // salto breve, solo visual
+                    this.jumpHMax = 10;           // altura mínima
                     this.jumpLv = lv;
                     this.jumpVx = this.vx;
                     this.jumpVy = this.vy;
+                    this.hasSlammedThisJump = false;
+                    this.landFx = 140;            // pequeño ring al aterrizar
+                    this.wallRun.wasNaturalExit = false;
+                } else {
+                    this.vx = 0; this.vy = 0;
+                }
+            }
+        }
+
+        if (spaceJust && !this.isStunned) {
+            if (this.wallJump.wallStick) {
+                const jumpResult = this.wallJump.tryJump(
+                    md, momentum,
+                    () => md,
+                    (m) => this.isMovingInCompassDirection(m, currentSpeed), // Pasamos speed precalculada
+                    now
+                );
+                if (jumpResult?.success) {
+                    this.vx = jumpResult.vx; this.vy = jumpResult.vy;
+                    this.jumping = true; this.jumpT = 0;
+                    this.jumpDur = JUMP_DUR[lv]; this.jumpLv = lv;
+                    this.jumpVx = this.vx; this.jumpVy = this.vy;
                     this.hasSlammedThisJump = false;
                     this.wallRun.reset();
                 }
             }
             else if (this.jumping && !this.hasSlammedThisJump && this.slamCooldown <= 0) {
-                const currentSpeed = Math.hypot(this.vx, this.vy);
                 if (currentSpeed >= SLAM.MIN_SPEED) this.performSlam(currentSpeed, momentum);
             }
             else if (this.dashing && !this.jumping) {
-                this.jumping = true;
-                this.jumpT = 0;
-                this.jumpDur = JUMP_DUR[lv];
-                this.jumpHMax = JUMP_HMAX[lv];
-                this.jumpLv = lv;
-                this.jumpVx = this.vx;   
-                this.jumpVy = this.vy;
-                this.dashing = false;    
-                this.hasSlammedThisJump = false;
+                this.jumping = true; this.jumpT = 0;
+                this.jumpDur = JUMP_DUR[lv]; this.jumpHMax = JUMP_HMAX[lv]; this.jumpLv = lv;
+                this.jumpVx = this.vx; this.jumpVy = this.vy;
+                this.dashing = false; this.hasSlammedThisJump = false;
             }
             else if (!this.jumping && !this.wallJump.wallStick && !this.wallRun.isWallRunning) {
-                this.jumping = true;
-                this.jumpT = 0;
-                this.jumpDur = JUMP_DUR[lv];
-                this.jumpHMax = JUMP_HMAX[lv];
-                this.jumpLv = lv;
-                const spd = Math.hypot(this.vx, this.vy);
-                if (spd > 8) {
+                this.jumping = true; this.jumpT = 0;
+                this.jumpDur = JUMP_DUR[lv]; this.jumpHMax = JUMP_HMAX[lv]; this.jumpLv = lv;
+                if (currentSpeed > 8) {
                     this.jumpVx = this.vx * JUMP_DIST_K[lv];
                     this.jumpVy = this.vy * JUMP_DIST_K[lv];
                 } else {
@@ -240,14 +248,10 @@ export default class Player {
             }
         }
 
-        // ========== DASH ==========
         if (shiftJust && !this.dashing && !this.isStunned && this.dashCD === 0 && !this.wallJump.wallStick && !this.wallRun.isWallRunning) {
-            this.dashing = true;
-            this.dashT = 0;
-            this.dashCD = DASH_CD;
+            this.dashing = true; this.dashT = 0; this.dashCD = DASH_CD;
             this.wasJumpingWhenDashed = this.jumping;
-            if (enemyManager && enemyManager.resetDashDamageTracking) enemyManager.resetDashDamageTracking();
-            const currentSpeed = Math.hypot(this.vx, this.vy);
+            
             const dashSpeed = currentSpeed * DASH_SPD;
             this.dashInitialSpeed = dashSpeed;  
             const dirX = currentSpeed > 8 ? this.vx / currentSpeed : Math.cos(this.facing);
@@ -255,35 +259,33 @@ export default class Player {
             this.dashVx = dirX * dashSpeed;
             this.dashVy = dirY * dashSpeed;
             if (this.jumping) {
-                this.jumpVx = this.dashVx;
-                this.jumpVy = this.dashVy;
+                this.jumpVx = this.dashVx; this.jumpVy = this.dashVy;
             }
         }
 
-        // ========== PHYSICS ==========
+        // Físicas principales
         if (!this.isStunned && !this.wallJump.wallStick && !this.wallRun.isWallRunning) {
             if (this.jumping) {
                 const steer = moving ? 0.04 : 0;
-                this.vx = this.jumpVx + (moving ? ix * MAX_SPD[this.jumpLv] * steer : 0);
-                this.vy = this.jumpVy + (moving ? iy * MAX_SPD[this.jumpLv] * steer : 0);
-                if (moving) this.facing = Math.atan2(iy, ix);
+                this.vx = this.jumpVx + (moving ? md.x * MAX_SPD[this.jumpLv] * steer : 0);
+                this.vy = this.jumpVy + (moving ? md.y * MAX_SPD[this.jumpLv] * steer : 0);
+                if (moving) this.facing = Math.atan2(md.y, md.x);
             } else if (this.dashing) {
                 const ease = 1 - Math.pow(this.dashT / DASH_DUR, 2);
                 this.vx = this.dashVx * ease;
                 this.vy = this.dashVy * ease;
             } else {
-                const vLen = Math.hypot(this.vx, this.vy);
                 let af = 1;
-                if (moving && vLen > 15) {
-                    const dot = (this.vx * ix + this.vy * iy) / vLen;
+                if (moving && currentSpeed > 15) {
+                    const dot = (this.vx * md.x + this.vy * md.y) / currentSpeed;
                     af = 0.12 + 0.88 * Math.pow((dot + 1) / 2, 1.6);
                 }
                 const tk = this.lerpK(TURN_K[lv] * af, dt);
                 const sk = this.lerpK(STOP_K[lv], dt);
                 if (moving) {
-                    this.vx += (ix * MAX_SPD[lv] - this.vx) * tk;
-                    this.vy += (iy * MAX_SPD[lv] - this.vy) * tk;
-                    this.facing = Math.atan2(iy, ix);
+                    this.vx += (md.x * MAX_SPD[lv] - this.vx) * tk;
+                    this.vy += (md.y * MAX_SPD[lv] - this.vy) * tk;
+                    this.facing = Math.atan2(md.y, md.x);
                 } else {
                     this.vx -= this.vx * sk;
                     this.vy -= this.vy * sk;
@@ -291,23 +293,11 @@ export default class Player {
             }
             this.px += this.vx * dt;
             this.py += this.vy * dt;
-            if (enemyManager) {
-                enemyManager.checkPierceKills(this, lv);
-                if (!this.dashing && !this.jumping) enemyManager.checkSolidCollision(this, 12);
-                if (!this.jumping && !this.dashing) {
-                    enemyManager.checkNormalCollisions(this, now, (enemy) => { this.takeEnemyDamage(); });
-                }
-            }
         } else if (this.wallRun.isWallRunning) {
-            // Wall run: solo actualizar posición (velocidad ya puesta por WallRunSystem)
             this.px += this.vx * dt;
             this.py += this.vy * dt;
-            if (enemyManager && !this.isInvincible) {
-                enemyManager.checkNormalCollisions(this, now, (enemy) => { this.takeEnemyDamage(); });
-            }
         }
 
-        // Regen
         if (this.hp < HP_MAX && this.hp > 0 && !this.wallJump.wallStick && !this.wallRun.isWallRunning) {
             this.hpRegenT += delta;
             if (this.hpRegenT >= HP_REGEN_DELAY) {
@@ -315,24 +305,15 @@ export default class Player {
             }
         }
 
-        this.trail.push({ x: this.px, y: this.py, lv, dash: this.dashing, jump: this.jumping, wallStick: this.wallJump.wallStick, wallRun: this.wallRun.isWallRunning });
-        if (this.trail.length > TRAIL_MAX) this.trail.shift();
-    }
-
-    performSlam(speed, momentum) {
-        this.preSlamSpeed = speed;
-        const slamX = this.px;
-        const slamY = this.py;
-        const isHighSpeed = speed >= SLAM.HIGH_SPEED_THRESHOLD;
-        const canPayHealth = this.hp > SLAM.SELF_DAMAGE;
-        const applyKnockback = isHighSpeed && canPayHealth;
-        if (this.scene.enemyManager) this.scene.enemyManager.applySlamDamage(slamX, slamY, speed, applyKnockback);
-        if (isHighSpeed && canPayHealth) this.takeDamage(SLAM.SELF_DAMAGE);
-        if (this.scene.renderer) this.scene.renderer.addSlamEffect(slamX, slamY, isHighSpeed && canPayHealth);
-        this.vx = 0;
-        this.vy = 0;
-        this.jumping = false;
-        this.hasSlammedThisJump = true;
-        this.slamCooldown = SLAM.COOLDOWN;
+        // OPTIMIZACIÓN: Trail Reciclable (Evita la creación de objetos)
+        if (this.trail.length >= TRAIL_MAX) {
+            const t = this.trail.shift(); // Tomamos el objeto más viejo
+            t.x = this.px; t.y = this.py; t.lv = lv; t.dash = this.dashing; 
+            t.jump = this.jumping; t.wallStick = this.wallJump.wallStick; t.wallRun = this.wallRun.isWallRunning;
+            this.trail.push(t); // Lo reutilizamos
+        } else {
+            // Solo creamos objetos nuevos los primeros fotogramas del juego
+            this.trail.push({ x: this.px, y: this.py, lv, dash: this.dashing, jump: this.jumping, wallStick: this.wallJump.wallStick, wallRun: this.wallRun.isWallRunning });
+        }
     }
 }

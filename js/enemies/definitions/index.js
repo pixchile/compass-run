@@ -13,6 +13,8 @@
 // ============================================================
 
 import bot01 from './bot01.js';
+import devil from './devil.js';
+import angel from './angel.js';
 // import otroEnemigo from './otro_enemigo.js';
 // import enemigoEspecial from './enemigo_especial.js';
 // import jefeFinal from './jefe_final.js';
@@ -23,6 +25,8 @@ import bot01 from './bot01.js';
 
 export const customEnemies = [
     bot01,
+    devil,
+    angel,
     // otroEnemigo,
     // enemigoEspecial,
     // jefeFinal,

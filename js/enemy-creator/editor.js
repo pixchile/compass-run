@@ -43,7 +43,7 @@ class EnemyEditor {
         const inputs = ['enemyName', 'typeId', 'color', 'mobile', 'movementStyle', 
                         'orbitRadius', 'distanceMin', 'distanceMax', 'ignoreWalls',
                         'dashDamage', 'slamVulnerable', 'slamDamage', 'teleportOnHit',
-                        'deathEffect', 'wanderSpeed'];
+                        'deathEffect', 'wanderSpeed', 'pierceable'];
         inputs.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('input', () => this.generate());
@@ -240,6 +240,7 @@ class EnemyEditor {
             slamVulnerable: document.getElementById('slamVulnerable').value === 'true',
             slamDamage: document.getElementById('slamDamage').value ? parseInt(document.getElementById('slamDamage').value) : undefined,
             teleportOnHit: document.getElementById('teleportOnHit').value === 'true',
+pierceable: document.getElementById('pierceable').value === 'true',
             onDeath: onDeath
         };
     }
@@ -271,7 +272,8 @@ class EnemyEditor {
             wanderSpeed: config.wanderSpeed,
             dashDamage: config.dashDamage,
             slamVulnerable: config.slamVulnerable,
-            teleportOnHit: config.teleportOnHit
+            teleportOnHit: config.teleportOnHit,
+            pierceable: config.pierceable
         };
         
         if (config.orbitRadius) configObj.orbitRadius = config.orbitRadius;

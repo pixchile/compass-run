@@ -28,6 +28,7 @@ if (typeof finalConfig.color === 'string') {
         this.dashDamageFn = config.dashDamage;
         this.slamDamageFn = config.slamDamage;
         this.slamVulnerable = config.slamVulnerable !== false;
+        this.pierceable = config.pierceable === true;
         
         // Configuración de movimiento
         this.ignoreWalls = config.ignoreWalls === true;

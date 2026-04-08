@@ -20,7 +20,7 @@ export const DASH_SPD = 2.0;
 // Health
 export const HP_MAX             = 100;
 export const HP_DMG_DASH_WALL   = 0.02;
-export const HP_DMG_ENEMY_HIT   = 5;
+export const HP_DMG_ENEMY_HIT   = 0.5;
 export const HP_DMG_VOID        = 100;
 export const HP_LOW_SPD         = 29; // que es esto?
 export const HP_REGEN_DELAY     = 4000;

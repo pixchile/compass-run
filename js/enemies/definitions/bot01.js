@@ -1,15 +1,28 @@
+// Enemigo generado con Enemy Creator
+// Nombre: CustomEnemy
+// Fecha: 07-04-2026, 1:19:22 a. m.
+
 export default {
-    name: 'bot01',
+    name: 'custom_enemy',
     config: {
-        type: "bot01",
-        radius: 50,
-        maxHp: 105,
-        hp: 105,
-        color: 0xff00ea,
-        speed: 50,
-        movementStyle: "seek",
-        behaviors: { mobile: true },
-        dashDamage: 50,
-        slamVulnerable: true
-    }
+    type: "custom_enemy",
+    radius: 16,
+    maxHp: 100,
+    hp: 100,
+    color: "#fff700",
+    speed: 0,
+    movementStyle: "seek",
+    behaviors: {
+        mobile: false
+    },
+    distanceMin: 0,
+    distanceMax: 0,
+    ignoreWalls: false,
+    wanderSpeed: 0.5,
+    dashDamage: 10,
+    slamVulnerable: true,
+    teleportOnHit: false,
+    pierceable: true,
+    slamDamage: 1000
+}
 };

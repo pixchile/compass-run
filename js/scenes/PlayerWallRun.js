@@ -12,6 +12,7 @@ export class WallRunSystem {
         this.wallTangentY = 0;
         this.wallRunDirection = 1;
         this.currentWallLine = null;
+        this.wasNaturalExit = false;
     }
 
     reset() {
@@ -21,6 +22,7 @@ export class WallRunSystem {
         this.wallTangentY = 0;
         this.wallRunDirection = 1;
         this.currentWallLine = null;
+        this.wasNaturalExit = false;
     }
 
     tryStartWallRun(wallNormalAngle, momentumLevel, moveDirection, wallLine) {
@@ -80,7 +82,7 @@ export class WallRunSystem {
         if (!this.isWallRunning) return false;
         
         if (!this.isStillTouchingWall(playerRadius)) {
-            this.stopWallRun();
+            this.stopWallRun(true); // natural exit: reached wall end
             return false;
         }
         
@@ -91,7 +93,7 @@ export class WallRunSystem {
         
         const stickDuration = now - (this.wallJumpSystem.wallStickStartTime || 0);
         if (stickDuration >= WALL_RUN.MAX_DURATION) {
-            this.stopWallRun();
+            this.stopWallRun(true);
             return false;
         }
         
@@ -118,12 +120,22 @@ export class WallRunSystem {
         return true;
     }
     
-    stopWallRun() {
-        console.log("🛑 Wall run stopped");
+    stopWallRun(naturalExit = false) {
+        console.log("🛑 Wall run stopped", naturalExit ? "(natural exit)" : "");
         this.isWallRunning = false;
         this.currentWallLine = null;
-        this.player.vx = 0;
-        this.player.vy = 0;
+        this.wasNaturalExit = naturalExit;
+
+        if (naturalExit) {
+            // Preserve run momentum + small outward nudge so the player doesn't clip back into the wall
+            const nx = Math.cos(this.wallJumpSystem.wallNormalAngle);
+            const ny = Math.sin(this.wallJumpSystem.wallNormalAngle);
+            this.player.vx += nx * 55;
+            this.player.vy += ny * 55;
+        } else {
+            this.player.vx = 0;
+            this.player.vy = 0;
+        }
     }
 }
 
