@@ -6,7 +6,7 @@ import GameRenderer from './GameRenderer.js';
 import Camera from './Camera.js';
 import enemyRegistry from '../enemies/EnemyRegistry.js';
 import EnemyManager from './EnemyManager.js';
-import SVGMapLoader from '../systems/SVGMapLoader.js'; // <-- CORREGIDO: Importa el nuevo cargador
+import MapLoader from '../systems/MapLoader.js';
 import RewardSystem from './RewardSystem.js';
 import OrbManager   from './OrbManager.js';
 import { HP_DMG_DASH_WALL, DASH_WALL_STUN_DUR } from '../constants.js';
@@ -16,7 +16,7 @@ export default class Game extends Phaser.Scene {
   constructor() {
     super('Game');
     
-    // OPTIMIZACIÓN: Objetos pre-asignados para evitar Garbage Collection
+    // OPTIMIZACIÓN: Objetos pre-asignados para evitar Garbage Collection en el bucle de colisiones
     this._p1 = { x: 0, y: 0 };
     this._p2 = { x: 0, y: 0 };
     this._closest = { x: 0, y: 0 };
@@ -27,18 +27,10 @@ export default class Game extends Phaser.Scene {
     this.mapName = data?.mapName || 'default';
   }
 
-  async create() {
+  create() {
     registerAllCustomEnemies(enemyRegistry);
-    this.mapLoader = new SVGMapLoader();
-    
-    // CORREGIDO: Carga el mapa asincrónicamente y elimina la línea redundante
-    this.currentMap = await this.mapLoader.loadMapFromURL(`assets/maps/${this.mapName}.svg`);
-
-    // Si falló la carga (ej. no existe el archivo), crea un mapa de seguridad vacío
-    if (!this.currentMap) {
-      console.warn("No se pudo cargar el SVG. Usando mapa vacío.");
-      this.currentMap = { arena: {x:50, y:50, w:2000, h:2000}, lines: [], zones: [] };
-    }
+    this.mapLoader = new MapLoader();
+    this.currentMap = this.mapLoader.loadMap(this.mapName);
 
     this.gameOver = false;
     this.gameOverAlpha = 0;
@@ -63,7 +55,6 @@ export default class Game extends Phaser.Scene {
     this.renderer = new GameRenderer(this, this.camera, this);
     this.renderer.setCustomLines(this.currentMap.lines || []);
 
-    // CORREGIDO: Se quitó la llave '}' que cortaba la función por la mitad
     this.restartKey = this.input.keyboard.addKey('SPACE');
     this.menuKey = this.input.keyboard.addKey('M');
 
@@ -76,8 +67,6 @@ export default class Game extends Phaser.Scene {
   }
 
   update(t, delta) {
-    if (!this.currentMap) return; 
-    
     if (!this.gameOver && !this.player.isDead) {
       const now = this.time.now;
       if (now - this.lastTimeUpdate >= 1000) {
@@ -123,9 +112,6 @@ export default class Game extends Phaser.Scene {
     }
 
     this.checkLineCollisions();
-    
-    // CORREGIDO: Se movió checkZones al ciclo principal (aquí)
-    this.checkZones();
 
     if (this.player.activeSlam) {
       this.enemyManager.processSlam(this.player.activeSlam, this.time.now);
@@ -137,27 +123,6 @@ export default class Game extends Phaser.Scene {
     this.renderer.render(this.player, this.momentum, false, 0, this.gameOverReason, this.timeRemaining, delta);
   }
 
-  checkZones() {
-    const zones = this.currentMap.zones || [];
-    for (const zone of zones) {
-      const g = zone.geometry;
-      // Chequeo simple si el jugador está dentro del rectángulo de la zona
-      if (
-        this.player.px >= g.x && this.player.px <= g.x + g.w &&
-        this.player.py >= g.y && this.player.py <= g.y + g.h
-      ) {
-        if (zone.type === 'void') {
-           this.player.takeDamage(9999); // Muerte instantánea
-        }
-        else if (zone.type === 'damage_zone') {
-           if (!this.player.dashing && !this.player.jumping) {
-               this.player.takeDamage(1); // Daño
-           }
-        }
-      }
-    }
-  }
-
   checkLineCollisions() {
     const lines = this.currentMap.lines || [];
     if (lines.length === 0) return;
@@ -165,6 +130,7 @@ export default class Game extends Phaser.Scene {
     const playerRadius = 12;
     const isWallRunning = this.player.wallRun?.isWallRunning;
 
+    // Evaluado 1 vez en lugar de hacerlo en cada iteración
     const canStick = this.player.wallJump && 
                      !this.player.wallJump.wallStick && 
                      !this.player.isStunned && 
@@ -172,18 +138,21 @@ export default class Game extends Phaser.Scene {
                      this.player.wallJump.wallStickCooldown <= 0 && 
                      (this.player.jumping || !this.player.wallJump.wallStick);
 
+    // Evitamos instanciar variables dentro del loop
     this._p1.x = this.player.prevX; this._p1.y = this.player.prevY;
     this._p2.x = this.player.px; this._p2.y = this.player.py;
 
+    // OPTIMIZACIÓN: 1 solo bucle en lugar de 2. Resolvemos choque y decidimos si nos pegamos o rebotamos.
     for (const line of lines) {
       this.lineCollisionBetween(this._p1, this._p2, line, playerRadius + (line.thickness / 2));
       
       if (this._colResult.collided) {
-        if (!canStick && isWallRunning) continue; 
+        if (!canStick && isWallRunning) continue; // Si está corriendo por la pared y no se puede pegar, ignorar rebote
 
         this.player.px = this._colResult.hitX;
         this.player.py = this._colResult.hitY;
 
+        // Matemáticas de la línea (calculadas solo si hay colisión comprobada)
         const dx = line.end.x - line.start.x;
         const dy = line.end.y - line.start.y;
         const len = Math.hypot(dx, dy);
@@ -199,6 +168,7 @@ export default class Game extends Phaser.Scene {
         const finalNy = lado > 0 ? ny : -ny;
         const overlap = (playerRadius + line.thickness / 2) - this._colResult.distance;
 
+        // Separar de la pared
         if (overlap > 0) {
           this.player.px += finalNx * overlap;
           this.player.py += finalNy * overlap;
@@ -207,12 +177,14 @@ export default class Game extends Phaser.Scene {
         const currentSpeed = Math.hypot(this.player.vx, this.player.vy);
 
         if (canStick) {
+          // Lógica 1: Pegarse a la pared
           this.player.vx = 0;
           this.player.vy = 0;
           const normalAngle = Math.atan2(finalNy, finalNx);
           this.player.stickToWall(normalAngle, currentSpeed, line);
-          return; 
+          return; // Salimos de la función al pegarnos
         } else {
+          // Lógica 2: Rebote y Daño por Dash
           const dotV = this.player.vx * finalNx + this.player.vy * finalNy;
           let impactSpeed = 0;
           if (dotV < 0) {
@@ -228,12 +200,13 @@ export default class Game extends Phaser.Scene {
             this.player.vx = 0;
             this.player.vy = 0;
           }
-          break; 
+          break; // Detenemos la evaluación de colisiones este frame
         }
       }
     }
   }
 
+  // OPTIMIZACIÓN: Zero Allocation (muta `this._colResult` en vez de crear nuevos objetos `{}`)
   lineCollisionBetween(p1, p2, line, radius) {
     this._colResult.collided = false;
 
@@ -280,6 +253,7 @@ export default class Game extends Phaser.Scene {
     this._colResult.distance = radius;
   }
 
+  // OPTIMIZACIÓN: Muta `this._closest` en vez de devolver nuevos objetos
   closestPointOnLine(p, a, b) {
     const abx = b.x - a.x;
     const aby = b.y - a.y;
