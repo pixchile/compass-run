@@ -2,7 +2,7 @@
 import { W, H, TRAIL_MAX, MAX_SPD, TURN_K, STOP_K, JUMP_DUR, JUMP_HMAX, JUMP_DIST_K,
          DASH_DUR, DASH_CD, DASH_SPD,
          HP_MAX, HP_DMG_ENEMY_HIT, HP_DMG_VOID, HP_LOW_SPD,
-         HP_REGEN_DELAY, HP_REGEN_RATE, DIRS, SLAM } from '../constants.js';
+         HP_REGEN_DELAY, HP_REGEN_RATE, DIRS, SLAM, REWARDS } from '../constants.js';
 import { WallJumpSystem } from './PlayerWallJump.js';
 import { WallRunSystem } from './PlayerWallRun.js';
 
@@ -140,30 +140,26 @@ export default class Player {
         this.slamCooldown = SLAM.COOLDOWN;
     }
 
-    // --- NUEVO: Construye el Payload de Ataque (Game-feel exacto) ---
     getCurrentAttackPayload(momentumLevel) {
         const currentSpeed = Math.hypot(this.vx, this.vy);
         const now = Date.now();
 
-        // 1. Slam: Tiene máxima prioridad si está activo
         if (this.activeSlam) {
             return {
                 type: this.activeSlam.isHighSpeed ? 'slam3' : 'slam',
-                baseDamage: this.activeSlam.speed * 0.1, // Puedes balancear este multplicador base
+                baseDamage: this.activeSlam.speed * 0.1, 
                 now: now
             };
         }
 
-        // 2. Momentum 3: Si tiene nivel máximo, hace el daño % que pediste
         if (momentumLevel === 3) {
             return {
                 type: 'momentum3',
-                baseDamage: currentSpeed * 0.025, // Regla exacta: 2.5% de la velocidad al impacto
+                baseDamage: currentSpeed * 0.025, 
                 now: now
             };
         }
 
-        // 3. Dash: Si está haciendo dash normal o aéreo
         if (this.dashing) {
             return {
                 type: this.wasJumpingWhenDashed ? 'aerialDash' : 'dash',
@@ -172,15 +168,18 @@ export default class Player {
             };
         }
 
-        // Si no está haciendo nada de lo anterior, el jugador NO ESTÁ ATACANDO
         return null;
     }
-    // -------------------------------------------------------------
 
     update(delta, momentum) {
         const dt = delta / 1000;
         const lv = momentum.level;
         const now = this.scene.time.now;
+
+        // --- SISTEMA DINÁMICO DE VELOCIDAD SEGÚN KILLS ---
+        const kills = momentum?.rewardSystem?.killCount || 0;
+        const getMaxSpd = (l) => MAX_SPD[l] + kills * (REWARDS.SPEED_MAX_BONUS_PER_KILL[l] || 0);
+        const minSpd = kills * (REWARDS.SPEED_MIN_BONUS_PER_KILL || 0);
 
         const currentSpeed = Math.hypot(this.vx, this.vy);
         const md = this.updateMoveDirection();
@@ -193,8 +192,6 @@ export default class Player {
 
         this.slamCooldown = Math.max(0, this.slamCooldown - delta);
         this.stunT = Math.max(0, this.stunT - delta);
-        this.slowTimer  = Math.max(0, (this.slowTimer  || 0) - delta);
-        this.noJumpTimer = Math.max(0, (this.noJumpTimer || 0) - delta);
         this.dashCD = Math.max(0, this.dashCD - delta);
         this.landFx = Math.max(0, this.landFx - delta);
         this.hpHitFlash = Math.max(0, this.hpHitFlash - delta);
@@ -247,7 +244,7 @@ export default class Player {
             }
         }
 
-        if (spaceJust && !this.isStunned && this.noJumpTimer <= 0) {
+        if (spaceJust && !this.isStunned) {
             if (this.wallJump.wallStick) {
                 const jumpResult = this.wallJump.tryJump(
                     md, momentum,
@@ -280,8 +277,8 @@ export default class Player {
                     this.jumpVx = this.vx * JUMP_DIST_K[lv];
                     this.jumpVy = this.vy * JUMP_DIST_K[lv];
                 } else {
-                    this.jumpVx = Math.cos(this.facing) * MAX_SPD[1] * 0.45;
-                    this.jumpVy = Math.sin(this.facing) * MAX_SPD[1] * 0.45;
+                    this.jumpVx = Math.cos(this.facing) * getMaxSpd(1) * 0.45;
+                    this.jumpVy = Math.sin(this.facing) * getMaxSpd(1) * 0.45;
                 }
                 this.hasSlammedThisJump = false;
             }
@@ -305,8 +302,8 @@ export default class Player {
         if (!this.isStunned && !this.wallJump.wallStick && !this.wallRun.isWallRunning) {
             if (this.jumping) {
                 const steer = moving ? 0.04 : 0;
-                this.vx = this.jumpVx + (moving ? md.x * MAX_SPD[this.jumpLv] * steer : 0);
-                this.vy = this.jumpVy + (moving ? md.y * MAX_SPD[this.jumpLv] * steer : 0);
+                this.vx = this.jumpVx + (moving ? md.x * getMaxSpd(this.jumpLv) * steer : 0);
+                this.vy = this.jumpVy + (moving ? md.y * getMaxSpd(this.jumpLv) * steer : 0);
                 if (moving) this.facing = Math.atan2(md.y, md.x);
             } else if (this.dashing) {
                 const ease = 1 - Math.pow(this.dashT / DASH_DUR, 2);
@@ -320,11 +317,23 @@ export default class Player {
                 }
                 const tk = this.lerpK(TURN_K[lv] * af, dt);
                 const sk = this.lerpK(STOP_K[lv], dt);
-                const slowMult = this.slowTimer > 0 ? 0.4 : 1.0;
+                
                 if (moving) {
-                    this.vx += (md.x * MAX_SPD[lv] * slowMult - this.vx) * tk;
-                    this.vy += (md.y * MAX_SPD[lv] * slowMult - this.vy) * tk;
+                    const currentMaxSpd = getMaxSpd(lv);
+                    this.vx += (md.x * currentMaxSpd - this.vx) * tk;
+                    this.vy += (md.y * currentMaxSpd - this.vy) * tk;
                     this.facing = Math.atan2(md.y, md.x);
+                    
+                    const spd = Math.hypot(this.vx, this.vy);
+                    if (spd < minSpd) {
+                        if (spd > 0.001) {
+                            this.vx = (this.vx / spd) * minSpd;
+                            this.vy = (this.vy / spd) * minSpd;
+                        } else {
+                            this.vx = md.x * minSpd;
+                            this.vy = md.y * minSpd;
+                        }
+                    }
                 } else {
                     this.vx -= this.vx * sk;
                     this.vy -= this.vy * sk;

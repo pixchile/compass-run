@@ -5,14 +5,16 @@ import DynamicEnemy from '../core/DynamicEnemy.js';
 
 // 2. Importa aquí todos tus archivos generados por el editor
 import angel from './angel.js';
-import bot01 from './bot01.js';
 import devil from './devil.js';
+import bee from './bee.js';
+import mibombo from './mibombo.js'
 
 // 3. Añádelos al array
 const customEnemies = [
     angel,
-    bot01,
-    devil
+    devil,
+    bee,
+    mibombo
 ];
 
 export function registerAllCustomEnemies(registry) {

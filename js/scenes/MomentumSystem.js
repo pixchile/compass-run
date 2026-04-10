@@ -29,10 +29,6 @@ export default class MomentumSystem {
     this.rewardSystem = rewardSystem;
   }
 
-  get _killFloor() { return this.rewardSystem?.killFloor ?? 0; }
-
-  _floorStacks(n) { return Math.max(this._killFloor, n); }
-
   _getRandomDifferentIndex(avoidIdx) {
     let ni;
     do { ni = Math.floor(Math.random() * DIRS.length); } while (ni === avoidIdx);
@@ -44,14 +40,13 @@ export default class MomentumSystem {
   get lHex()   { return ['','#4488ff','#ffaa22','#ff3322'][this.level]; }
 
   halveStacks() {
-    this.stacks = this._floorStacks(Math.floor(this.stacks / 2));
+    this.stacks = Math.max(0, Math.floor(this.stacks / 2));
   }
 
   addStacks(amount) {
     this.stacks = Math.min(SMAX, this.stacks + amount);
   }
 
-  // OPTIMIZACIÓN: Eliminada la función duplicada y reemplazada trigonometría por Producto Punto
   calculateStackMode(player) {
     if (player.dashing) return 'neutral';
     
@@ -78,7 +73,6 @@ export default class MomentumSystem {
     return 'drain';
   }
   
-  // OPTIMIZACIÓN: Producto Punto en lugar de Atan2
   hasEffectiveMovementInCompassDirection(player, delta) {
     const dx = player.px - this.lastEffectivePosX;
     const dy = player.py - this.lastEffectivePosY;
@@ -165,7 +159,7 @@ export default class MomentumSystem {
           this.levelProtect -= delta;
           if (this.levelProtect <= 0) {
             if (this.drainT >= drainRate) {
-              this.stacks = this._floorStacks(this.stacks - 1);
+              this.stacks = Math.max(0, this.stacks - 1);
               this.drainT -= drainRate;
             }
           } else {
@@ -173,7 +167,7 @@ export default class MomentumSystem {
           }
         } else {
           if (this.drainT >= drainRate) {
-            this.stacks = this._floorStacks(this.stacks - 1);
+            this.stacks = Math.max(0, this.stacks - 1);
             this.drainT -= drainRate;
           }
         }

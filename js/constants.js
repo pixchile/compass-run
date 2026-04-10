@@ -98,13 +98,15 @@ export const REWARDS = {
   ORB_RADIUS:             20,   // mismo que enemigo big
   ORB_HEAL_MIN:            1,
   ORB_HEAL_MAX:           25,
-  ORB_HEAL_SPEED_CAP:   999,   // px/s para curación máxima
-
-  KILL_FLOOR_CAP:         15,   // máximo floor para no romper el balance
+  ORB_HEAL_SPEED_CAP:   1200,   // px/s para curación máxima
 
   CREDIT_BASE_PER_SEC:     1,
   CREDIT_TICK_RATE:      100,   // ms entre ticks de velocidad
   CREDIT_SPEED_FACTOR: 0.0002,
+
+  // NUEVO: Factores dinámicos de velocidad según cantidad de kills
+  SPEED_MIN_BONUS_PER_KILL: 0.03,                 // 100 kills = +10 vel mínima
+  SPEED_MAX_BONUS_PER_KILL: [0, 0.04, 0.05, 0.06],  // 100 kills = +40 L1, +50 L2, +60 L3
 };
 
 // Wall Run Configuration

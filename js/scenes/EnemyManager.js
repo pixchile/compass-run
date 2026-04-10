@@ -8,8 +8,7 @@ export default class EnemyManager {
     this.scene = scene;
     this.arenaBounds = arenaBounds;
     this.enemies = [];
-    
-    this.spawnList = [];
+    this.totalKills = 0;
     this.nextSpawnIndex = 0;
     this.gameStartTime = 0;
     
@@ -41,6 +40,7 @@ export default class EnemyManager {
   }
 
   _onEnemyDied(enemy) {
+    this.totalKills++;
     if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
     if (this.orbManager && enemy.type === 'big') this.orbManager.scheduleOrb(enemy.x, enemy.y);
     if (this.momentum && KILL_STACKS[enemy.type] !== undefined) {
@@ -51,22 +51,26 @@ export default class EnemyManager {
   setSpawnList(enemies) {
     this.spawnList = enemies.map(e => {
         const enemyType = e.type || e.enemyRef;
-        let finalSpawnTime = e.spawnTime || 0;
+        let finalSpawnTime = e.spawnTime;
 
-        // Leer la configuración del enemigo V2.0 si la guardamos en configs
-        if (enemyRegistry.configs && enemyRegistry.configs[enemyType]) {
-            const config = enemyRegistry.configs[enemyType];
-            const basic = config.basic || {};
+        // Leer la configuración del enemigo V2.0
+        const typeConfig = enemyRegistry.configs?.get?.(enemyType) || enemyRegistry.configs?.[enemyType];
+        if (typeConfig) {
+            const basic = typeConfig.basic || {};
             const trigger = basic.spawnTrigger || {};
             
-            // Si el mapa dice 0, pero el enemigo tiene un trigger de tiempo, usamos el del enemigo
-            if (finalSpawnTime === 0 && trigger.type === 'time') {
+            // El mapa tiene prioridad. El archivo del enemigo solo aplica si el mapa no define spawnTime
+            if (e.spawnTime === undefined && trigger.type === 'time') {
                 finalSpawnTime = parseFloat(trigger.value) || 0;
+            }
+            // Guardar el trigger especial para evaluarlo en update()
+            if (trigger.type === 'kills' || trigger.type === 'coords') {
+                return { ...e, spawnTime: undefined, spawnTrigger: trigger, active: false };
             }
         }
 
-        return { ...e, spawnTime: finalSpawnTime, active: false };
-    }).sort((a, b) => a.spawnTime - b.spawnTime);
+        return { ...e, spawnTime: finalSpawnTime ?? 0, active: false };
+    }).sort((a, b) => (a.spawnTime ?? Infinity) - (b.spawnTime ?? Infinity));
     
     this.nextSpawnIndex = 0;
     this.gameStartTime = 0;
@@ -83,10 +87,7 @@ export default class EnemyManager {
       if (enemyData.spawnTime <= elapsedSeconds) {
         if (!enemyData.active) {
           enemyData.active = true;
-          const enemyType = enemyData.type || enemyData.enemyRef;
-          const newEnemy = enemyRegistry.create(enemyType, enemyData.x, enemyData.y, this.scene);
-
-          if (newEnemy) this.enemies.push(newEnemy);
+          this._spawnOne(enemyData, player);
         }
         this.nextSpawnIndex++;
       } else {
@@ -94,10 +95,58 @@ export default class EnemyManager {
       }
     }
 
-    for (const enemy of this.enemies) {
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const enemy = this.enemies[i];
         if (typeof enemy.update === 'function') {
             enemy.update(delta, player, lines);
         }
+        // Detectar muertes por selfDestruct (timer o proximity)
+        if (enemy.hp <= 0) {
+            this._onEnemyDied(enemy);
+            this.enemies.splice(i, 1);
+        }
+    }
+
+    // --- TRIGGERS ESPECIALES (kills, coords) ---
+    for (const enemyData of this.spawnList) {
+        if (enemyData.active || !enemyData.spawnTrigger) continue;
+        const trigger = enemyData.spawnTrigger;
+        let shouldSpawn = false;
+
+        if (trigger.type === 'kills') {
+            shouldSpawn = this.totalKills >= parseInt(trigger.value);
+        } else if (trigger.type === 'coords' && player) {
+            const [tx, ty, tr] = (trigger.value + '').split(',').map(Number);
+            shouldSpawn = Math.hypot(player.px - tx, player.py - ty) <= (tr || 80);
+        }
+
+        if (shouldSpawn) {
+            enemyData.active = true;
+            this._spawnOne(enemyData, player);
+        }
+    }
+  }
+
+  _spawnOne(enemyData, player) {
+    const enemyType = enemyData.type || enemyData.enemyRef;
+    const typeConfig = enemyRegistry.configs?.get?.(enemyType) || enemyRegistry.configs?.[enemyType];
+    const spawnConfig = typeConfig?.ambitious?.spawn;
+    const pattern = spawnConfig?.pattern || 'normal';
+    const count = parseInt(spawnConfig?.count) || 1;
+
+    if ((pattern === 'radial' || pattern === 'radial_player' || pattern === 'horde') && count > 1) {
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 / count) * i;
+        const spread = (pattern === 'radial' || pattern === 'radial_player')
+          ? (spawnConfig?.orbitRange || 80) : (50 + Math.random() * 60);
+        const cx = pattern === 'radial_player' ? (player?.px ?? enemyData.x) : enemyData.x;
+        const cy = pattern === 'radial_player' ? (player?.py ?? enemyData.y) : enemyData.y;
+        const newEnemy = enemyRegistry.create(enemyType, cx + Math.cos(angle) * spread, cy + Math.sin(angle) * spread, this.scene);
+        if (newEnemy) this.enemies.push(newEnemy);
+      }
+    } else {
+      const newEnemy = enemyRegistry.create(enemyType, enemyData.x, enemyData.y, this.scene);
+      if (newEnemy) this.enemies.push(newEnemy);
     }
   }
 
@@ -128,6 +177,21 @@ export default class EnemyManager {
       if (isColliding) {
         let enemyDied = false;
         let fatalSource = 'any';
+
+        // Aura: si hay algún enemigo vivo con aura cerca, este enemigo es invulnerable
+        const isProtectedByAura = this.enemies.some(e =>
+            e !== enemy && e.invulnerableAura && e.hp > 0 &&
+            Math.hypot(e.x - enemy.x, e.y - enemy.y) < 200
+        );
+        if (isProtectedByAura) continue;
+
+        // Evade: si el jugador viene en dash, el enemigo teleporta lejos
+        if (enemy.evade && player.dashing) {
+            const angle = Math.random() * Math.PI * 2;
+            enemy.x += Math.cos(angle) * 150;
+            enemy.y += Math.sin(angle) * 150;
+            continue;
+        }
 
         if (player.dashing) {
           if (!this.damagedThisDash.has(enemy)) {
@@ -164,6 +228,18 @@ export default class EnemyManager {
           if (now - (enemy.state.lastAttackTime || 0) >= 250) {
             enemy.state.lastAttackTime = now;
             player.takeEnemyDamage();
+
+            // Efectos de ataque del enemigo
+            const effect = enemy.customConfig?.ambitious?.attack?.effect;
+            if (effect === 'slow') {
+                player.slowTimer = (player.slowTimer || 0) + 1500;
+            } else if (effect === 'push') {
+                const angle = Math.atan2(player.py - enemy.y, player.px - enemy.x);
+                player.vx += Math.cos(angle) * 300;
+                player.vy += Math.sin(angle) * 300;
+            } else if (effect === 'noJump') {
+                player.noJumpTimer = (player.noJumpTimer || 0) + 2000;
+            }
           }
         }
 
@@ -176,9 +252,21 @@ export default class EnemyManager {
     }
   }
 
+  // Limpia enemigos con hp <= 0 que hayan muerto por efectos secundarios
+  // (explosión en cadena, etc.) sin pasar por los paths normales de muerte
+  cleanupDead() {
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      if (this.enemies[i].hp <= 0) {
+        this._onEnemyDied(this.enemies[i]);
+        this.enemies.splice(i, 1);
+      }
+    }
+  }
+
   checkSolidCollision(player, playerRadius = 12) {
     let collided = false;
     for (const enemy of this.enemies) {
+      if (enemy.isPhantom) continue; // phantoms no empujan al jugador
       const eRadius = enemy.radius || 12;
       const dx = player.px - enemy.x;
       const dy = player.py - enemy.y;

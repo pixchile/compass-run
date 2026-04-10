@@ -3,10 +3,10 @@
 // Fecha: 08-04-2026, 11:36:03 a. m.
 
 export default {
-    id: 'bot01',
+    id: 'angel',
     config: {
-    id: "bot01",
-    name: "bot01",
+    id: "angel",
+    name: "angel",
     basic: {
         hp: 300,
         hpRegen: 30,

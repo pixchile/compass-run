@@ -105,6 +105,7 @@ export default class Game extends Phaser.Scene {
     this.orbManager.update(delta, this.player);
 
     this.enemyManager.processPlayerInteractions(this.player, delta, this.time.now, this.momentum.level);
+    this.enemyManager.cleanupDead();
 
     if (!this.player.dashing && !this.player.jumping) {
       this.enemyManager.checkSolidCollision(this.player, 12);

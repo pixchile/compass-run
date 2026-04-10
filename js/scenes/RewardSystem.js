@@ -2,7 +2,7 @@ import { REWARDS } from '../constants.js';
 
 export default class RewardSystem {
   constructor() {
-    this.killFloor   = 0;      // Mínimo de stacks que el jugador puede tener
+    this.killCount   = 0;      // NÚMERO DE ENEMIGOS ELIMINADOS (Para aumentar cap de velocidad)
     this.credits     = 0;      // Créditos acumulados (float interno, mostrar Math.floor)
     this._tickTimer  = 0;      // Acumulador para ticks de crédito
     this._creditAccum = 0;     // Créditos acumulados en el segundo actual
@@ -11,10 +11,7 @@ export default class RewardSystem {
 
   // Llamar cuando un enemigo muere (cualquier tipo)
   onEnemyKilled(enemyType) {
-    this.killFloor = Math.min(
-      REWARDS.KILL_FLOOR_CAP,
-      this.killFloor + 1
-    );
+    this.killCount += 1;
   }
 
   // Llamar cada frame desde Game.js
@@ -39,7 +36,7 @@ export default class RewardSystem {
 
   // Resetear al terminar una etapa
   reset() {
-    this.killFloor    = 0;
+    this.killCount    = 0;
     this.credits      = 0;
     this._tickTimer   = 0;
     this._creditAccum = 0;

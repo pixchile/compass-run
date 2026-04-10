@@ -74,7 +74,7 @@ class EnemyEditor {
         const spawnPattern = document.getElementById('spawnPattern');
         if (spawnPattern) {
             spawnPattern.addEventListener('change', () => {
-                const showCount = ['horde', 'radial'].includes(spawnPattern.value);
+                const showCount = ['horde', 'radial', 'radial_player'].includes(spawnPattern.value);
                 document.getElementById('spawnCountField').style.display = showCount ? 'block' : 'none';
                 this.generate();
             });

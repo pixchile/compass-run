@@ -38,6 +38,13 @@ export default class DynamicEnemy extends Enemy {
             orbitAngle: Math.random() * Math.PI * 2
         };
 
+        // 3. SELF DESTRUCT
+        const basic = config.basic || {};
+        const sd = basic.selfDestruct || config.selfDestruct || {};
+        this.selfDestructType  = sd.type  || 'none';
+        this.selfDestructValue = parseFloat(sd.value) || 0;
+        this.selfDestructTimer = 0;
+
         this.customConfig = config;
     }
 
@@ -45,6 +52,22 @@ export default class DynamicEnemy extends Enemy {
         super.update(delta, player, lines); 
 
         if (!player || player.isDead) return;
+
+        // --- SELF DESTRUCT ---
+        if (this.selfDestructType === 'time') {
+            this.selfDestructTimer += delta;
+            if (this.selfDestructTimer >= this.selfDestructValue * 1000) {
+                this.kill('timer');
+                return;
+            }
+        } else if (this.selfDestructType === 'proximity') {
+            const dist = Math.hypot(player.px - this.x, player.py - this.y);
+            if (dist <= this.selfDestructValue) {
+                this.kill('proximity');
+                return;
+            }
+        }
+
         if (!this.isMobile) return;
 
         // --- SISTEMA DE ESCALADO DINÁMICO DE VELOCIDAD ---
