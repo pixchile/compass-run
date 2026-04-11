@@ -6,7 +6,7 @@ import GameRenderer from './GameRenderer.js';
 import Camera from './Camera.js';
 import enemyRegistry from '../enemies/EnemyRegistry.js';
 import EnemyManager from './EnemyManager.js';
-import SVGMapLoader from '../systems/SVGMapLoader.js'; // <-- CORREGIDO: Importa el nuevo cargador
+import SVGMapLoader from '../systems/SVGMapLoader.js'; 
 import RewardSystem from './RewardSystem.js';
 import OrbManager   from './OrbManager.js';
 import { HP_DMG_DASH_WALL, DASH_WALL_STUN_DUR } from '../constants.js';
@@ -15,8 +15,6 @@ import { registerAllCustomEnemies } from '../enemies/definitions/index.js';
 export default class Game extends Phaser.Scene {
   constructor() {
     super('Game');
-    
-    // OPTIMIZACIÓN: Objetos pre-asignados para evitar Garbage Collection
     this._p1 = { x: 0, y: 0 };
     this._p2 = { x: 0, y: 0 };
     this._closest = { x: 0, y: 0 };
@@ -30,11 +28,8 @@ export default class Game extends Phaser.Scene {
   async create() {
     registerAllCustomEnemies(enemyRegistry);
     this.mapLoader = new SVGMapLoader();
-    
-    // CORREGIDO: Carga el mapa asincrónicamente y elimina la línea redundante
     this.currentMap = await this.mapLoader.loadMapFromURL(`assets/maps/${this.mapName}.svg`);
 
-    // Si falló la carga (ej. no existe el archivo), crea un mapa de seguridad vacío
     if (!this.currentMap) {
       console.warn("No se pudo cargar el SVG. Usando mapa vacío.");
       this.currentMap = { arena: {x:50, y:50, w:2000, h:2000}, lines: [], zones: [] };
@@ -62,8 +57,8 @@ export default class Game extends Phaser.Scene {
 
     this.renderer = new GameRenderer(this, this.camera, this);
     this.renderer.setCustomLines(this.currentMap.lines || []);
+    this.renderer.setCustomZones(this.currentMap.zones || []);
 
-    // CORREGIDO: Se quitó la llave '}' que cortaba la función por la mitad
     this.restartKey = this.input.keyboard.addKey('SPACE');
     this.menuKey = this.input.keyboard.addKey('M');
 
@@ -71,12 +66,12 @@ export default class Game extends Phaser.Scene {
     this.orbManager   = new OrbManager();
     this.enemyManager.setRewardHandlers(this.rewardSystem, this.orbManager);
     this.momentum.setRewardSystem(this.rewardSystem);
-
     this.enemyManager.setMomentumSystem(this.momentum);
   }
 
   update(t, delta) {
-    if (!this.currentMap) return; 
+    if (!this.currentMap) return;
+    this.lastDelta = delta;
     
     if (!this.gameOver && !this.player.isDead) {
       const now = this.time.now;
@@ -105,7 +100,6 @@ export default class Game extends Phaser.Scene {
       return;
     }
 
-    // --- CICLO PRINCIPAL DE JUEGO ---
     this.player.prevX = this.player.px;
     this.player.prevY = this.player.py;
 
@@ -118,14 +112,23 @@ export default class Game extends Phaser.Scene {
     this.enemyManager.processPlayerInteractions(this.player, delta, this.time.now, this.momentum.level);
     this.enemyManager.cleanupDead();
 
+    // 1. ZONAS (Incluyendo el Viento)
+    this.checkZones();
+
     if (!this.player.dashing && !this.player.jumping) {
       this.enemyManager.checkSolidCollision(this.player, 12);
     }
 
+    // 2. COLISIONES SÓLIDAS
     this.checkLineCollisions();
-    
-    // CORREGIDO: Se movió checkZones al ciclo principal (aquí)
-    this.checkZones();
+
+    this._wallEnemyLines = this.enemyManager.getWallEnemyLines();
+    if (this._wallEnemyLines.length > 0) {
+      const savedLines = this.currentMap.lines;
+      this.currentMap.lines = savedLines.concat(this._wallEnemyLines);
+      this.checkLineCollisions();
+      this.currentMap.lines = savedLines;
+    }
 
     if (this.player.activeSlam) {
       this.enemyManager.processSlam(this.player.activeSlam, this.time.now);
@@ -134,34 +137,76 @@ export default class Game extends Phaser.Scene {
 
     const playerSpeed = Math.hypot(this.player.vx, this.player.vy);
     this.camera.update(this.player.px, this.player.py, playerSpeed);
+    const visibleLines = (this.currentMap.lines || []).filter(line => !line._broken);
+    this.renderer.setCustomLines(visibleLines);
+
     this.renderer.render(this.player, this.momentum, false, 0, this.gameOverReason, this.timeRemaining, delta);
   }
 
   checkZones() {
     const zones = this.currentMap.zones || [];
+    const now = this.time.now;
+
     for (const zone of zones) {
       const g = zone.geometry;
-      // Chequeo simple si el jugador está dentro del rectángulo de la zona
-      if (
-        this.player.px >= g.x && this.player.px <= g.x + g.w &&
-        this.player.py >= g.y && this.player.py <= g.y + g.h
-      ) {
-        if (zone.type === 'void') {
-           this.player.takeDamage(9999); // Muerte instantánea
+      let inside = false;
+
+      if (g.bbox) {
+        inside = this.player.px >= g.bbox.x && this.player.px <= g.bbox.x + g.bbox.w &&
+                 this.player.py >= g.bbox.y && this.player.py <= g.bbox.y + g.bbox.h;
+      } else if (g.shapeType === 'rect') {
+        inside = this.player.px >= g.x && this.player.px <= g.x + g.w &&
+                 this.player.py >= g.y && this.player.py <= g.y + g.h;
+      }
+
+      if (!inside) continue;
+
+      if (zone.type === 'void') {
+        if (!this.player.jumping && !this.player.wallJump?.wallStick) {
+          this.player.fallIntoVoid();
         }
-        else if (zone.type === 'damage_zone') {
-           if (!this.player.dashing && !this.player.jumping) {
-               this.player.takeDamage(1); // Daño
-           }
+      } else if (zone.type === 'damage_zone') {
+        if (!zone._lastDmg || now - zone._lastDmg > 500) {
+          zone._lastDmg = now;
+          this.player.takeDamage(zone.damage || 5);
         }
+      } else if (zone.type === 'trap') {
+        this.player.slowTimer   = Math.max(this.player.slowTimer   || 0, 300);
+        this.player.noJumpTimer = Math.max(this.player.noJumpTimer || 0, 300);
+      } else if (zone.type === 'wind_zone') {
+        const tags = zone.tags || [];
+        const dir = tags.indexOf('right') !== -1 ? 'right'
+                  : tags.indexOf('left')  !== -1 ? 'left'
+                  : tags.indexOf('up')    !== -1 ? 'up'
+                  : tags.indexOf('down')  !== -1 ? 'down' : null;
+        
+        // FIX BUG: El viento ahora inyecta aceleración directamente a la velocidad (vx/vy).
+        // Si chocas contra él te frena, si vas a favor, tu inercia y velocidad máxima aumentan.
+        let windAccel = 3000; // Valor por defecto si no le pones número
+        const numTag = tags.find(t => !isNaN(t) && t.trim() !== '');
+        if (numTag) windAccel = parseFloat(numTag);
+
+        const deltaSec = (this.lastDelta || 16) / 1000;
+        const force = windAccel * deltaSec;
+
+        if (dir === 'right') this.player.vx += force;
+        else if (dir === 'left')  this.player.vx -= force;
+        else if (dir === 'up')    this.player.vy -= force;
+        else if (dir === 'down')  this.player.vy += force;
       }
     }
   }
 
   checkLineCollisions() {
-    const lines = this.currentMap.lines || [];
+    const allLines = this.currentMap.lines || [];
+    if (allLines.length === 0) return;
+
+    const playerSpeed = Math.hypot(this.player.vx, this.player.vy);
+    const playerMomentum = this.momentum.level;
+
+    const lines = allLines.filter(line => !line._broken);
     if (lines.length === 0) return;
-    
+
     const playerRadius = 12;
     const isWallRunning = this.player.wallRun?.isWallRunning;
 
@@ -179,6 +224,16 @@ export default class Game extends Phaser.Scene {
       this.lineCollisionBetween(this._p1, this._p2, line, playerRadius + (line.thickness / 2));
       
       if (this._colResult.collided) {
+        
+        // FIX BUG: Muros verdes estrictos.
+        // Si el jugador NO está saltando, O su velocidad es menor a la requerida (600), actuará como muro sólido.
+        if (line.type === 'wall_jumpable') {
+            const reqSpeed = line.speedRequired > 0 ? line.speedRequired : 600; // Default a 600
+            if (this.player.jumping && playerSpeed >= reqSpeed) {
+                continue; // Condición cumplida: Atraviesa el muro.
+            }
+        }
+
         if (!canStick && isWallRunning) continue; 
 
         this.player.px = this._colResult.hitX;
@@ -191,28 +246,55 @@ export default class Game extends Phaser.Scene {
 
         let nx = -dy / len;
         let ny = dx / len;
-        const px = this.player.px - line.start.x;
-        const py = this.player.py - line.start.y;
-        const lado = (dx * py - dy * px);
         
-        const finalNx = lado > 0 ? nx : -nx;
-        const finalNy = lado > 0 ? ny : -ny;
-        const overlap = (playerRadius + line.thickness / 2) - this._colResult.distance;
+        const p1xToLine = this._p1.x - line.start.x;
+        const p1yToLine = this._p1.y - line.start.y;
+        if (p1xToLine * nx + p1yToLine * ny < 0) {
+            nx = -nx;
+            ny = -ny;
+        }
+        
+        const finalNx = nx;
+        const finalNy = ny;
 
-        if (overlap > 0) {
-          this.player.px += finalNx * overlap;
-          this.player.py += finalNy * overlap;
+        this.closestPointOnLine(this._p2, line.start, line.end);
+        const cx = this._closest.x;
+        const cy = this._closest.y;
+        const distNow = Math.hypot(this.player.px - cx, this.player.py - cy);
+        const targetDist = playerRadius + line.thickness / 2;
+        
+        if (distNow < targetDist) {
+          if (distNow === 0) {
+            this.player.px += finalNx * targetDist;
+            this.player.py += finalNy * targetDist;
+          } else {
+            const pushX = (this.player.px - cx) / distNow;
+            const pushY = (this.player.py - cy) / distNow;
+            this.player.px += pushX * (targetDist - distNow);
+            this.player.py += pushY * (targetDist - distNow);
+          }
         }
 
         const currentSpeed = Math.hypot(this.player.vx, this.player.vy);
 
         if (canStick) {
+          if (line.type === 'wall_breakable') {
+            const required = line.momentumRequired > 0 ? line.momentumRequired : 3;
+            if (playerMomentum >= required) {
+              line._broken = true;
+              continue;
+            }
+          }
           this.player.vx = 0;
           this.player.vy = 0;
           const normalAngle = Math.atan2(finalNy, finalNx);
           this.player.stickToWall(normalAngle, currentSpeed, line);
           return; 
         } else {
+          if (line.type === 'wall_breakable') {
+            const required = line.momentumRequired > 0 ? line.momentumRequired : 3;
+            if (playerMomentum >= required) { line._broken = true; continue; }
+          }
           const dotV = this.player.vx * finalNx + this.player.vy * finalNy;
           let impactSpeed = 0;
           if (dotV < 0) {
@@ -250,8 +332,8 @@ export default class Game extends Phaser.Scene {
       const dotInit = moveX * toClosestX + moveY * toClosestY;
       if (moveLen === 0 || dotInit > 0) {
         this._colResult.collided = true;
-        this._colResult.hitX = p1.x;
-        this._colResult.hitY = p1.y;
+        this._colResult.hitX = p2.x;
+        this._colResult.hitY = p2.y;
         this._colResult.distance = distToClosest;
         return;
       }
@@ -277,6 +359,7 @@ export default class Game extends Phaser.Scene {
     this._colResult.collided = true;
     this._colResult.hitX = p1.x + dirX * tCollide;
     this._colResult.hitY = p1.y + dirY * tCollide;
+    this._colResult.hitT = moveLen > 0 ? tCollide / moveLen : 0.5;
     this._colResult.distance = radius;
   }
 

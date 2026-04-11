@@ -48,12 +48,14 @@ export default class MapRenderer {
       
       if (geo.shapeType === 'rect') {
         g.fillRect(geo.x, geo.y, geo.w, geo.h);
-        // Borde suave para delimitar la zona
         g.lineStyle(2, color, 0.4);
         g.strokeRect(geo.x, geo.y, geo.w, geo.h);
-      } 
-      // Soporte extra por si en el futuro haces zonas con polígonos
-      else if (geo.shapeType === 'polygon' && geo.points) {
+      } else if (geo.bbox) {
+        const b = geo.bbox;
+        g.fillRect(b.x, b.y, b.w, b.h);
+        g.lineStyle(2, color, 0.4);
+        g.strokeRect(b.x, b.y, b.w, b.h);
+      } else if (geo.shapeType === 'polygon' && geo.points) {
         const pts = geo.points.trim().split(/[\s,]+/).map(Number);
         g.beginPath();
         g.moveTo(pts[0], pts[1]);

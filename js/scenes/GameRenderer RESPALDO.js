@@ -31,7 +31,6 @@ export default class GameRenderer {
     this.mapRenderer = new MapRenderer();
     
     this.customLines = [];
-    this.customZones = [];
     
     // SLAM: Efectos visuales
     this.slamEffects = [];
@@ -39,10 +38,6 @@ export default class GameRenderer {
 
   setCustomLines(lines) {
     this.customLines = lines || [];
-  }
-
-  setCustomZones(zones) {
-    this.customZones = zones || [];
   }
 
   // SLAM: Añadir efecto visual de onda expansiva
@@ -107,10 +102,6 @@ export default class GameRenderer {
     
     this.arenaRenderer.render(g, momentum.level, time);
     
-    if (this.customZones && this.customZones.length > 0) {
-      this.mapRenderer.renderZones(g, this.customZones);
-    }
-
     if (this.customLines && this.customLines.length > 0) {
       this.mapRenderer.renderLines(g, this.customLines);
     }

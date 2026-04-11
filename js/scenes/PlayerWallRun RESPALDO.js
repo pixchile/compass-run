@@ -57,27 +57,25 @@ export class WallRunSystem {
     }
 
     isStillTouchingWall(playerRadius) {
-        const lines = this.scene.currentMap?.lines || [];
-        const threshold = playerRadius + 20; // margen generoso para transiciones entre segmentos
-
-        for (const line of lines) {
-            if (line._broken) continue;
-            const { start, end } = line;
-            const abx = end.x - start.x;
-            const aby = end.y - start.y;
-            const len2 = abx * abx + aby * aby;
-            if (len2 === 0) continue;
-            let t = ((this.player.px - start.x) * abx + (this.player.py - start.y) * aby) / len2;
-            t = Math.max(0, Math.min(1, t));
-            const closestX = start.x + t * abx;
-            const closestY = start.y + t * aby;
-            const distance = Math.hypot(this.player.px - closestX, this.player.py - closestY);
-            if (distance <= threshold) {
-                this.currentWallLine = line; // actualizar la línea activa
-                return true;
-            }
-        }
-        return false;
+        if (!this.currentWallLine) return false;
+        const line = this.currentWallLine;
+        const start = line.start;
+        const end = line.end;
+        const abx = end.x - start.x;
+        const aby = end.y - start.y;
+        const len2 = abx * abx + aby * aby;
+        if (len2 === 0) return false;
+        let t = ((this.player.px - start.x) * abx + (this.player.py - start.y) * aby) / len2;
+        t = Math.max(0, Math.min(1, t));
+        const closestX = start.x + t * abx;
+        const closestY = start.y + t * aby;
+        const dx = this.player.px - closestX;
+        const dy = this.player.py - closestY;
+        const distance = Math.hypot(dx, dy);
+        const threshold = playerRadius + (line.thickness / 2) + 5;
+        const touching = distance <= threshold;
+        if (!touching) console.log("🚫 Left the wall! distance:", distance, "threshold:", threshold);
+        return touching;
     }
 
     update(delta, moveDirection, now, playerRadius = 12) {
@@ -129,14 +127,14 @@ export class WallRunSystem {
         this.wasNaturalExit = naturalExit;
 
         if (naturalExit) {
-            // FIX BUG: Nudge muy leve para salir de la colisión, sin inyectar velocidad drástica
+            // Preserve run momentum + small outward nudge so the player doesn't clip back into the wall
             const nx = Math.cos(this.wallJumpSystem.wallNormalAngle);
             const ny = Math.sin(this.wallJumpSystem.wallNormalAngle);
-            this.player.px += nx * 2;
-            this.player.py += ny * 2;
+            this.player.vx += nx * 55;
+            this.player.vy += ny * 55;
         } else {
-            // FIX BUG: Ya no reseteamos a this.player.vx/vy = 0.
-            // Conservar la inercia permite transiciones suaves y evita el efecto "pegado".
+            this.player.vx = 0;
+            this.player.vy = 0;
         }
     }
 }

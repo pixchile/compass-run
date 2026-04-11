@@ -254,20 +254,6 @@ export default class EnemyManager {
 
   // Limpia enemigos con hp <= 0 que hayan muerto por efectos secundarios
   // (explosión en cadena, etc.) sin pasar por los paths normales de muerte
-  getWallEnemyLines() {
-    const lines = [];
-    for (const enemy of this.enemies) {
-      if (!enemy.isWall) continue;
-      const r = enemy.radius || 12;
-      // Representar el enemigo-muro como 4 segmentos de su caja circular aproximada
-      lines.push({ start: { x: enemy.x - r, y: enemy.y - r }, end: { x: enemy.x + r, y: enemy.y - r }, thickness: 4 });
-      lines.push({ start: { x: enemy.x + r, y: enemy.y - r }, end: { x: enemy.x + r, y: enemy.y + r }, thickness: 4 });
-      lines.push({ start: { x: enemy.x + r, y: enemy.y + r }, end: { x: enemy.x - r, y: enemy.y + r }, thickness: 4 });
-      lines.push({ start: { x: enemy.x - r, y: enemy.y + r }, end: { x: enemy.x - r, y: enemy.y - r }, thickness: 4 });
-    }
-    return lines;
-  }
-
   cleanupDead() {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       if (this.enemies[i].hp <= 0) {
