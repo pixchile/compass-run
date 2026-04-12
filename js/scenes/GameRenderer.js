@@ -176,7 +176,6 @@ export default class GameRenderer {
     // Dibujar efectos visuales de ataque
     if (!gameOver && !player.isDead) {
       this.drawAttackRadius(player, momentum.level);
-      this.drawAttackLevelIndicator(player, momentum.level);
     }
     
     this.drawSlamEffects();

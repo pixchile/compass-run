@@ -137,6 +137,13 @@ export default class Camera {
     return (screenY - this.viewHeight / 2) / this.zoom + this.y;
   }
 
+  worldToScreen(worldX, worldY) {
+    return {
+      x: this.worldToScreenX(worldX),
+      y: this.worldToScreenY(worldY)
+    };
+  }
+
   screenToWorld(screenX, screenY) {
     return {
       x: this.screenToWorldX(screenX),
