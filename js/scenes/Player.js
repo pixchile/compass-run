@@ -2,7 +2,7 @@
 import { W, H, TRAIL_MAX, MAX_SPD, TURN_K, STOP_K, JUMP_DUR, JUMP_HMAX, JUMP_DIST_K,
          DASH_DUR, DASH_CD, DASH_SPD,
          HP_MAX, HP_DMG_ENEMY_HIT, HP_DMG_VOID, HP_LOW_SPD,
-         HP_REGEN_DELAY, HP_REGEN_RATE, DIRS, SLAM } from '../constants.js';
+         HP_REGEN_DELAY, HP_REGEN_RATE, DIRS, SLAM, ATTACK_RADIOS, ATTACK_DAMAGE_MULTIPLIERS } from '../constants.js';
 import { WallJumpSystem } from './PlayerWallJump.js';
 import { WallRunSystem } from './PlayerWallRun.js';
 
@@ -39,7 +39,7 @@ export default class Player {
         this.hasSlammedThisJump = false;  
         this.slamCooldown = 0;            
         this.preSlamSpeed = 0;            
-        this.activeSlam = null; // <- Añadido para limpiar estados correctamente
+        this.activeSlam = null;
 
         this.currentWallLine = null;
 
@@ -50,6 +50,16 @@ export default class Player {
     get isStunned() { return this.stunT > 0; }
     get isDead() { return this.hp <= 0; }
     get isGrounded() { return !this.jumping && !this.wallJump.wallStick && !this.wallRun.isWallRunning; }
+
+    // --- NUEVO: Obtener radio de ataque según momentum ---
+    getAttackRadius(momentumLevel) {
+        return ATTACK_RADIOS[momentumLevel] || ATTACK_RADIOS[1];
+    }
+
+    // --- NUEVO: Obtener multiplicador de daño según momentum ---
+    getDamageMultiplier(momentumLevel) {
+        return ATTACK_DAMAGE_MULTIPLIERS[momentumLevel] || ATTACK_DAMAGE_MULTIPLIERS[1];
+    }
 
     takeDamage(amount) {
         if (this.isInvincible) return;
@@ -110,7 +120,7 @@ export default class Player {
         this.vx = 0; this.vy = 0;
         this.jumpVx = 0; this.jumpVy = 0;
         this.dashing = false; this.jumping = false;  
-        this.activeSlam = null; // Limpiar hitbox de slam al pegar muro
+        this.activeSlam = null;
 
         this.wallRun.reset();
         this.currentWallLine = wallLine;
@@ -140,16 +150,19 @@ export default class Player {
         this.slamCooldown = SLAM.COOLDOWN;
     }
 
-    // --- NUEVO: Construye el Payload de Ataque (Game-feel exacto) ---
+    // --- NUEVO: Construye el Payload de Ataque con radio y daño mejorado ---
     getCurrentAttackPayload(momentumLevel) {
         const currentSpeed = Math.hypot(this.vx, this.vy);
         const now = Date.now();
+        const attackRadius = this.getAttackRadius(momentumLevel);
+        const damageMultiplier = this.getDamageMultiplier(momentumLevel);
 
         // 1. Slam: Tiene máxima prioridad si está activo
         if (this.activeSlam) {
             return {
                 type: this.activeSlam.isHighSpeed ? 'slam3' : 'slam',
-                baseDamage: this.activeSlam.speed * 0.1, // Puedes balancear este multplicador base
+                baseDamage: this.activeSlam.speed * 0.1 * damageMultiplier,
+                radius: attackRadius * 1.5, // Slam tiene radio más grande
                 now: now
             };
         }
@@ -158,7 +171,8 @@ export default class Player {
         if (momentumLevel === 3) {
             return {
                 type: 'momentum3',
-                baseDamage: currentSpeed * 0.025, // Regla exacta: 2.5% de la velocidad al impacto
+                baseDamage: currentSpeed * 0.025 * damageMultiplier,
+                radius: attackRadius,
                 now: now
             };
         }
@@ -167,7 +181,8 @@ export default class Player {
         if (this.dashing) {
             return {
                 type: this.wasJumpingWhenDashed ? 'aerialDash' : 'dash',
-                baseDamage: this.dashInitialSpeed * 0.1,
+                baseDamage: this.dashInitialSpeed * 0.1 * damageMultiplier,
+                radius: attackRadius,
                 now: now
             };
         }
@@ -175,7 +190,6 @@ export default class Player {
         // Si no está haciendo nada de lo anterior, el jugador NO ESTÁ ATACANDO
         return null;
     }
-    // -------------------------------------------------------------
 
     update(delta, momentum) {
         const dt = delta / 1000;
@@ -218,7 +232,7 @@ export default class Player {
             this.jumpT += delta;
             if (this.jumpT >= this.jumpDur) {
                 this.jumping = false;
-                this.activeSlam = null; // FIX: Limpiar el estado de Slam al tocar suelo
+                this.activeSlam = null;
                 this.landFx = this.jumpLv >= 3 ? 420 : this.jumpLv >= 2 ? 210 : 0;
             }
         }

@@ -1,4 +1,4 @@
-import { W, H, ARENA, SMAX, L2, L3, DASH_CD, C, DIRS, HP_MAX, SLAM } from '../constants.js';
+import { W, H, ARENA, SMAX, L2, L3, DASH_CD, C, DIRS, HP_MAX, SLAM, ATTACK_RADIOS } from '../constants.js';
 
 // Importar todos los renderers
 import HealthBar from '../renderers/HealthBar.js';
@@ -35,6 +35,9 @@ export default class GameRenderer {
     
     // SLAM: Efectos visuales
     this.slamEffects = [];
+    
+    // DEBUG: Radio de ataque (solo si está activado el modo debug)
+    this.showAttackRadius = false;
   }
 
   setCustomLines(lines) {
@@ -57,7 +60,7 @@ export default class GameRenderer {
     });
   }
 
-  // SLAM: Actualizar efectos (llamar desde update del Game.js o dentro de render)
+  // SLAM: Actualizar efectos
   updateSlamEffects(delta) {
     for (let i = this.slamEffects.length - 1; i >= 0; i--) {
       const effect = this.slamEffects[i];
@@ -67,7 +70,6 @@ export default class GameRenderer {
         continue;
       }
       
-      // Radio crece con el tiempo (efecto de onda)
       const progress = 1 - (effect.life / (SLAM.EFFECT_DURATION || 300));
       effect.radius = effect.maxRadius * progress;
       effect.alpha = 0.8 * (1 - progress);
@@ -81,9 +83,61 @@ export default class GameRenderer {
       this.g.lineStyle(3, color, effect.alpha);
       this.g.strokeCircle(effect.x, effect.y, effect.radius);
       
-      // Círculo interior más pequeño
       this.g.lineStyle(1, 0xffcc88, effect.alpha * 0.6);
       this.g.strokeCircle(effect.x, effect.y, effect.radius * 0.6);
+    }
+  }
+
+  // --- NUEVO: Dibujar radio de ataque para debug ---
+  drawAttackRadius(player, momentumLevel) {
+    if (!this.showAttackRadius) return;
+    
+    const attackRadius = player.getAttackRadius(momentumLevel);
+    const screenPos = this.camera.worldToScreen(player.px, player.py);
+    
+    // Círculo base según nivel de momentum
+    let baseColor = 0x44ff44;
+    if (momentumLevel === 2) baseColor = 0xffaa44;
+    if (momentumLevel === 3) baseColor = 0xff4444;
+    
+    this.g.lineStyle(2, baseColor, 0.5);
+    this.g.strokeCircle(screenPos.x, screenPos.y, attackRadius);
+    
+    // Si está atacando, mostrar radio más brillante
+    const attackPayload = player.getCurrentAttackPayload(momentumLevel);
+    if (attackPayload) {
+      this.g.lineStyle(3, 0xff6600, 0.8);
+      this.g.strokeCircle(screenPos.x, screenPos.y, attackPayload.radius);
+      
+      // Texto indicador del radio actual
+      this.scene.add.text(screenPos.x + 15, screenPos.y - 15, 
+        `⚔️ ${Math.floor(attackPayload.radius)}px`, {
+        fontSize: '10px',
+        fill: '#ffaa44',
+        stroke: '#000000',
+        strokeThickness: 2
+      }).setOrigin(0.5).setDepth(1000).setScrollFactor(0);
+    }
+  }
+
+  // --- NUEVO: Dibujar indicador de nivel de ataque ---
+  drawAttackLevelIndicator(player, momentumLevel) {
+    const screenPos = this.camera.worldToScreen(player.px, player.py);
+    const attackRadius = player.getAttackRadius(momentumLevel);
+    
+    // Pequeño indicador circular alrededor del jugador
+    this.g.lineStyle(1, 0xffffff, 0.3);
+    this.g.strokeCircle(screenPos.x, screenPos.y, attackRadius + 2);
+    
+    // Puntos según nivel
+    const dotCount = momentumLevel;
+    for (let i = 0; i < dotCount; i++) {
+      const angle = (i / dotCount) * Math.PI * 2 + Date.now() * 0.005;
+      const dotX = screenPos.x + Math.cos(angle) * (attackRadius + 5);
+      const dotY = screenPos.y + Math.sin(angle) * (attackRadius + 5);
+      
+      this.g.fillStyle(0xffaa44, 0.8);
+      this.g.fillCircle(dotX, dotY, 2);
     }
   }
 
@@ -91,7 +145,6 @@ export default class GameRenderer {
     const g = this.g;
     const now = this.scene.time.now;
     
-    // Actualizar efectos de slam
     this.updateSlamEffects(delta);
     
     g.clear();
@@ -120,7 +173,12 @@ export default class GameRenderer {
     this.enemyRenderer.render(g, this.gameScene.enemyManager.getEnemies());
     this.gameScene.orbManager.render(g);
     
-    // Dibujar efectos de slam (sobre enemigos, debajo del compass)
+    // Dibujar efectos visuales de ataque
+    if (!gameOver && !player.isDead) {
+      this.drawAttackRadius(player, momentum.level);
+      this.drawAttackLevelIndicator(player, momentum.level);
+    }
+    
     this.drawSlamEffects();
     
     this.compass.render(g, player, momentum, this.camera);
@@ -131,12 +189,17 @@ export default class GameRenderer {
     this.momentumBar.render(g, momentum, time);
     this.dashIndicator.render(g, player);
     
-    this.uiManager.updateTexts(player, momentum, this.camera, gameOver, gameOverAlpha, gameOverReason, timeRemaining, time,   this.gameScene.rewardSystem?.displayCredits ?? 0);
+    this.uiManager.updateTexts(player, momentum, this.camera, gameOver, gameOverAlpha, gameOverReason, timeRemaining, time, this.gameScene.rewardSystem?.displayCredits ?? 0);
     
     this.uiManager.updateLevelLabels(this.momentumBar.getWidth(), this.momentumBar.getX());
   }
   
   clearGameOver() {
     this.uiManager.clearGameOver();
+  }
+  
+  // Método para activar/desactivar debug de radios
+  toggleAttackRadiusDebug() {
+    this.showAttackRadius = !this.showAttackRadius;
   }
 }

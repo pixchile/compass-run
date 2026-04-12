@@ -36,6 +36,13 @@ export default class MainMenu extends Phaser.Scene {
       padding: { x: 20, y: 10 }
     }).setOrigin(0.5).setInteractive();
 
+    const stageBtn = this.add.text(centerX, centerY + 150, '⚙ EDITOR DE STAGES', {
+      fontSize: '20px',
+      fill: '#4488ff',
+      backgroundColor: '#000000aa',
+      padding: { x: 20, y: 10 }
+    }).setOrigin(0.5).setInteractive();
+
     // Eventos de botones
     playBtn.on('pointerover', () => playBtn.setStyle({ fill: '#ffffff' }));
     playBtn.on('pointerout', () => playBtn.setStyle({ fill: '#44ff88' }));
@@ -47,6 +54,12 @@ export default class MainMenu extends Phaser.Scene {
     editorBtn.on('pointerout', () => editorBtn.setStyle({ fill: '#ffaa44' }));
     editorBtn.on('pointerdown', () => {
       this.scene.start('MapEditor');
+    });
+
+    stageBtn.on('pointerover', () => stageBtn.setStyle({ fill: '#ffffff' }));
+    stageBtn.on('pointerout', () => stageBtn.setStyle({ fill: '#4488ff' }));
+    stageBtn.on('pointerdown', () => {
+      this.scene.start('StageEditor');
     });
 
     // Instrucciones

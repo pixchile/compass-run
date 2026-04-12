@@ -37,7 +37,6 @@ export class WallJumpSystem {
 
         if (this.impactSpeed >= threshold && this.player?.takeDamage) {
             this.player.takeDamage(damage);
-            console.log(`💥 Wall impact at ${this.impactSpeed.toFixed(1)} speed! Lost ${damage} HP`);
         }
 
         return true;

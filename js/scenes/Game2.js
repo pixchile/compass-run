@@ -135,7 +135,7 @@ export default class Game extends Phaser.Scene {
     this.rewardSystem.update(delta, this.player);
     this.orbManager.update(delta, this.player);
 
-    this.enemyManager.processPlayerInteractions(this.player, delta, this.time.now, this.momentum);
+    this.enemyManager.processPlayerInteractions(this.player, delta, this.time.now, this.momentum.level);
     this.enemyManager.cleanupDead();
 
     if (!this.player.dashing && !this.player.jumping) {

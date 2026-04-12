@@ -1,4 +1,4 @@
-import { L2, L3, SMAX, DIRS, C, AIR_GAIN_RATE, AIR_DRAIN_RATE, AIR_BONUS_MULT, COMPASS_SPEEDUP_RATE, COMPASS_SPEEDUP_INTERVAL, COMPASS_BASE_MAX, COMPASS_BASE_MIN, COMPASS_STACK_FACTOR } from '../constants.js';
+import { L2, L3, SMAX, DIRS, C, AIR_GAIN_RATE, AIR_DRAIN_RATE, AIR_BONUS_MULT, COMPASS_SPEEDUP_RATE, COMPASS_SPEEDUP_INTERVAL, COMPASS_BASE_MAX, COMPASS_BASE_MIN, COMPASS_STACK_FACTOR, ATTACK_RADIOS } from '../constants.js';
 
 // Precalculamos los cosenos de los ángulos para usar Producto Punto
 const COS_22_5 = 0.9238795;
@@ -38,6 +38,17 @@ export default class MomentumSystem {
   get level()  { return this.stacks < L2 ? 1 : this.stacks < L3 ? 2 : 3; }
   get lColor() { return this.level === 1 ? C.L1 : this.level === 2 ? C.L2 : C.L3; }
   get lHex()   { return ['','#4488ff','#ffaa22','#ff3322'][this.level]; }
+  
+  // --- NUEVO: Obtener radio de ataque actual según nivel ---
+  getAttackRadius() {
+    return ATTACK_RADIOS[this.level] || ATTACK_RADIOS[1];
+  }
+  
+  // --- NUEVO: Obtener multiplicador de daño actual según nivel ---
+  getDamageMultiplier() {
+    const multipliers = { 1: 1.0, 2: 1.5, 3: 2.0 };
+    return multipliers[this.level] || 1.0;
+  }
 
   halveStacks() {
     this.stacks = Math.max(0, Math.floor(this.stacks / 2));
@@ -56,20 +67,17 @@ export default class MomentumSystem {
     const cd = DIRS[this.cIdx];
     if (!cd) return 'drain';
 
-    // Normalizar dirección de la brújula
     const cdLen = Math.hypot(cd.dx, cd.dy) || 1;
     const cx = cd.dx / cdLen;
     const cy = cd.dy / cdLen;
 
-    // Normalizar velocidad del jugador
     const px = player.vx / currentSpeed;
     const py = player.vy / currentSpeed;
 
-    // Producto punto (Dot Product)
     const dot = (px * cx) + (py * cy);
     
-    if (dot >= COS_22_5) return 'gain';   // Diferencia <= 22.5 grados
-    if (dot >= COS_45) return 'neutral';  // Diferencia <= 45 grados
+    if (dot >= COS_22_5) return 'gain';
+    if (dot >= COS_45) return 'neutral';
     return 'drain';
   }
   

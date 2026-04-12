@@ -58,25 +58,61 @@ export class WallRunSystem {
 
     isStillTouchingWall(playerRadius) {
         const lines = this.scene.currentMap?.lines || [];
-        const threshold = playerRadius + 20; // margen generoso para transiciones entre segmentos
+        const threshold = playerRadius + 20;
+
+        // 1. Prioridad: verificar si el muro ACTUAL sigue en rango.
+        //    Esto evita que una pared perpendicular (esquina) reemplace a currentWallLine
+        //    antes de que checkLineCollisions pueda detectar la colisión real.
+        if (this.currentWallLine && !this.currentWallLine._broken) {
+            const line = this.currentWallLine;
+            const abx = line.end.x - line.start.x;
+            const aby = line.end.y - line.start.y;
+            const len2 = abx * abx + aby * aby;
+            if (len2 > 0) {
+                let t = ((this.player.px - line.start.x) * abx + (this.player.py - line.start.y) * aby) / len2;
+                t = Math.max(0, Math.min(1, t));
+                const closestX = line.start.x + t * abx;
+                const closestY = line.start.y + t * aby;
+                const distance = Math.hypot(this.player.px - closestX, this.player.py - closestY);
+                if (distance <= threshold) return true; // mismo muro, sigue válido
+            }
+        }
+
+        // 2. El muro actual ya no está en rango (llegó al final del segmento).
+        //    Buscar un segmento continuo: DEBE ser aproximadamente paralelo al tangente actual.
+        //    Muros perpendiculares (esquinas) NO cuentan — esos deben ser manejados
+        //    por checkLineCollisions como una colisión real.
+        const tx = this.wallTangentX;
+        const ty = this.wallTangentY;
+        // umbral de paralelismo: cos(~32°) ≈ 0.85. Muros más perpendiculares que eso = esquina.
+        const PARALLEL_THRESHOLD = 0.85;
 
         for (const line of lines) {
-            if (line._broken) continue;
-            const { start, end } = line;
-            const abx = end.x - start.x;
-            const aby = end.y - start.y;
-            const len2 = abx * abx + aby * aby;
-            if (len2 === 0) continue;
-            let t = ((this.player.px - start.x) * abx + (this.player.py - start.y) * aby) / len2;
+            if (line._broken || line === this.currentWallLine) continue;
+
+            const abx = line.end.x - line.start.x;
+            const aby = line.end.y - line.start.y;
+            const len = Math.hypot(abx, aby);
+            if (len === 0) continue;
+
+            // Verificar que la línea sea suficientemente paralela al tangente del wallrun actual
+            const parallelDot = Math.abs((abx / len) * tx + (aby / len) * ty);
+            if (parallelDot < PARALLEL_THRESHOLD) continue; // muy perpendicular → es esquina, ignorar aquí
+
+            const len2 = len * len;
+            let t = ((this.player.px - line.start.x) * abx + (this.player.py - line.start.y) * aby) / len2;
             t = Math.max(0, Math.min(1, t));
-            const closestX = start.x + t * abx;
-            const closestY = start.y + t * aby;
+            const closestX = line.start.x + t * abx;
+            const closestY = line.start.y + t * aby;
             const distance = Math.hypot(this.player.px - closestX, this.player.py - closestY);
+
             if (distance <= threshold) {
-                this.currentWallLine = line; // actualizar la línea activa
+                // Transición válida: segmento paralelo continuo
+                this.currentWallLine = line;
                 return true;
             }
         }
+
         return false;
     }
 

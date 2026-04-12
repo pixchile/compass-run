@@ -18,12 +18,15 @@ export default class EnemyManager {
     this.rewardSystem = null;
     this.orbManager   = null;
     this.momentum     = null;
+    this.density      = null;
+    this.spawners     = [];
+    this._fillType    = null;
 
     // Objetos Zero-Allocation
-    this._dashAttackObj = { type: 'dash', baseDamage: 0, now: 0 };
-    this._pierceAttackObj = { type: 'momentum3', baseDamage: 0, now: 0 };
-    this._slamAttackObj = { type: 'slam', baseDamage: 0, now: 0 };
-    this._wallAttackObj = { type: 'wallCrash', baseDamage: 0, now: 0 };
+    this._dashAttackObj = { type: 'dash', baseDamage: 0, now: 0, radius: 0 };
+    this._pierceAttackObj = { type: 'momentum3', baseDamage: 0, now: 0, radius: 0 };
+    this._slamAttackObj = { type: 'slam', baseDamage: 0, now: 0, radius: 0 };
+    this._wallAttackObj = { type: 'wallCrash', baseDamage: 0, now: 0, radius: 0 };
     
     this._p1 = { x: 0, y: 0 };
     this._p2 = { x: 0, y: 0 };
@@ -48,22 +51,27 @@ export default class EnemyManager {
     }
   }
   
+  setDensity(density) {
+    this.density = density || null;
+  }
+
+  setSpawners(spawners) {
+    this.spawners = spawners || [];
+  }
+
   setSpawnList(enemies) {
     this.spawnList = enemies.map(e => {
         const enemyType = e.type || e.enemyRef;
         let finalSpawnTime = e.spawnTime;
 
-        // Leer la configuración del enemigo V2.0
         const typeConfig = enemyRegistry.configs?.get?.(enemyType) || enemyRegistry.configs?.[enemyType];
         if (typeConfig) {
             const basic = typeConfig.basic || {};
             const trigger = basic.spawnTrigger || {};
             
-            // El mapa tiene prioridad. El archivo del enemigo solo aplica si el mapa no define spawnTime
             if (e.spawnTime === undefined && trigger.type === 'time') {
                 finalSpawnTime = parseFloat(trigger.value) || 0;
             }
-            // Guardar el trigger especial para evaluarlo en update()
             if (trigger.type === 'kills' || trigger.type === 'coords') {
                 return { ...e, spawnTime: undefined, spawnTrigger: trigger, active: false };
             }
@@ -76,16 +84,19 @@ export default class EnemyManager {
     this.gameStartTime = 0;
   }
   
-  // ¡AQUÍ ESTÁ LA FUNCIÓN QUE SE HABÍA BORRADO!
   update(delta, currentTime, player, lines) {
     if (this.gameStartTime === 0) this.gameStartTime = currentTime;
     
     const elapsedSeconds = (currentTime - this.gameStartTime) / 1000;
-    
+    const elapsedMin     = elapsedSeconds / 60;
+    const hardcap = this.density
+      ? Math.min(Math.floor((this.density.maxBase || 20) + (this.density.maxPerMin || 0) * elapsedMin), 300)
+      : 300;
+
     while (this.nextSpawnIndex < this.spawnList.length) {
       const enemyData = this.spawnList[this.nextSpawnIndex];
       if (enemyData.spawnTime <= elapsedSeconds) {
-        if (!enemyData.active) {
+        if (!enemyData.active && this.enemies.length < hardcap) {
           enemyData.active = true;
           this._spawnOne(enemyData, player);
         }
@@ -100,14 +111,12 @@ export default class EnemyManager {
         if (typeof enemy.update === 'function') {
             enemy.update(delta, player, lines);
         }
-        // Detectar muertes por selfDestruct (timer o proximity)
         if (enemy.hp <= 0) {
             this._onEnemyDied(enemy);
             this.enemies.splice(i, 1);
         }
     }
 
-    // --- TRIGGERS ESPECIALES (kills, coords) ---
     for (const enemyData of this.spawnList) {
         if (enemyData.active || !enemyData.spawnTrigger) continue;
         const trigger = enemyData.spawnTrigger;
@@ -124,6 +133,29 @@ export default class EnemyManager {
             enemyData.active = true;
             this._spawnOne(enemyData, player);
         }
+    }
+
+    if (this.density && player && this.spawners.length) {
+      const minNow = Math.floor((this.density.minBase || 0) + (this.density.minPerMin || 0) * elapsedMin);
+
+      if (this.enemies.length < minNow && this.enemies.length < hardcap) {
+        if (!this._fillType) {
+          const types = this.spawnList.map(e => e.type || e.enemyRef).filter(Boolean);
+          this._fillType = types[0] || null;
+        }
+        if (this._fillType && enemyRegistry.has(this._fillType)) {
+          const spawner = this.spawners[Math.floor(Math.random() * this.spawners.length)];
+          const offset  = 60 + Math.random() * 80;
+          const angle   = Math.random() * Math.PI * 2;
+          const newEnemy = enemyRegistry.create(
+            this._fillType,
+            spawner.x + Math.cos(angle) * offset,
+            spawner.y + Math.sin(angle) * offset,
+            this.scene
+          );
+          if (newEnemy) this.enemies.push(newEnemy);
+        }
+      }
     }
   }
 
@@ -150,20 +182,44 @@ export default class EnemyManager {
     }
   }
 
-  processPlayerInteractions(player, delta, now, momentumLevel) {
+  // --- MODIFICADO: Usa el radio del payload de ataque ---
+  processPlayerInteractions(player, delta, now, momentumSystem) {
     if (player.dashing && !this.wasDashing) {
       this.damagedThisDash.clear();
     }
     this.wasDashing = player.dashing;
 
+    // Obtener payload de ataque del jugador (incluye radio)
+    const attackPayload = player.getCurrentAttackPayload(momentumSystem.level);
+    
     const playerRadius = 12;
     const currentSpeed = Math.hypot(player.vx, player.vy);
+
+    const auraEmitters = this.enemies.filter(e => e.invulnerableAura && e.hp > 0);
 
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       const hasCollisionFunc = typeof enemy.collidesWith === 'function';
       const enemyRadius = enemy.radius || 12;
       
+      // --- NUEVO: Detección por radio de ataque (prioridad sobre colisión física) ---
+      let isInAttackRange = false;
+      let attackDamage = 0;
+      let attackType = null;
+      
+      if (attackPayload) {
+        const dx = enemy.x - player.px;
+        const dy = enemy.y - player.py;
+        const distanceToEnemy = Math.hypot(dx, dy);
+        
+        if (distanceToEnemy <= attackPayload.radius) {
+          isInAttackRange = true;
+          attackDamage = attackPayload.baseDamage;
+          attackType = attackPayload.type;
+        }
+      }
+      
+      // Colisión física normal (cuerpo a cuerpo)
       let isColliding = false;
       if (hasCollisionFunc) {
          isColliding = enemy.collidesWith(player.px, player.py, playerRadius);
@@ -174,18 +230,16 @@ export default class EnemyManager {
          isColliding = (dx * dx + dy * dy) < (minR * minR);
       }
 
-      if (isColliding) {
+      // Si está en rango de ataque O hay colisión física
+      if (isInAttackRange || isColliding) {
         let enemyDied = false;
         let fatalSource = 'any';
 
-        // Aura: si hay algún enemigo vivo con aura cerca, este enemigo es invulnerable
-        const isProtectedByAura = this.enemies.some(e =>
-            e !== enemy && e.invulnerableAura && e.hp > 0 &&
-            Math.hypot(e.x - enemy.x, e.y - enemy.y) < 200
+        const isProtectedByAura = auraEmitters.some(e =>
+            e !== enemy && Math.hypot(e.x - enemy.x, e.y - enemy.y) < 200
         );
         if (isProtectedByAura) continue;
 
-        // Evade: si el jugador viene en dash, el enemigo teleporta lejos
         if (enemy.evade && player.dashing) {
             const angle = Math.random() * Math.PI * 2;
             enemy.x += Math.cos(angle) * 150;
@@ -193,13 +247,32 @@ export default class EnemyManager {
             continue;
         }
 
-        if (player.dashing) {
+        // --- PRIORIDAD 1: Ataque por radio (dash, momentum3, slam) ---
+        if (attackPayload && isInAttackRange) {
+          const attackObj = {
+            type: attackType,
+            baseDamage: attackDamage,
+            now: now,
+            radius: attackPayload.radius
+          };
+          
+          if (typeof enemy.receiveDamage === 'function') {
+              enemyDied = enemy.receiveDamage(attackObj);
+          } else {
+              enemy.hp = (enemy.hp || 1) - attackDamage;
+              enemyDied = enemy.hp <= 0;
+          }
+          fatalSource = attackType;
+        }
+        // --- PRIORIDAD 2: Colisión física con dash ---
+        else if (player.dashing) {
           if (!this.damagedThisDash.has(enemy)) {
             this.damagedThisDash.add(enemy);
             
             this._dashAttackObj.type = player.wasJumpingWhenDashed ? 'aerialDash' : 'dash';
             this._dashAttackObj.baseDamage = (player.dashInitialSpeed || currentSpeed) * 0.25; 
             this._dashAttackObj.now = now;
+            this._dashAttackObj.radius = player.getAttackRadius(momentumSystem.level);
             
             if (typeof enemy.receiveDamage === 'function') {
                 enemyDied = enemy.receiveDamage(this._dashAttackObj);
@@ -210,10 +283,12 @@ export default class EnemyManager {
             fatalSource = this._dashAttackObj.type;
           }
         } 
-        else if (momentumLevel === 3) {
+        // --- PRIORIDAD 3: Colisión física con momentum 3 ---
+        else if (momentumSystem.level === 3 && !isInAttackRange) {
             this._pierceAttackObj.type = 'momentum3';
             this._pierceAttackObj.baseDamage = currentSpeed * 0.025; 
             this._pierceAttackObj.now = now;
+            this._pierceAttackObj.radius = player.getAttackRadius(3);
 
             if (typeof enemy.receiveDamage === 'function') {
                 enemyDied = enemy.receiveDamage(this._pierceAttackObj);
@@ -223,13 +298,13 @@ export default class EnemyManager {
             }
             fatalSource = 'momentum3';
         }
-        else if (!player.isInvincible) {
+        // --- PRIORIDAD 4: Daño al jugador por colisión física ---
+        else if (!player.isInvincible && !isInAttackRange) {
           if (!enemy.state) enemy.state = {}; 
           if (now - (enemy.state.lastAttackTime || 0) >= 250) {
             enemy.state.lastAttackTime = now;
             player.takeEnemyDamage();
 
-            // Efectos de ataque del enemigo
             const effect = enemy.customConfig?.ambitious?.attack?.effect;
             if (effect === 'slow') {
                 player.slowTimer = (player.slowTimer || 0) + 1500;
@@ -252,14 +327,11 @@ export default class EnemyManager {
     }
   }
 
-  // Limpia enemigos con hp <= 0 que hayan muerto por efectos secundarios
-  // (explosión en cadena, etc.) sin pasar por los paths normales de muerte
   getWallEnemyLines() {
     const lines = [];
     for (const enemy of this.enemies) {
       if (!enemy.isWall) continue;
       const r = enemy.radius || 12;
-      // Representar el enemigo-muro como 4 segmentos de su caja circular aproximada
       lines.push({ start: { x: enemy.x - r, y: enemy.y - r }, end: { x: enemy.x + r, y: enemy.y - r }, thickness: 4 });
       lines.push({ start: { x: enemy.x + r, y: enemy.y - r }, end: { x: enemy.x + r, y: enemy.y + r }, thickness: 4 });
       lines.push({ start: { x: enemy.x + r, y: enemy.y + r }, end: { x: enemy.x - r, y: enemy.y + r }, thickness: 4 });
@@ -280,7 +352,7 @@ export default class EnemyManager {
   checkSolidCollision(player, playerRadius = 12) {
     let collided = false;
     for (const enemy of this.enemies) {
-      if (enemy.isPhantom) continue; // phantoms no empujan al jugador
+      if (enemy.isPhantom) continue;
       const eRadius = enemy.radius || 12;
       const dx = player.px - enemy.x;
       const dy = player.py - enemy.y;
@@ -316,10 +388,12 @@ export default class EnemyManager {
     this._slamAttackObj.type = isHighSpeed ? 'slam3' : 'slam';
     this._slamAttackObj.baseDamage = damage;
     this._slamAttackObj.now = now;
+    this._slamAttackObj.radius = radius;
 
     this._wallAttackObj.type = 'wallCrash';
     this._wallAttackObj.baseDamage = wallDamage;
     this._wallAttackObj.now = now;
+    this._wallAttackObj.radius = radius;
 
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
@@ -427,6 +501,7 @@ export default class EnemyManager {
     this.wasDashing = false;
     this.nextSpawnIndex = 0;
     this.gameStartTime = 0;
+    this._fillType = null;
     for (const enemy of this.spawnList) enemy.active = false;
   }
   

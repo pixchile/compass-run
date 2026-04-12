@@ -81,6 +81,18 @@ export const KILL_STACKS = {
   big:    25,  
 };
 
+export const ATTACK_RADIOS = {
+    1: 28,   // Radio base para momentum nivel 1 (ligeramente más grande que el radio del jugador)
+    2: 45,   // Radio ampliado para nivel 2 (+60%)
+    3: 65    // Radio máximo para nivel 3 (+132% del base)
+};
+
+export const ATTACK_DAMAGE_MULTIPLIERS = {
+    1: 1.0,
+    2: 1.5,
+    3: 2.0
+};
+
 export const SLAM = {
     MIN_SPEED: 600,              // Velocidad mínima para activar (px/s)
     HIGH_SPEED_THRESHOLD: 999,   // Umbral para efectos extra (px/s)
