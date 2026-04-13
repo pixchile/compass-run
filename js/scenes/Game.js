@@ -6,7 +6,7 @@ import GameRenderer from './GameRenderer.js';
 import Camera from './Camera.js';
 import enemyRegistry from '../enemies/EnemyRegistry.js';
 import EnemyManager from './EnemyManager.js';
-import SVGMapLoader from '../systems/SVGMapLoader.js'; 
+import SVGMapLoader from '../systems/SVGMapLoader.js'; // <-- CORREGIDO: Importa el nuevo cargador
 import RewardSystem from './RewardSystem.js';
 import OrbManager   from './OrbManager.js';
 import { HP_DMG_DASH_WALL, DASH_WALL_STUN_DUR } from '../constants.js';
@@ -79,6 +79,7 @@ export default class Game extends Phaser.Scene {
     this.renderer.setCustomLines(this.currentMap.lines || []);
     this.renderer.setCustomZones(this.currentMap.zones || []);
 
+    // CORREGIDO: Se quitó la llave '}' que cortaba la función por la mitad
     this.restartKey = this.input.keyboard.addKey('SPACE');
     this.menuKey = this.input.keyboard.addKey('M');
 
@@ -128,7 +129,7 @@ export default class Game extends Phaser.Scene {
     this.player.update(delta, this.momentum); 
     this.momentum.update(delta, this.player);
 
-    // Calcular líneas activas una sola vez
+    // Calcular líneas activas una sola vez — reutilizar en colisión, wallEnemy y render
     this._visibleLines = this.currentMap.lines.filter(l => !l._broken);
 
     this.enemyManager.update(delta, this.time.now, this.player, this._visibleLines);
@@ -142,7 +143,28 @@ export default class Game extends Phaser.Scene {
       this.enemyManager.checkSolidCollision(this.player, 12);
     }
 
-    this.checkLineCollisions(this._visibleLines);
+    // Sub-stepping: si el jugador se movió mucho este frame, dividir la colisión
+    // para evitar tunneling a través de muros delgados a alta velocidad
+    const frameDist = Math.hypot(this.player.px - this.player.prevX, this.player.py - this.player.prevY);
+    const steps = frameDist > 16 ? 2 : 1;
+    if (steps > 1) {
+      const midX = (this.player.prevX + this.player.px) / 2;
+      const midY = (this.player.prevY + this.player.py) / 2;
+      const endX = this.player.px;
+      const endY = this.player.py;
+
+      // Paso 1: prevX → midpoint
+      this.player.px = midX; this.player.py = midY;
+      this.checkLineCollisions(this._visibleLines);
+
+      // Paso 2: midpoint → endX (actualizar prev para el segundo sweep)
+      this.player.prevX = this.player.px; this.player.prevY = this.player.py;
+      this.player.px = endX; this.player.py = endY;
+      this.checkLineCollisions(this._visibleLines);
+    } else {
+      this.checkLineCollisions(this._visibleLines);
+    }
+
     this.checkZones();
 
     // isWall enemies como líneas extra
@@ -220,42 +242,7 @@ export default class Game extends Phaser.Scene {
       this.lineCollisionBetween(this._p1, this._p2, line, playerRadius + (line.thickness / 2));
       
       if (this._colResult.collided) {
-        
-        // ---> Lógica de muro saltables (Verdes) <---
-        if (line.type === 'wall_jumpable') {
-          const reqSpeed = line.speedRequired || 0;
-          if (this.player.jumping && playerSpeed >= reqSpeed) {
-            continue;
-          }
-        }
-        // -------------------------------------------
-
-        // FIX: Durante wallrun, ignorar colisiones con la pared actual o con
-        // segmentos paralelos (la misma pared larga dividida en trozos).
-        // Solo se procesa la colisión si el muro encontrado es perpendicular
-        // al tangente actual → esquina real → el run se corta ahí.
-        if (!canStick && isWallRunning) {
-          const wallRun = this.player.wallRun;
-          const currentWallLine = wallRun?.currentWallLine;
-
-          // Mismo segmento → skip directo
-          if (line === currentWallLine) continue;
-
-          // Segmento distinto → decidir por ángulo
-          if (wallRun) {
-            const tx = wallRun.wallTangentX;
-            const ty = wallRun.wallTangentY;
-            const dx = line.end.x - line.start.x;
-            const dy = line.end.y - line.start.y;
-            const len = Math.hypot(dx, dy);
-            if (len > 0) {
-              const parallelDot = Math.abs((dx / len) * tx + (dy / len) * ty);
-              // >= 0.85 → casi paralelo (misma pared) → ignorar
-              // <  0.85 → esquina (~>32° de diferencia) → colisión real
-              if (parallelDot >= 0.85) continue;
-            }
-          }
-        }
+        if (!canStick && isWallRunning) continue; 
 
         this.player.px = this._colResult.hitX;
         this.player.py = this._colResult.hitY;

@@ -101,7 +101,9 @@ export default class EnemySpawner {
 
     const minNow = Math.floor((this.density.minBase || 0) + (this.density.minPerMin || 0) * elapsedMin);
     
-    if (currentEnemiesCount < minNow && currentEnemiesCount < hardcap) {
+    this._fillCooldown = Math.max(0, (this._fillCooldown || 0) - 16); // ~1 frame
+
+    if (currentEnemiesCount < minNow && currentEnemiesCount < hardcap && this._fillCooldown <= 0) {
       if (!this._fillType) {
         this._fillType = this.spawnList.find(e => e.type || e.enemyRef)?.type || null;
       }
@@ -116,6 +118,7 @@ export default class EnemySpawner {
           this.scene
         );
         if (newEnemy) this.manager.addEnemy(newEnemy);
+        this._fillCooldown = 500;
       }
     }
   }
@@ -147,6 +150,7 @@ export default class EnemySpawner {
     this.nextSpawnIndex = 0;
     this.gameStartTime = 0;
     this._fillType = null;
+    this._fillCooldown = 0;
     for (const enemy of this.spawnList) enemy.active = false;
   }
 }
