@@ -100,27 +100,34 @@ export default class EnemySpawner {
     if (!this.density || !this.spawners.length) return;
 
     const minNow = Math.floor((this.density.minBase || 0) + (this.density.minPerMin || 0) * elapsedMin);
-    
-    this._fillCooldown = Math.max(0, (this._fillCooldown || 0) - 16); // ~1 frame
+    this._fillCooldown = Math.max(0, (this._fillCooldown || 0) - 16);
 
-    if (currentEnemiesCount < minNow && currentEnemiesCount < hardcap && this._fillCooldown <= 0) {
-      if (!this._fillType) {
-        this._fillType = this.spawnList.find(e => e.type || e.enemyRef)?.type || null;
-      }
-      if (this._fillType && enemyRegistry.has(this._fillType)) {
-        const spawner = this.spawners[Math.floor(Math.random() * this.spawners.length)];
-        const offset = 60 + Math.random() * 80;
-        const angle = Math.random() * Math.PI * 2;
-        const newEnemy = enemyRegistry.create(
-          this._fillType,
-          spawner.x + Math.cos(angle) * offset,
-          spawner.y + Math.sin(angle) * offset,
-          this.scene
-        );
-        if (newEnemy) this.manager.addEnemy(newEnemy);
-        this._fillCooldown = 500;
-      }
-    }
+    if (currentEnemiesCount >= minNow || currentEnemiesCount >= hardcap || this._fillCooldown > 0) return;
+
+    // Determinar pool de tipos — usar fillTypes si está configurado, sino el primero del spawnList
+    const pool = (this.density.fillTypes?.length > 0)
+      ? this.density.fillTypes
+      : [this.spawnList.find(e => e.type || e.enemyRef)?.type].filter(Boolean);
+
+    if (!pool.length) return;
+
+    // Round-robin proporcional
+    const fillType = pool[this._fillIndex % pool.length];
+    this._fillIndex = (this._fillIndex || 0) + 1;
+
+    if (!enemyRegistry.has(fillType)) return;
+
+    const spawner = this.spawners[Math.floor(Math.random() * this.spawners.length)];
+    const angle   = Math.random() * Math.PI * 2;
+    const offset  = 60 + Math.random() * 80;
+    const newEnemy = enemyRegistry.create(
+      fillType,
+      spawner.x + Math.cos(angle) * offset,
+      spawner.y + Math.sin(angle) * offset,
+      this.scene
+    );
+    if (newEnemy) this.manager.addEnemy(newEnemy);
+    this._fillCooldown = 500;
   }
 
   _spawnOne(enemyData, player) {
@@ -151,6 +158,7 @@ export default class EnemySpawner {
     this.gameStartTime = 0;
     this._fillType = null;
     this._fillCooldown = 0;
+    this._fillIndex = 0;
     for (const enemy of this.spawnList) enemy.active = false;
   }
 }

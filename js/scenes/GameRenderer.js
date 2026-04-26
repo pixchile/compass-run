@@ -1,3 +1,5 @@
+// js/scenes/GameRenderer.js
+
 import { W, H, ARENA, SMAX, L2, L3, DASH_CD, C, DIRS, HP_MAX, SLAM, ATTACK_RADIOS } from '../constants.js';
 
 // Importar todos los renderers
@@ -169,6 +171,15 @@ export default class GameRenderer {
     }
     
     this.trailRenderer.render(g, player);
+
+    // NUEVO: Efecto visual de Surfeo de Muro
+    if (player.isSurfing) {
+      g.lineStyle(4, 0x00ffff, 0.6 + time.sinFast * 0.2);
+      g.strokeCircle(player.px, player.py, 16 + time.sinFast * 2);
+      g.fillStyle(0x00ffff, 0.2);
+      g.fillCircle(player.px, player.py, 16);
+    }
+
     this.playerRenderer.render(g, player, momentum, time);
     this.enemyRenderer.render(g, this.gameScene.enemyManager.getEnemies());
     this.gameScene.orbManager.render(g);

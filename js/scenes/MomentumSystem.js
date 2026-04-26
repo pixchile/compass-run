@@ -1,3 +1,5 @@
+// js/scenes/MomentumSystem.js
+
 import { L2, L3, SMAX, DIRS, C, AIR_GAIN_RATE, AIR_DRAIN_RATE, AIR_BONUS_MULT, COMPASS_SPEEDUP_RATE, COMPASS_SPEEDUP_INTERVAL, COMPASS_BASE_MAX, COMPASS_BASE_MIN, COMPASS_STACK_FACTOR, ATTACK_RADIOS } from '../constants.js';
 
 // Precalculamos los cosenos de los ángulos para usar Producto Punto
@@ -54,8 +56,28 @@ export default class MomentumSystem {
     this.stacks = Math.max(0, Math.floor(this.stacks / 2));
   }
 
+  // --- NUEVO: Reinicio completo (Castigo al caer del muro) ---
+  reset() {
+    this.stacks = 0;
+    this.gainT = 0;
+    this.drainT = 0;
+    this.levelProtect = 0;
+  }
+
   addStacks(amount) {
     this.stacks = Math.min(SMAX, this.stacks + amount);
+  }
+
+  // --- NUEVO: Generar momentum rápido por grindear (Recompensa) ---
+  addSurfingMomentum(delta) {
+    this.gainT += delta;
+    // Tasa súper rápida (ej: añadir un stack cada 100ms mientras grindeas)
+    if (this.gainT >= 100) {
+      this.stacks = Math.min(SMAX, this.stacks + 1);
+      this.gainT -= 100;
+    }
+    // Protege el nivel mientras surfeas
+    this.levelProtect = Math.min(3000, this.levelProtect + delta * 2);
   }
 
   calculateStackMode(player) {

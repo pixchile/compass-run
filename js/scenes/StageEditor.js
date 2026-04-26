@@ -26,6 +26,8 @@ export default class StageEditor extends Phaser.Scene {
     this.maxPerMin    = 5;           // +X por minuto
     this.minBase      = 0;           // mínimo (relleno automático)
     this.minPerMin    = 0;
+    this.fillTypes    = [];           // tipos que participan en el relleno automático
+    this._fillRoundRobin = 0;        // índice para rotación proporcional
 
     // --- Estado del editor ---
     this.currentTime   = 0;          // segundo actual en la línea de tiempo
@@ -78,6 +80,9 @@ export default class StageEditor extends Phaser.Scene {
           <div class="se-row"><span class="se-dim">+/min</span><input id="se-max-per-min" class="se-input se-input-sm" type="number" value="${this.maxPerMin}" min="0"></div>
           <div class="se-row"><span class="se-dim">Mín base</span><input id="se-min-base" class="se-input se-input-sm" type="number" value="${this.minBase}" min="0"></div>
           <div class="se-row"><span class="se-dim">+/min</span><input id="se-min-per-min" class="se-input se-input-sm" type="number" value="${this.minPerMin}" min="0"></div>
+          <div class="se-label" style="margin-top:10px">RELLENO</div>
+          <div class="se-dim" style="font-size:9px;margin-bottom:4px">Tipos que aparecen al estar bajo el mínimo</div>
+          <div id="se-fill-list"></div>
         </div>
 
         <div class="se-section">
@@ -105,6 +110,7 @@ export default class StageEditor extends Phaser.Scene {
     this._root = root;
 
     this._refreshTypeList();
+    this._refreshFillList();
     this._refreshTimeline();
 
     this.events.once('shutdown', () => this._cleanup());
@@ -154,6 +160,16 @@ export default class StageEditor extends Phaser.Scene {
       .se-type-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
       .se-type-name { color:#8ab4cc; font-size:11px; flex:1; }
       .se-type-count { color:#253545; font-size:10px; }
+      #se-fill-list { display:flex; flex-direction:column; gap:3px; margin-top:4px; }
+      .se-fill-item {
+        display:flex; align-items:center; gap:8px; padding:5px 8px;
+        background:#080f1c; border:1px solid #192840; cursor:pointer;
+        pointer-events:auto; transition:all .12s;
+      }
+      .se-fill-item.active { border-color:#ffaa22; background:rgba(255,170,34,.06); }
+      .se-fill-item:hover { border-color:#4488ff; }
+      .se-fill-check { width:10px; height:10px; border:1px solid #4488ff; flex-shrink:0; }
+      .se-fill-item.active .se-fill-check { background:#ffaa22; border-color:#ffaa22; }
 
       /* Línea de tiempo */
       #se-timeline-bar {
@@ -220,6 +236,32 @@ export default class StageEditor extends Phaser.Scene {
         this.placingSpawner = false;
         this._refreshTypeList();
         this._updateCursor();
+      });
+    });
+  }
+
+  _refreshFillList() {
+    const container = document.getElementById('se-fill-list');
+    if (!container) return;
+    const types = enemyRegistry.getAllTypes();
+    container.innerHTML = types.map(t => {
+      const active = this.fillTypes.includes(t);
+      const color  = '#' + (enemyRegistry.getTypeColor(t) >>> 0).toString(16).padStart(6,'0').slice(-6);
+      return `<div class="se-fill-item ${active ? 'active' : ''}" data-type="${t}">
+        <div class="se-fill-check"></div>
+        <div class="se-type-dot" style="background:${color}"></div>
+        <span class="se-type-name">${t}</span>
+      </div>`;
+    }).join('');
+
+    container.querySelectorAll('.se-fill-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const t = el.dataset.type;
+        const idx = this.fillTypes.indexOf(t);
+        if (idx === -1) this.fillTypes.push(t);
+        else this.fillTypes.splice(idx, 1);
+        this._fillRoundRobin = 0;
+        this._refreshFillList();
       });
     });
   }
@@ -480,6 +522,7 @@ export default class StageEditor extends Phaser.Scene {
         maxPerMin:   this.maxPerMin,
         minBase:     this.minBase,
         minPerMin:   this.minPerMin,
+        fillTypes:   this.fillTypes,
       }
     };
     const all = this._getAllStages();
@@ -509,6 +552,8 @@ export default class StageEditor extends Phaser.Scene {
     this.maxPerMin  = d.maxPerMin ?? 5;
     this.minBase    = d.minBase   ?? 0;
     this.minPerMin  = d.minPerMin ?? 0;
+    this.fillTypes  = d.fillTypes || [];
+    this._fillRoundRobin = 0;
 
     document.getElementById('se-stage-name').value  = this.stageName;
     document.getElementById('se-timelimit').value   = this.timeLimit;
@@ -519,6 +564,7 @@ export default class StageEditor extends Phaser.Scene {
     document.getElementById('se-svg-name').textContent = this.svgName || 'sin mapa';
 
     this._refreshTypeList();
+    this._refreshFillList();
     this._refreshTimeline();
     this._toast(`Stage "${this.stageName}" cargado`, 'ok');
   }

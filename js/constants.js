@@ -19,12 +19,12 @@ export const DASH_SPD = 2.0;
 
 // Health
 export const HP_MAX             = 100;
-export const HP_DMG_DASH_WALL   = 0.02;
-export const HP_DMG_ENEMY_HIT   = 0.5;
+export const HP_DMG_DASH_WALL   = 0.01;
+export const HP_DMG_ENEMY_HIT   = 0.65;
 export const HP_DMG_VOID        = 100;
 export const HP_LOW_SPD         = 29; // que es esto?
 export const HP_REGEN_DELAY     = 4000;
-export const HP_REGEN_RATE      = 0;
+export const HP_REGEN_RATE      = 0.2;
 
 // Momentum system - Airborne balance
 export const AIR_GAIN_RATE   = 120;
@@ -64,13 +64,13 @@ export const MAPS = {
 
 // Wall Jump Configuration
 export const WALL_JUMP = {
-  STICK_DURATION: 2000,
-  GRACE_WINDOW: 200,
-  PENALTY_MIN_FACTOR: 0.7,
-  COMPASS_BONUS: 1.25,
-  GRACE_TIME: 300,
+  STICK_DURATION: 3000,
+  GRACE_WINDOW: 100,
+  PENALTY_MIN_FACTOR: 0.8,
+  COMPASS_BONUS: 1.5,
+  GRACE_TIME: 100,
   SPEEDS: [0, 400, 800, 1000],
-  STACK_BONUS: [0, 3, 4, 5],
+  STACK_BONUS: [0, 4, 0, 0],
   STICK_DAMAGE_THRESHOLD: 940,
   STICK_DAMAGE_AMOUNT: 3
 };
@@ -82,9 +82,9 @@ export const KILL_STACKS = {
 };
 
 export const ATTACK_RADIOS = {
-    1: 28,   // Radio base para momentum nivel 1 (ligeramente más grande que el radio del jugador)
-    2: 45,   // Radio ampliado para nivel 2 (+60%)
-    3: 65    // Radio máximo para nivel 3 (+132% del base)
+    1: 50,   // Radio base para momentum nivel 1 (ligeramente más grande que el radio del jugador)
+    2: 75,   // Radio ampliado para nivel 2 (+60%)
+    3: 100    // Radio máximo para nivel 3 (+132% del base)
 };
 
 export const ATTACK_DAMAGE_MULTIPLIERS = {
@@ -117,8 +117,8 @@ export const REWARDS = {
   CREDIT_SPEED_FACTOR: 0.0002,
 
   // NUEVO: Factores dinámicos de velocidad según cantidad de kills
-  SPEED_MIN_BONUS_PER_KILL: 0.03,                 // 100 kills = +10 vel mínima
-  SPEED_MAX_BONUS_PER_KILL: [0, 0.04, 0.05, 0.06],  // 100 kills = +40 L1, +50 L2, +60 L3
+  SPEED_MIN_BONUS_PER_KILL: 0.1,                 
+  SPEED_MAX_BONUS_PER_KILL: [0, 0.4, 0.5, 0.6], 
 };
 
 // Wall Run Configuration
@@ -133,6 +133,6 @@ export const DASH_WALL_STUN_DUR = 250;   // ms de stun (parálisis) al chocar co
 // Compass (Brújula)
 export const COMPASS_SPEEDUP_RATE     = 0.10;   // Aumento de velocidad (0.10 = 10%)
 export const COMPASS_SPEEDUP_INTERVAL = 60000;  // Cada cuánto aplica el aumento (60000ms = 1 min)
-export const COMPASS_BASE_MAX         = 5000;   // Intervalo máximo (con 0 stacks)
+export const COMPASS_BASE_MAX         = 3600;   // Intervalo máximo (con 0 stacks)
 export const COMPASS_BASE_MIN         = 2000;   // Intervalo mínimo cap
 export const COMPASS_STACK_FACTOR     = 18;     // Reducción del intervalo por cada stack de momentum
