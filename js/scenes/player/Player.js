@@ -24,6 +24,7 @@ export default class Player {
         this.isSurfing = false;
         this.dashing = false; this.dashT = 0; this.dashVx = 0; this.dashVy = 0; this.dashCD = 0; this.dashInitialSpeed = 0;
         this.stunT = 0;
+        this.holdingSpace = false;   // NUEVO: si mantiene Espacio presionado
         
         this.moveDir = { x: 0, y: 0 };
         this.trail = []; 
@@ -76,6 +77,9 @@ export default class Player {
 
         this.moveDir = this.input.getMoveDirection();
         const moving = this.moveDir.x !== 0 || this.moveDir.y !== 0;
+
+        // NUEVO: guardar si mantiene Espacio presionado (para atravesar muros en salto)
+        this.holdingSpace = this.input.isSpaceDown();
 
         this.stunT = Math.max(0, this.stunT - delta);
         this.slowTimer  = Math.max(0, (this.slowTimer  || 0) - delta);
@@ -132,15 +136,18 @@ export default class Player {
         }
 
         if (this.input.isShiftJustPressed() && !this.dashing && !this.isStunned && this.dashCD === 0 && !this.wallJump.wallStick) {
-            this.dashing = true; this.dashT = 0; this.dashCD = DASH_CD;
-            this.wasJumpingWhenDashed = this.jumping;
-            
-            this.dashInitialSpeed = currentSpeed * DASH_SPD;  
-            const dirX = currentSpeed > 8 ? this.vx / currentSpeed : Math.cos(this.facing);
-            const dirY = currentSpeed > 8 ? this.vy / currentSpeed : Math.sin(this.facing);
-            this.dashVx = dirX * this.dashInitialSpeed;
-            this.dashVy = dirY * this.dashInitialSpeed;
-            if (this.jumping) { this.jumpVx = this.dashVx; this.jumpVy = this.dashVy; }
+            // NUEVO: No permitir dash aéreo si mantiene Espacio presionado
+            if (!(this.jumping && this.holdingSpace)) {
+                this.dashing = true; this.dashT = 0; this.dashCD = DASH_CD;
+                this.wasJumpingWhenDashed = this.jumping;
+                
+                this.dashInitialSpeed = currentSpeed * DASH_SPD;  
+                const dirX = currentSpeed > 8 ? this.vx / currentSpeed : Math.cos(this.facing);
+                const dirY = currentSpeed > 8 ? this.vy / currentSpeed : Math.sin(this.facing);
+                this.dashVx = dirX * this.dashInitialSpeed;
+                this.dashVy = dirY * this.dashInitialSpeed;
+                if (this.jumping) { this.jumpVx = this.dashVx; this.jumpVy = this.dashVy; }
+            }
         }
 
         // Físicas

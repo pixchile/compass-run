@@ -1,4 +1,4 @@
-import { HP_DMG_DASH_WALL, DASH_WALL_STUN_DUR } from '../constants.js';
+import { HP_DMG_DASH_WALL, DASH_WALL_STUN_DUR, DASH_WALL_DAMAGE_FACTOR, WALL_DEFAULT_HP } from '../constants.js';
 import { closestPointOnLine } from './GeometryUtils.js';
 
 export default class CollisionSystem {
@@ -27,9 +27,14 @@ export default class CollisionSystem {
         this._p2.x = player.px; this._p2.y = player.py;
 
         for (const line of lines) {
-            if (!line) continue;
-            
-            const isNormalWall = !line.type || line.type === 'default';
+            if (!line || line._broken) continue;
+
+            // Si el jugador está en salto y mantiene Espacio, atraviesa el muro
+            if (player.jumping && player.holdingSpace) {
+                continue;
+            }
+
+            const isNormalWall = !line.type || line.type === 'wall' || line.type === 'wall_solid';
             if (isNormalWall && player.isSurfing) continue;
 
             this.lineCollisionBetween(this._p1, this._p2, line, playerRadius + ((line.thickness || 0) / 2));
@@ -58,36 +63,50 @@ export default class CollisionSystem {
                     player.py += finalNy * overlap;
                 }
 
-                if (canStick) {
-                    if (line.type === 'wall_breakable') {
-                        if (playerMomentum >= (line.momentumRequired || 3)) {
-                            line._broken = true; continue;
+                const dotV = player.vx * finalNx + player.vy * finalNy;
+                let impactSpeed = 0;
+                if (dotV < 0) {
+                    impactSpeed = -dotV;
+                }
+
+                // Dash contra muro: posible destrucción
+                if (player.dashing) {
+                    // Si el muro tiene HP (es destructible)
+                    if (line.hp !== undefined && line.hp !== null) {
+                        const damage = impactSpeed * DASH_WALL_DAMAGE_FACTOR;
+                        line.hp -= damage;
+                        if (line.hp <= 0) {
+                            line._broken = true;
+                            continue;
                         }
                     }
-                    player.vx = 0; player.vy = 0;
-                    const normalAngle = Math.atan2(finalNy, finalNx);
-                    if (player.stickToWall) player.stickToWall(normalAngle, currentSpeed, line);
-                    return; 
-                } else {
-                    if (line.type === 'wall_breakable') {
-                        if (playerMomentum >= (line.momentumRequired || 3)) { 
-                            line._broken = true; continue; 
-                        }
-                    }
-                    const dotV = player.vx * finalNx + player.vy * finalNy;
-                    let impactSpeed = 0;
-                    if (dotV < 0) {
-                        impactSpeed = -dotV;
-                        player.vx -= dotV * finalNx;
-                        player.vy -= dotV * finalNy;
-                    }
-                    if (player.dashing) {
+
+                    // Penalizaciones normales por chocar en dash
+                    if (!line._broken) {
                         player.stunT = DASH_WALL_STUN_DUR;
                         if (momentum) momentum.halveStacks();
                         if (player.health) player.health.takeDamage(Math.floor(HP_DMG_DASH_WALL * impactSpeed));
                         player.dashing = false;
                         player.vx = 0; player.vy = 0;
                     }
+                    break;
+                }
+
+                // Lógica de wall stick (si no está en dash)
+                if (canStick) {
+                    player.vx = 0; player.vy = 0;
+                    const normalAngle = Math.atan2(finalNy, finalNx);
+                    if (player.stickToWall) player.stickToWall(normalAngle, currentSpeed, line);
+                    return;
+                } else {
+                    // Solo cancelar velocidad que empuja contra la pared. No rebotar.
+                    if (dotV < 0) {
+                        player.vx -= dotV * finalNx;
+                        player.vy -= dotV * finalNy;
+                    }
+                    // Pequeño empuje hacia afuera para no atascarse
+                    player.px += finalNx * 2;
+                    player.py += finalNy * 2;
                     break;
                 }
             }

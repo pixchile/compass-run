@@ -11,17 +11,14 @@ export default class EnemyManager {
     this.enemies = [];
     this.totalKills = 0;
 
-    // Dependencias externas
     this.rewardSystem = null;
     this.orbManager   = null;
     this.momentum     = null;
 
-    // Sub-sistemas
     this.spawner = new EnemySpawner(this, scene);
     this.combatSystem = new CombatSystem(this, scene);
   }
 
-  // --- CONFIGURACIÓN (Delegada al Spawner cuando corresponde) ---
   setRewardHandlers(rewardSystem, orbManager) {
     this.rewardSystem = rewardSystem;
     this.orbManager   = orbManager;
@@ -32,26 +29,21 @@ export default class EnemyManager {
   setSpawners(spawners)       { this.spawner.setSpawners(spawners); }
   setSpawnList(enemies)       { this.spawner.setSpawnList(enemies); }
 
-  // --- MÉTODOS DE BUCLE PRINCIPAL ---
   update(delta, currentTime, player, lines) {
-    // 1. Spawner decide si deben aparecer nuevos enemigos
     this.spawner.update(currentTime, player);
 
-    // 2. Actualizar movimiento/lógica de los enemigos vivos
     for (let i = this.enemies.length - 1; i >= 0; i--) {
         const enemy = this.enemies[i];
         if (typeof enemy.update === 'function') {
             enemy.update(delta, player, lines);
         }
         
-        // Si un enemigo muere por un efecto de estado o tiempo (HP <= 0 de forma pasiva)
         if (enemy.hp <= 0) {
             this.killEnemy(i, enemy, 'passive');
         }
     }
   }
 
-  // --- COMBATE (Delegado al CombatSystem) ---
   processPlayerInteractions(player, delta, now, momentumSystem) {
     this.combatSystem.processPlayerInteractions(player, delta, now, momentumSystem);
   }
@@ -68,8 +60,6 @@ export default class EnemyManager {
     return this.combatSystem.getWallEnemyLines();
   }
 
-  // --- UTILIDADES ---
-  
   addEnemy(enemyInstance) {
     if (enemyInstance) {
         this.enemies.push(enemyInstance);
@@ -79,15 +69,14 @@ export default class EnemyManager {
   killEnemy(index, enemy, fatalSource) {
     if (typeof enemy.kill === 'function') enemy.kill(fatalSource);
     
-    // Contabilizar kills, recompensas y momentum
     this.totalKills++;
     if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
     if (this.orbManager && enemy.type === 'big') this.orbManager.scheduleOrb(enemy.x, enemy.y);
     if (this.momentum && KILL_STACKS[enemy.type] !== undefined) {
       this.momentum.addStacks(KILL_STACKS[enemy.type]);
+      this.momentum.registerAction(this.scene.time.now);
     }
 
-    // Quitar del array
     this.enemies.splice(index, 1);
   }
 

@@ -1,10 +1,11 @@
 import Player from './player/Player.js';
 import MomentumSystem from './MomentumSystem.js';
+import CompassSystem from './CompassSystem.js';
 import GameRenderer from './GameRenderer.js';
 import Camera from './Camera.js';
 import enemyRegistry from '../enemies/EnemyRegistry.js';
 import EnemyManager from './EnemyManager.js';
-import SVGMapLoader from '../systems/SVGMapLoader.js'; 
+import SVGMapLoader from '../systems/SVGMapLoader.js';
 import RewardSystem from './RewardSystem.js';
 import OrbManager from './OrbManager.js';
 import CollisionSystem from '../systems/CollisionSystem.js';
@@ -17,8 +18,7 @@ export default class Game extends Phaser.Scene {
         super('Game');
         this._visibleLines = [];
         this._wallEnemyLines = [];
-        
-        // Sistemas Desacoplados
+
         this.collisionSystem = new CollisionSystem();
         this.surfSystem = new SurfSystem();
         this.zoneSystem = new ZoneSystem();
@@ -32,35 +32,39 @@ export default class Game extends Phaser.Scene {
     async create() {
         registerAllCustomEnemies(enemyRegistry);
         this.mapLoader = new SVGMapLoader();
-        
+
         this.currentMap = await this.mapLoader.loadMapFromURL(`assets/maps/${this.mapName}.svg`);
         if (!this.currentMap) {
-            this.currentMap = { arena: {x:50, y:50, w:2000, h:2000}, lines: [], zones: [] };
+            this.currentMap = { arena: { x: 50, y: 50, w: 2000, h: 2000 }, lines: [], zones: [] };
         }
 
         if (this.stageName) {
             try {
                 const stages = JSON.parse(localStorage.getItem('cr_stages') || '[]');
-                const stage  = stages.find(s => s.name === this.stageName);
+                const stage = stages.find(s => s.name === this.stageName);
                 if (stage) {
                     this.currentMap.enemies = stage.enemies || [];
                     this.currentMap.spawners = stage.spawners || [];
                     this.currentMap.density = stage.density || null;
                     if (stage.timeLimit) this.currentMap.timeLimit = stage.timeLimit;
                 }
-            } catch(e) { console.warn("Error loading stage:", e); }
+            } catch (e) { console.warn("Error loading stage:", e); }
         }
 
         this.gameOver = false;
         this.gameOverAlpha = 0;
-        this.gameOverReason = null; 
+        this.gameOverReason = null;
 
         this.timeLimit = this.currentMap.timeLimit || 300;
         this.timeRemaining = this.timeLimit;
         this.lastTimeUpdate = this.time.now;
 
         this.player = new Player(this);
+
         this.momentum = new MomentumSystem();
+        this.compass = new CompassSystem();
+        this.compass.setReferences(this.momentum, null, this);
+
         this.camera = new Camera();
 
         const arenaBounds = this.currentMap.arena || { x: 55, y: 58, w: 4000, h: 4000 };
@@ -77,15 +81,16 @@ export default class Game extends Phaser.Scene {
         this.menuKey = this.input.keyboard.addKey('M');
 
         this.rewardSystem = new RewardSystem();
-        this.orbManager   = new OrbManager();
+        this.orbManager = new OrbManager();
         this.enemyManager.setRewardHandlers(this.rewardSystem, this.orbManager);
-        this.momentum.setRewardSystem(this.rewardSystem);
+
+        this.compass.setReferences(this.momentum, this.rewardSystem, this);
         this.enemyManager.setMomentumSystem(this.momentum);
     }
 
     update(t, delta) {
         if (!this.currentMap) return;
-        
+
         if (!this.gameOver && !this.player.isDead) {
             const now = this.time.now;
             if (now - this.lastTimeUpdate >= 1000) {
@@ -103,21 +108,20 @@ export default class Game extends Phaser.Scene {
             this.gameOverAlpha = Math.min(1, this.gameOverAlpha + delta / 500);
             if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.restartGame();
             if (Phaser.Input.Keyboard.JustDown(this.menuKey)) this.scene.start('MainMenu');
-            this.renderer.render(this.player, this.momentum, true, this.gameOverAlpha, this.gameOverReason, this.timeRemaining, delta);
+            this.renderer.render(this.player, this.compass, true, this.gameOverAlpha, this.gameOverReason, this.timeRemaining, delta);
             return;
         }
 
         this.player.prevX = this.player.px;
         this.player.prevY = this.player.py;
 
-        this.player.update(delta, this.momentum); 
-        this.momentum.update(delta, this.player);
+        this.player.update(delta, this.momentum);
+        this.compass.update(delta, this.player, this.time.now);
+        this.momentum.updateDecay(delta, this.time.now);
 
         this._visibleLines = (this.currentMap.lines || []).filter(l => !l._broken);
 
-        // Uso de sistemas extraídos
         this.surfSystem.update(delta, this.player, this.momentum, this._visibleLines);
-
         this.enemyManager.update(delta, this.time.now, this.player, this._visibleLines);
         this.rewardSystem.update(delta, this.player);
         this.orbManager.update(delta, this.player);
@@ -131,7 +135,7 @@ export default class Game extends Phaser.Scene {
 
         const frameDist = Math.hypot(this.player.px - this.player.prevX, this.player.py - this.player.prevY);
         const steps = frameDist > 16 ? 2 : 1;
-        
+
         if (steps > 1) {
             const midX = (this.player.prevX + this.player.px) / 2;
             const midY = (this.player.prevY + this.player.py) / 2;
@@ -147,7 +151,6 @@ export default class Game extends Phaser.Scene {
             this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines);
         }
 
-        // Sistema de zonas extraído
         this.zoneSystem.checkZones(this.player, this.currentMap.zones);
 
         this._wallEnemyLines = this.enemyManager.getWallEnemyLines();
@@ -157,27 +160,29 @@ export default class Game extends Phaser.Scene {
 
         if (this.player.activeSlam) {
             this.enemyManager.processSlam(this.player.activeSlam, this.time.now);
-            this.player.activeSlam = null; 
+            this.player.activeSlam = null;
         }
 
         const playerSpeed = Math.hypot(this.player.vx, this.player.vy);
         this.camera.update(this.player.px, this.player.py, playerSpeed);
         this.renderer.setCustomLines(this._visibleLines);
-        this.renderer.render(this.player, this.momentum, false, 0, this.gameOverReason, this.timeRemaining, delta);
+        this.renderer.render(this.player, this.compass, false, 0, this.gameOverReason, this.timeRemaining, delta);
     }
 
     restartGame() {
         this.gameOver = false; this.gameOverAlpha = 0; this.gameOverReason = null;
         this.timeRemaining = this.timeLimit; this.lastTimeUpdate = this.time.now;
-        
+
         this.player = new Player(this);
         this.momentum = new MomentumSystem();
-        this.momentum.setRewardSystem(this.rewardSystem);
-        this.rewardSystem.reset(); this.orbManager.reset();
-        
+        this.compass = new CompassSystem();
+        this.compass.setReferences(this.momentum, this.rewardSystem, this);
+        this.rewardSystem.reset();
+        this.orbManager.reset();
+
         this.camera.x = this.camera.viewWidth / 2; this.camera.y = this.camera.viewHeight / 2;
         this.camera.zoom = 1.0; this.camera.targetZoom = 1.0;
-        
+
         this.enemyManager.clearAll();
         this.enemyManager.setSpawnList(this.currentMap.enemies || []);
         this.enemyManager.setMomentumSystem(this.momentum);

@@ -97,6 +97,9 @@ export class WallJumpSystem {
             const bonusStacks = WALL_JUMP.STACK_BONUS[level] || 3;
             if (typeof momentum.addStacks === 'function') {
                 momentum.addStacks(bonusStacks);
+                if (typeof momentum.registerAction === 'function') {
+                    momentum.registerAction(now);
+                }
             } else {
                 momentum.stacks = Math.min(90, momentum.stacks + bonusStacks);
             }
@@ -155,5 +158,4 @@ export class WallJumpSystem {
     }
 }
 
-// Exportación por defecto para compatibilidad
 export default WallJumpSystem;

@@ -1,17 +1,13 @@
-// Archivo: SVGMapLoader.js
-
 export default class SVGMapLoader {
   constructor() {
-    // IMPORTANTE: Estos colores deben coincidir en formato HEX con los de tu SVG
+    // Solo zonas/triggers y muro genérico (negro). Sin verde ni rojo.
     this.colorMap = {
-      '#000000': 'wall_solid',     // Negro
-      '#00ff00': 'wall_jumpable',  // Verde
-      '#ff0000': 'wall_breakable', // Rojo
-      '#ff00ff': 'void',           // Magenta
-      '#ffa500': 'damage_zone',    // Naranja
-      '#0000ff': 'trap',           // Azul
-      '#00ffff': 'trigger',        // Cian (reasignado)
-      '#ffff00': 'trigger'         // Amarillo
+      '#000000': 'wall',       // Negro -> muro normal
+      '#ff00ff': 'void',       // Magenta
+      '#ffa500': 'damage_zone',// Naranja
+      '#0000ff': 'trap',       // Azul
+      '#00ffff': 'trigger',    // Cian
+      '#ffff00': 'trigger'     // Amarillo
     };
   }
 
@@ -19,7 +15,7 @@ export default class SVGMapLoader {
     try {
       const response = await fetch(url);
       const svgText = await response.text();
-      return this.parseSVG(svgText, url.split('/').pop()); // usa el nombre del archivo
+      return this.parseSVG(svgText, url.split('/').pop());
     } catch (error) {
       console.error('Error cargando el SVG:', error);
       return null;
@@ -33,10 +29,10 @@ export default class SVGMapLoader {
     const mapData = {
       name: mapName,
       version: 4,
-      arena: { x: 0, y: 0, w: 2000, h: 2000 }, 
-      lines: [],    // <-- IMPORTANTE: Cambiamos 'walls' por 'lines' para tu motor físico
-      zones: [],    // Aquí irán magenta, azul, cian, naranja
-      triggers: [], // Aquí irán amarillos
+      arena: { x: 0, y: 0, w: 2000, h: 2000 },
+      lines: [],
+      zones: [],
+      triggers: [],
       objects: []
     };
 
@@ -56,39 +52,38 @@ export default class SVGMapLoader {
       }
       color = this.normalizeColor(color);
 
-      // Intentar resolver el tipo por color primero, luego por id del grupo padre
-      let type = this.colorMap[color] || 'unknown';
-      
+      let type = this.colorMap[color] || 'wall'; // por defecto, muro normal
+
       const shapeId   = shape.getAttribute('id') || '';
       const parentId  = shape.parentElement?.getAttribute('id') || '';
       const layerId   = shapeId || parentId;
 
-      // Si el color no resolvió, intentar por nombre de capa
-      if (type === 'unknown' && layerId) {
+      // Si el color no es específico, intentar por nombre de capa para zonas/triggers
+      if (type === 'wall' && layerId) {
         const layerLower = layerId.toLowerCase();
-        if (layerLower.startsWith('wall') || layerLower === 'walls') type = 'wall_solid';
-        else if (layerLower.startsWith('jump'))    type = 'wall_jumpable';
-        else if (layerLower.startsWith('break'))   type = 'wall_breakable';
-        else if (layerLower.startsWith('void'))    type = 'void';
-        else if (layerLower.startsWith('damage'))  type = 'damage_zone';
-        else if (layerLower.startsWith('trap'))    type = 'trap';
-        else if (layerLower.startsWith('trigger')) type = 'trigger';
+        if (layerLower.startsWith('void'))    type = 'void';
+        else if (layerLower.startsWith('damage')) type = 'damage_zone';
+        else if (layerLower.startsWith('trap'))   type = 'trap';
+        else if (layerLower.startsWith('trigger'))type = 'trigger';
+        // cualquier otra cosa sigue siendo 'wall'
       }
 
       const tags = layerId.toLowerCase().split('_');
       const geometry = this.extractGeometry(shape);
 
-      if (geometry && type !== 'unknown') {
+      if (geometry) {
         const entity = { type, color, tags, geometry };
         this.extractThresholds(entity);
         this.categorizeEntity(entity, mapData);
       }
     });
 
+    // DEPURACIÓN OPCIONAL: imprime las primeras líneas con HP
+    // const linesWithHP = mapData.lines.filter(l => l.hp != null);
+    // console.log(`Líneas con HP: ${linesWithHP.length}`, linesWithHP.slice(0,5).map(l => ({hp: l.hp, broken: l._broken})));
+
     return mapData;
   }
-
-  // --- MÉTODOS DE LA CLASE VAN AQUÍ AFUERA ---
 
   convertToLines(entity) {
     const lines = [];
@@ -101,7 +96,6 @@ export default class SVGMapLoader {
       lines.push({ start: { x: geo.x, y: geo.y + geo.h }, end: { x: geo.x, y: geo.y }, thickness: geo.thickness });
     } 
     else if (geo.shapeType === 'polygon') {
-      // Expresión regular mejorada para Clip Studio (/[\s,]+/)
       const pts = geo.points.trim().split(/[\s,]+/).map(Number);
       for (let i = 0; i < pts.length; i += 2) {
         const x1 = pts[i], y1 = pts[i+1];
@@ -113,7 +107,6 @@ export default class SVGMapLoader {
     else if (geo.shapeType === 'line') {
       lines.push({ start: geo.start, end: geo.end, thickness: geo.thickness });
     }
-
     else if (geo.shapeType === 'path') {
       const pts = this.samplePath(geo.pathData, 12);
       for (let i = 0; i < pts.length - 1; i++) {
@@ -121,23 +114,21 @@ export default class SVGMapLoader {
           start: pts[i],
           end: pts[i + 1],
           thickness: geo.thickness,
-          // Solo los extremos reales del path permiten wall stick
           noStickStart: i > 0,
           noStickEnd: i < pts.length - 2
         });
       }
     }
 
+    // Mapear a líneas finales con tipo 'wall' y HP si existe
     return lines.map(l => ({
       ...l,
-      type: entity.type,
+      type: 'wall',                        // siempre wall genérico
       color: entity.color,
-      momentumRequired: entity.momentumRequired,
-      speedRequired: entity.speedRequired
+      hp: entity.hp != null ? entity.hp : null,  // número o null (indestructible)
     }));
   }
 
-  // Convierte un path SVG (bezier incluido) en puntos muestreados
   samplePath(d, samplesPerSegment = 12) {
     try {
       const svgNS = 'http://www.w3.org/2000/svg';
@@ -168,7 +159,6 @@ export default class SVGMapLoader {
     if (!colorString) return null;
     colorString = colorString.toLowerCase().trim();
 
-    // Convertir rgb(r, g, b) a hex
     const rgbMatch = colorString.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
     if (rgbMatch) {
       const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0');
@@ -177,7 +167,6 @@ export default class SVGMapLoader {
       return `#${r}${g}${b}`;
     }
 
-    // Asegurar formato #rrggbb (algunos SVG usan #rgb corto)
     if (colorString.match(/^#[0-9a-f]{3}$/)) {
       return `#${colorString[1]}${colorString[1]}${colorString[2]}${colorString[2]}${colorString[3]}${colorString[3]}`;
     }
@@ -226,26 +215,37 @@ export default class SVGMapLoader {
   }
 
   extractThresholds(entity) {
-    entity.momentumRequired = 0; 
-    entity.speedRequired = 0; 
-
-    const momIndex = entity.tags.indexOf('momentum');
-    if (momIndex !== -1 && entity.tags.length > momIndex + 1) {
-      entity.momentumRequired = parseInt(entity.tags[momIndex + 1], 10);
-    }
-
-    const spdIndex = entity.tags.indexOf('speed');
-    if (spdIndex !== -1 && entity.tags.length > spdIndex + 1) {
-      entity.speedRequired = parseInt(entity.tags[spdIndex + 1], 10);
+  entity.hp = null;
+  
+  // Método 1: buscar 'hp' en los tags separados por '_'
+  if (entity.tags && Array.isArray(entity.tags)) {
+    const hpIndex = entity.tags.findIndex(tag => tag === 'hp');
+    if (hpIndex !== -1 && entity.tags.length > hpIndex + 1) {
+      const hpVal = parseInt(entity.tags[hpIndex + 1], 10);
+      if (!isNaN(hpVal)) {
+        entity.hp = hpVal;
+        return;
+      }
     }
   }
+  
+  // Método 2 (respaldo): buscar 'hp_' en el nombre completo de la capa
+  // Reconstruimos el nombre original uniendo los tags
+  const fullName = (entity.tags || []).join('_');
+  const hpMatch = fullName.match(/hp_(\d+)/);
+  if (hpMatch) {
+    const hpVal = parseInt(hpMatch[1], 10);
+    if (!isNaN(hpVal)) {
+      entity.hp = hpVal;
+    }
+  }
+}
 
   categorizeEntity(entity, mapData) {
-    if (entity.type.startsWith('wall_')) {
+    if (entity.type === 'wall') {
       const generatedLines = this.convertToLines(entity);
       mapData.lines.push(...generatedLines);
     } else if (['void', 'damage_zone', 'trap'].includes(entity.type)) {
-      // Para zonas path, calcular bounding box para el chequeo de colisión
       if (entity.geometry.shapeType === 'path') {
         const pts = this.samplePath(entity.geometry.pathData, 20);
         if (pts.length > 0) {

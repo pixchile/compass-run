@@ -29,14 +29,7 @@ export default class MainMenu extends Phaser.Scene {
       padding: { x: 20, y: 10 }
     }).setOrigin(0.5).setInteractive();
 
-    const editorBtn = this.add.text(centerX, centerY + 90, '✎ EDITOR DE MAPAS', {
-      fontSize: '24px',
-      fill: '#ffaa44',
-      backgroundColor: '#000000aa',
-      padding: { x: 20, y: 10 }
-    }).setOrigin(0.5).setInteractive();
-
-    const stageBtn = this.add.text(centerX, centerY + 150, '⚙ EDITOR DE STAGES', {
+    const stageBtn = this.add.text(centerX, centerY + 90, '⚙ EDITOR DE STAGES', {
       fontSize: '20px',
       fill: '#4488ff',
       backgroundColor: '#000000aa',
@@ -50,12 +43,6 @@ export default class MainMenu extends Phaser.Scene {
       this.scene.start('Game', { mapName: 'default' });
     });
 
-    editorBtn.on('pointerover', () => editorBtn.setStyle({ fill: '#ffffff' }));
-    editorBtn.on('pointerout', () => editorBtn.setStyle({ fill: '#ffaa44' }));
-    editorBtn.on('pointerdown', () => {
-      this.scene.start('MapEditor');
-    });
-
     stageBtn.on('pointerover', () => stageBtn.setStyle({ fill: '#ffffff' }));
     stageBtn.on('pointerout', () => stageBtn.setStyle({ fill: '#4488ff' }));
     stageBtn.on('pointerdown', () => {
@@ -63,7 +50,7 @@ export default class MainMenu extends Phaser.Scene {
     });
 
     // Instrucciones
-    this.add.text(centerX, H - 30, 'Use WASD to move | Momentum = Speed + Direction', {
+    this.add.text(centerX, H - 30, 'WASD para mover | Momento = Velocidad + Dirección', {
       fontSize: '12px',
       fill: '#666'
     }).setOrigin(0.5);

@@ -1,16 +1,16 @@
 export const W = 880, H = 620;
 export const ARENA = { x: 55, y: 58, w: 4000, h: 4000 };
 export const TRAIL_MAX = 16;
-export const L2 = 35, L3 = 55, SMAX = 90;
+export const L2 = 40, L3 = 50, SMAX = 90;
 
-export const MAX_SPD = [0, 280,  450,  650];
-export const TURN_K  = [0, 0.22, 0.09, 0.03];
-export const STOP_K  = [0, 0.28, 0.12, 0.045];
+export const MAX_SPD = [0, 300,  400,  440];
+export const TURN_K  = [0, 0.25, 0.25, 0.12];
+export const STOP_K  = [0, 0.25, 0.25, 0.12];
 
 // Jump params [_, L1, L2, L3]
-export const JUMP_DUR    = [0,  400,  600,  800];
-export const JUMP_HMAX   = [0,   28,   54,   84]; //salto visual
-export const JUMP_DIST_K = [0,  0.72, 0.92, 1.12]; //salto visual parabólico
+export const JUMP_DUR    = [0,  400,  800,  800];
+export const JUMP_HMAX   = [0,   28,   54,   84];
+export const JUMP_DIST_K = [0,  0.72, 0.92, 1.12];
 
 // Dash
 export const DASH_DUR = 400;
@@ -22,13 +22,18 @@ export const HP_MAX             = 100;
 export const HP_DMG_DASH_WALL   = 0.01;
 export const HP_DMG_ENEMY_HIT   = 0.65;
 export const HP_DMG_VOID        = 100;
-export const HP_LOW_SPD         = 29; // que es esto?
+export const HP_LOW_SPD         = 29;
 export const HP_REGEN_DELAY     = 4000;
 export const HP_REGEN_RATE      = 0.2;
 
-// Momentum system - Airborne balance
+
+// Muros destructibles
+export const WALL_DEFAULT_HP = 100;
+export const DASH_WALL_DAMAGE_FACTOR = 0.1; // 10% de la velocidad de impacto
+
+// Momentum system - Airborne balance (obsoleto, pero se conserva por si acaso)
 export const AIR_GAIN_RATE   = 120;
-export const AIR_DRAIN_RATE  = 1000; // creo que está en desuso.
+export const AIR_DRAIN_RATE  = 1000;
 export const AIR_BONUS_MULT  = 1.8;
 
 export const C = {
@@ -69,70 +74,125 @@ export const WALL_JUMP = {
   PENALTY_MIN_FACTOR: 0.8,
   COMPASS_BONUS: 1.5,
   GRACE_TIME: 100,
-  SPEEDS: [0, 400, 800, 1000],
+  SPEEDS: [0, 400, 800, 880],
   STACK_BONUS: [0, 4, 0, 0],
   STICK_DAMAGE_THRESHOLD: 940,
   STICK_DAMAGE_AMOUNT: 3
 };
 
 export const KILL_STACKS = {
-  small:  4,   
-  medium: 10,  
-  big:    25,  
+  small:  4,
+  medium: 10,
+  big:    25,
 };
 
 export const ATTACK_RADIOS = {
-    1: 50,   // Radio base para momentum nivel 1 (ligeramente más grande que el radio del jugador)
-    2: 75,   // Radio ampliado para nivel 2 (+60%)
-    3: 100    // Radio máximo para nivel 3 (+132% del base)
+    1: 50,
+    2: 100,
+    3: 100
 };
 
 export const ATTACK_DAMAGE_MULTIPLIERS = {
     1: 1.0,
     2: 1.5,
-    3: 2.0
+    3: 1.5
 };
 
 export const SLAM = {
-    MIN_SPEED: 600,              // Velocidad mínima para activar (px/s)
-    HIGH_SPEED_THRESHOLD: 999,   // Umbral para efectos extra (px/s)
-    DAMAGE: 20,                  // Daño base a enemigos
-    RADIUS: 100,                 // Radio de efecto (px)
-    SELF_DAMAGE: 10,             // Daño al jugador (solo high speed)
-    KNOCKBACK_DIST: 100,         // Distancia de knockback (px)
-    WALL_COLLISION_DAMAGE: 100,  // Daño extra por chocar con pared
-    COOLDOWN: 5000,               // Cooldown después de slam (ms)
-    EFFECT_DURATION: 200,        // Duración de efecto visual (ms)
+    MIN_SPEED: 600,
+    HIGH_SPEED_THRESHOLD: 999,
+    DAMAGE: 20,
+    RADIUS: 100,
+    SELF_DAMAGE: 10,
+    KNOCKBACK_DIST: 100,
+    WALL_COLLISION_DAMAGE: 100,
+    COOLDOWN: 5000,
+    EFFECT_DURATION: 200,
 };
 
 export const REWARDS = {
-  ORB_DELAY:            550,   // ms antes de que aparezca el orbe
-  ORB_RADIUS:             20,   // mismo que enemigo big
+  ORB_DELAY:            550,
+  ORB_RADIUS:             20,
   ORB_HEAL_MIN:            1,
   ORB_HEAL_MAX:           25,
-  ORB_HEAL_SPEED_CAP:   1200,   // px/s para curación máxima
+  ORB_HEAL_SPEED_CAP:   1200,
 
   CREDIT_BASE_PER_SEC:     1,
-  CREDIT_TICK_RATE:      100,   // ms entre ticks de velocidad
+  CREDIT_TICK_RATE:      100,
   CREDIT_SPEED_FACTOR: 0.0002,
 
-  // NUEVO: Factores dinámicos de velocidad según cantidad de kills
-  SPEED_MIN_BONUS_PER_KILL: 0.1,                 
-  SPEED_MAX_BONUS_PER_KILL: [0, 0.4, 0.5, 0.6], 
+  SPEED_MIN_BONUS_PER_KILL: 0.1,
+  SPEED_MAX_BONUS_PER_KILL: [0, 0.4, 0.6, 0.6],
 };
 
 // Wall Run Configuration
 export const WALL_RUN = {
-    MAX_DURATION: 2000,        // Duración máxima (compartida con wall stick)
-    SPEEDS: [0, 300, 500, 700], // Velocidad constante según nivel de momentum
+    MAX_DURATION: 2000,
+    SPEEDS: [0, 350, 700, 700],
 };
 
 // Dash Wall Impact
-export const DASH_WALL_STUN_DUR = 250;   // ms de stun (parálisis) al chocar con muro en dash
+export const DASH_WALL_STUN_DUR = 250;
 
-// Compass (Brújula)
-export const COMPASS_SPEEDUP_RATE     = 0.10;   // Aumento de velocidad (0.10 = 10%)
-export const COMPASS_SPEEDUP_INTERVAL = 60000;  // Cada cuánto aplica el aumento (60000ms = 1 min)
-export const COMPASS_BASE_MAX         = 3600;   // Intervalo máximo (con 0 stacks)
-export const COMPASS_BASE_MIN         = 2000;   // Intervalo mínimo cap
-export const COMPASS_STACK_FACTOR     = 18;     // Reducción del intervalo por cada stack de momentum
+// ============================================================
+// NUEVO SISTEMA DE COMPASS (brújula con buffs)
+// ============================================================
+
+// Direcciones primarias (cardinales) y secundarias (diagonales)
+export const COMPASS_DIRS_PRIMARY = [
+  { id: 'N',  dx:  0, dy: -1 },
+  { id: 'S',  dx:  0, dy:  1 },
+  { id: 'E',  dx:  1, dy:  0 },
+  { id: 'O',  dx: -1, dy:  0 },
+];
+
+export const COMPASS_DIRS_SECONDARY = [
+  { id: 'NE', dx:  0.7071, dy: -0.7071 },
+  { id: 'NO', dx: -0.7071, dy: -0.7071 },
+  { id: 'SE', dx:  0.7071, dy:  0.7071 },
+  { id: 'SO', dx: -0.7071, dy:  0.7071 },
+];
+
+// Intervalos de cambio de dirección (ms)
+export const COMPASS_PRIMARY_BASE   = 3600;   // intervalo base (0 stacks)
+export const COMPASS_PRIMARY_MIN    = 2000;   // intervalo mínimo
+export const COMPASS_STACK_FACTOR   = 18;     // reducción por stack (ms por stack)
+export const COMPASS_SPEEDUP_RATE   = 0.10;   // 10% más rápido por minuto
+export const COMPASS_SPEEDUP_INTERVAL = 60000; // cada 60s
+export const COMPASS_SECONDARY_MULT = 2.0;    // secundaria cambia el doble de rápido
+
+// Ganancia: cada 100ms (10 ticks/segundo), unificado tierra/aire
+export const COMPASS_TICK_RATE = 100;
+
+// Umbral para secundaria (producto punto con cos(22.5°))
+export const COMPASS_STRICT_DOT = 0.9238795;
+
+// Tipos de buff
+export const BUFF_TYPES = [
+  'heal',
+  'credit',
+  'momentum',
+  'maxSpeed',
+  'amplitude',
+  'timer',
+];
+
+// Colores de cada buff
+export const BUFF_COLORS = {
+  heal:      { hex: '#44dd77', color: 0x44dd77 },
+  credit:    { hex: '#ffcc22', color: 0xffcc22 },
+  momentum:  { hex: '#cc44ff', color: 0xcc44ff },
+  maxSpeed:  { hex: '#00cccc', color: 0x00cccc },
+  amplitude: { hex: '#ffaa22', color: 0xffaa22 },
+  timer:     { hex: '#dddddd', color: 0xdddddd },
+};
+
+// Valores por tick (primaria = 1x, secundaria = 2x)
+export const BUFF_VALUES = {
+  heal:      { primary: 0.05, secondary: 0.10 },
+  credit:    { primary: 0.2,  secondary: 0.4  },
+  momentum:  { primary: 0.2,  secondary: 0.4  },
+  maxSpeed:  { primary: 0.02, secondary: 0.04 },
+  amplitude: { primary: 0.02, secondary: 0.04 },
+  timer:     { primary: 0.1,  secondary: 0.2  },
+};
