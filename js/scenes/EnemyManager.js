@@ -1,6 +1,5 @@
 // js/scenes/EnemyManager.js
 
-import { KILL_STACKS } from '../constants.js';
 import EnemySpawner from '../spawn/EnemySpawner.js';
 import CombatSystem from '../systems/CombatSystem.js';
 
@@ -71,11 +70,7 @@ export default class EnemyManager {
     
     this.totalKills++;
     if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
-    if (this.orbManager && enemy.type === 'big') this.orbManager.scheduleOrb(enemy.x, enemy.y);
-    if (this.momentum && KILL_STACKS[enemy.type] !== undefined) {
-      this.momentum.addStacks(KILL_STACKS[enemy.type]);
-      this.momentum.registerAction(this.scene.time.now);
-    }
+    // Los orbs y stacks al matar se manejan en DynamicEnemy.kill() → applyDeathEffect()
 
     this.enemies.splice(index, 1);
   }

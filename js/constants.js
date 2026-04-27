@@ -80,11 +80,6 @@ export const WALL_JUMP = {
   STICK_DAMAGE_AMOUNT: 3
 };
 
-export const KILL_STACKS = {
-  small:  4,
-  medium: 10,
-  big:    25,
-};
 
 export const ATTACK_RADIOS = {
     1: 50,

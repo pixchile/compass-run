@@ -2,7 +2,6 @@
 import enemyRegistry from '../enemies/EnemyRegistry.js';
 import { registerAllCustomEnemies } from '../enemies/definitions/index.js';
 import SVGMapLoader from '../systems/SVGMapLoader.js';
-import MapLoader from '../systems/MapLoader.js';
 import Camera from './Camera.js';
 
 export default class StageEditor extends Phaser.Scene {
@@ -12,7 +11,6 @@ export default class StageEditor extends Phaser.Scene {
     registerAllCustomEnemies(enemyRegistry);
     this.camera   = new Camera();
     this.svgLoader = new SVGMapLoader();
-    this.mapLoader = new MapLoader();
 
     // --- Estado del stage ---
     this.stageName    = 'nuevo_stage';
