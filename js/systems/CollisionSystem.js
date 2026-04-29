@@ -21,7 +21,7 @@ export default class CollisionSystem {
                          !player.isStunned && 
                          !player.dashing && 
                          player.wallJump.wallStickCooldown <= 0 && 
-                         (player.jumping || !player.wallJump.wallStick);
+                         player.jumping;
 
         this._p1.x = player.prevX; this._p1.y = player.prevY;
         this._p2.x = player.px; this._p2.y = player.py;
@@ -33,9 +33,6 @@ export default class CollisionSystem {
             if (player.jumping && player.holdingSpace) {
                 continue;
             }
-
-            const isNormalWall = !line.type || line.type === 'wall' || line.type === 'wall_solid';
-            if (isNormalWall && player.isSurfing) continue;
 
             this.lineCollisionBetween(this._p1, this._p2, line, playerRadius + ((line.thickness || 0) / 2));
             
@@ -129,12 +126,24 @@ export default class CollisionSystem {
         const moveLen = Math.hypot(moveX, moveY);
         
         if (distToClosest < radius) {
-            const dotInit = moveX * toClosestX + moveY * toClosestY;
-            if (moveLen === 0 || dotInit > 0) {
-                this._colResult.collided = true;
-                this._colResult.hitX = p1.x; this._colResult.hitY = p1.y;
-                this._colResult.distance = distToClosest;
-                return;
+            const wallDx = line.end.x - line.start.x;
+            const wallDy = line.end.y - line.start.y;
+            const wallLen = Math.hypot(wallDx, wallDy);
+            if (wallLen > 0) {
+                const nx = -wallDy / wallLen;
+                const ny = wallDx / wallLen;
+                const toPlayerDot = (p1.x - this._closest.x) * nx + (p1.y - this._closest.y) * ny;
+                const snx = toPlayerDot >= 0 ? nx : -nx;
+                const sny = toPlayerDot >= 0 ? ny : -ny;
+                const dotNormal = moveX * (-snx) + moveY * (-sny);
+                if (moveLen === 0 || dotNormal > 0) {
+                    // Ya estamos dentro: reportar desde p2 (posición actual), no p1
+                    this._colResult.collided = true;
+                    this._colResult.hitX = p2.x;
+                    this._colResult.hitY = p2.y;
+                    this._colResult.distance = distToClosest;
+                    return;
+                }
             }
         }
         

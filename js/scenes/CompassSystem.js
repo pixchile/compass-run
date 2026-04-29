@@ -100,6 +100,19 @@ export default class CompassSystem {
       case 'timer':
         if (this.gameScene) this.gameScene.timeRemaining += value;
         break;
+      case 'dashCd':
+        if (player.dashCD > 0) {
+          player.dashCD = Math.max(0, player.dashCD - value * 1000);
+        }
+        break;
+      case 'hitboxAmplitude':
+        // Aumenta el multiplicador del radio de ataque (0.1% por tick)
+        player.attackRadiusMultiplier += value;
+        break;
+      case 'damageMult':
+        // Aumenta el bonificador de daño permanentemente
+        player.damageMultiplierBonus += value;
+        break;
     }
   }
 

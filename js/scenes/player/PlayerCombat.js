@@ -39,27 +39,35 @@ export default class PlayerCombat {
     getCurrentAttackPayload(momentumLevel) {
         const currentSpeed = Math.hypot(this.player.vx, this.player.vy);
         const now = Date.now();
-        const attackRadius = ATTACK_RADIOS[momentumLevel] || ATTACK_RADIOS[1];
-        const damageMultiplier = ATTACK_DAMAGE_MULTIPLIERS[momentumLevel] || ATTACK_DAMAGE_MULTIPLIERS[1];
+        
+        // Radio base según nivel de momentum, modificado por el buff permanente
+        const baseRadius = ATTACK_RADIOS[momentumLevel] || ATTACK_RADIOS[1];
+        const radiusMultiplier = 1 + (this.player.attackRadiusMultiplier || 0);
+        const finalRadius = baseRadius * radiusMultiplier;
+
+        // Daño base según nivel, más el bonificador permanente
+        const baseDamageMult = ATTACK_DAMAGE_MULTIPLIERS[momentumLevel] || ATTACK_DAMAGE_MULTIPLIERS[1];
+        const bonusMult = this.player.damageMultiplierBonus || 0;
+        const totalDamageMult = baseDamageMult + bonusMult;
 
         if (this.activeSlam) {
             return {
                 type: this.activeSlam.isHighSpeed ? 'slam3' : 'slam',
-                baseDamage: this.activeSlam.speed * 0.1 * damageMultiplier,
-                radius: attackRadius * 1.5,
+                baseDamage: this.activeSlam.speed * 0.1 * totalDamageMult,
+                radius: finalRadius * 1.5,
                 now: now
             };
         }
 
         if (momentumLevel === 3) {
-            return { type: 'momentum3', baseDamage: currentSpeed * 0.025 * damageMultiplier, radius: attackRadius, now: now };
+            return { type: 'momentum3', baseDamage: currentSpeed * 0.025 * totalDamageMult, radius: finalRadius, now: now };
         }
 
         if (this.player.dashing) {
             return {
                 type: this.player.wasJumpingWhenDashed ? 'aerialDash' : 'dash',
-                baseDamage: this.player.dashInitialSpeed * 0.1 * damageMultiplier,
-                radius: attackRadius,
+                baseDamage: this.player.dashInitialSpeed * 0.1 * totalDamageMult,
+                radius: finalRadius,
                 now: now
             };
         }

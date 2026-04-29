@@ -46,7 +46,6 @@ export default class PlayerHealth {
         this.player.px = W / 2; this.player.py = H / 2;
         this.player.vx = 0; this.player.vy = 0;
         this.player.jumping = false; this.player.dashing = false;
-        this.player.isSurfing = false;
         this.player.combat.activeSlam = null;
         this.player.wallJump.reset();
     }

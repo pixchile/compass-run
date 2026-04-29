@@ -40,6 +40,21 @@ export default class UIManager {
     this.restartText = scene.add.text(W / 2, H / 2 + 60, 'PRESIONA [ ESPACIO ] PARA JUGAR DE NUEVO', {
       fontFamily: 'monospace', fontSize: '18px', color: '#ffffff'
     }).setOrigin(0.5).setAlpha(0);
+
+    // ── Panel de pausa (inicialmente invisible) ──
+    this.pausePanel = scene.add.graphics();
+    this.pausePanel.setDepth(1000);
+    this.pauseTitle = scene.add.text(W / 2, H / 2 - 140, 'JUEGO EN PAUSA', {
+      fontFamily: 'monospace', fontSize: '28px', color: '#ffffff', fontStyle: 'bold'
+    }).setOrigin(0.5).setAlpha(0).setDepth(1001);
+
+    this.pauseStats = scene.add.text(W / 2, H / 2 - 80, '', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#cccccc', lineSpacing: 8
+    }).setOrigin(0.5, 0).setAlpha(0).setDepth(1001);
+
+    this.pauseHint = scene.add.text(W / 2, H / 2 + 160, 'ESC o P para reanudar', {
+      fontFamily: 'monospace', fontSize: '13px', color: '#888888'
+    }).setOrigin(0.5).setAlpha(0).setDepth(1001);
   }
 
   updateTexts(player, compassSystem, camera, gameOver, gameOverAlpha, gameOverReason, timeRemaining, time, credits = 0) {
@@ -66,9 +81,8 @@ export default class UIManager {
     const hpColor = hpPct > 0.5 ? '#44dd77' : hpPct > 0.25 ? '#ffcc22' : '#ff3322';
     this.hudHp.setText(`HP  ${hpInt} / ${HP_MAX}${regenStr}`).setColor(hpColor);
 
-    // TIMER: mostrar sin decimales, usando Math.floor
     if (timeRemaining !== undefined && !gameOver) {
-      const totalSeconds = Math.floor(timeRemaining); // <-- entero
+      const totalSeconds = Math.floor(timeRemaining);
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;
       const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
@@ -84,7 +98,6 @@ export default class UIManager {
       this.hudTimer.setAlpha(0);
     }
 
-    // Acción
     let actStr = '', actCol = '#ffffff';
     if (player.isDead) {
       actStr = '✖ SIN VIDA';
@@ -105,7 +118,6 @@ export default class UIManager {
     }
     this.hudAction.setText(actStr).setColor(actCol);
 
-    // Game over
     if (gameOver) {
       const textAlpha = Math.max(0, Math.min(1, (gameOverAlpha - 0.3) / 0.7));
       let mainText = 'JUEGO TERMINADO';
@@ -150,5 +162,62 @@ export default class UIManager {
     this.gameOverText.setAlpha(0);
     this.gameOverSubtext.setAlpha(0);
     this.restartText.setAlpha(0);
+  }
+
+  // ── Métodos para el panel de pausa ──
+
+  showPauseStats(player, compassSystem) {
+    const momentum = compassSystem?.momentum;
+    const lv = momentum?.level || 1;
+    const stacks = momentum?.stacks || 0;
+    const spd = Math.hypot(player.vx, player.vy);
+    const hp = Math.ceil(player.hp || 0);
+    const creditsText = this.hudCredits?.text || '0 créditos';
+    const creditsNum = creditsText.replace(/[^0-9]/g, '');
+
+    const attackRadiusMult = ((player.attackRadiusMultiplier || 0) * 100).toFixed(1);
+    const damageBonus = (player.damageMultiplierBonus || 0).toFixed(3);
+    const payload = player.combat?.getCurrentAttackPayload(lv);
+    const currentRadius = payload?.radius?.toFixed(0) || '-';
+
+    // Velocidad máxima: base según nivel + bonus permanente acumulado
+    const maxSpeedBonus = momentum?._maxSpeedBonus || 0;
+    const finalMaxSpeed = momentum ? momentum.getEffectiveMaxSpeed(lv).toFixed(0) : '300';
+
+    const lines = [
+        `── ESTADÍSTICAS ──`,
+        ``,
+        `Nivel: ${lv}    Stacks: ${Math.round(stacks)} / ${SMAX}`,
+        `Velocidad: ${Math.round(spd)} px/s`,
+        `Velocidad máx: ${finalMaxSpeed} px/s`,
+        `HP: ${hp} / ${HP_MAX}`,
+        `Créditos: ${creditsNum}`,
+        ``,
+        `── BUFFS PERMANENTES ──`,
+        ``,
+        `Radio de ataque: +${attackRadiusMult}%`,
+        `Mult. daño:     +${damageBonus}`,
+        `Radio actual:    ${currentRadius} px`,
+        `Velocidad máx:  +${maxSpeedBonus.toFixed(1)} px/s`,
+    ];
+
+    this.pausePanel.clear();
+    this.pausePanel.fillStyle(0x000000, 0.75);
+    this.pausePanel.fillRect(0, 0, W, H);
+
+    this.pauseStats.setText(lines.join('\n'));
+
+    this.pausePanel.setAlpha(1);
+    this.pauseTitle.setAlpha(1);
+    this.pauseStats.setAlpha(1);
+    this.pauseHint.setAlpha(1);
+  }
+
+  hidePauseStats() {
+    this.pausePanel.clear();
+    this.pausePanel.setAlpha(0);
+    this.pauseTitle.setAlpha(0);
+    this.pauseStats.setAlpha(0);
+    this.pauseHint.setAlpha(0);
   }
 }

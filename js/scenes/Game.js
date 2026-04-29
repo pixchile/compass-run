@@ -9,7 +9,7 @@ import SVGMapLoader from '../systems/SVGMapLoader.js';
 import RewardSystem from './RewardSystem.js';
 import OrbManager from './OrbManager.js';
 import CollisionSystem from '../systems/CollisionSystem.js';
-import SurfSystem from '../systems/SurfSystem.js';
+
 import ZoneSystem from '../systems/ZoneSystem.js';
 import { registerAllCustomEnemies } from '../enemies/definitions/index.js';
 
@@ -20,8 +20,8 @@ export default class Game extends Phaser.Scene {
         this._wallEnemyLines = [];
 
         this.collisionSystem = new CollisionSystem();
-        this.surfSystem = new SurfSystem();
         this.zoneSystem = new ZoneSystem();
+        this.isPaused = false;   // NUEVO
     }
 
     init(data) {
@@ -79,6 +79,8 @@ export default class Game extends Phaser.Scene {
 
         this.restartKey = this.input.keyboard.addKey('SPACE');
         this.menuKey = this.input.keyboard.addKey('M');
+        this.pauseKey = this.input.keyboard.addKey('ESC');   // NUEVO
+        this.pKey = this.input.keyboard.addKey('P');         // NUEVO
 
         this.rewardSystem = new RewardSystem();
         this.orbManager = new OrbManager();
@@ -90,6 +92,21 @@ export default class Game extends Phaser.Scene {
 
     update(t, delta) {
         if (!this.currentMap) return;
+
+        // ── Toggle pausa ──
+        if (Phaser.Input.Keyboard.JustDown(this.pauseKey) || Phaser.Input.Keyboard.JustDown(this.pKey)) {
+            this.isPaused = !this.isPaused;
+            if (!this.isPaused) {
+                this.renderer.uiManager.hidePauseStats();
+            }
+        }
+
+        if (this.isPaused) {
+            // Mostrar panel de estadísticas y congelar el juego
+            this.renderer.uiManager.showPauseStats(this.player, this.compass);
+            this.renderer.render(this.player, this.compass, false, 0, null, this.timeRemaining, delta);
+            return;
+        }
 
         if (!this.gameOver && !this.player.isDead) {
             const now = this.time.now;
@@ -112,16 +129,13 @@ export default class Game extends Phaser.Scene {
             return;
         }
 
-        this.player.prevX = this.player.px;
-        this.player.prevY = this.player.py;
-
+        // Capturar posición antes del movimiento para el sweep de colisión
         this.player.update(delta, this.momentum);
         this.compass.update(delta, this.player, this.time.now);
         this.momentum.updateDecay(delta, this.time.now);
 
         this._visibleLines = (this.currentMap.lines || []).filter(l => !l._broken);
 
-        this.surfSystem.update(delta, this.player, this.momentum, this._visibleLines);
         this.enemyManager.update(delta, this.time.now, this.player, this._visibleLines);
         this.rewardSystem.update(delta, this.player);
         this.orbManager.update(delta, this.player);
@@ -132,6 +146,10 @@ export default class Game extends Phaser.Scene {
         if (!this.player.dashing && !this.player.jumping) {
             this.enemyManager.checkSolidCollision(this.player, 12);
         }
+
+        // Capturar posición post-física pre-colisión.
+        this.player.prevX = this.player.px - this.player.vx * (delta / 1000);
+        this.player.prevY = this.player.py - this.player.vy * (delta / 1000);
 
         const frameDist = Math.hypot(this.player.px - this.player.prevX, this.player.py - this.player.prevY);
         const steps = frameDist > 16 ? 2 : 1;
@@ -187,5 +205,7 @@ export default class Game extends Phaser.Scene {
         this.enemyManager.setSpawnList(this.currentMap.enemies || []);
         this.enemyManager.setMomentumSystem(this.momentum);
         if (this.renderer && this.renderer.clearGameOver) this.renderer.clearGameOver();
+
+        this.isPaused = false;   // Asegurar que no quede en pausa tras reiniciar
     }
 }

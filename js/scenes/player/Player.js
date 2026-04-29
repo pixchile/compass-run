@@ -21,7 +21,6 @@ export default class Player {
         // Estados
         this.jumping = false; this.jumpT = 0; this.jumpDur = 0; this.jumpHMax = 0; this.jumpVx = 0; this.jumpVy = 0; this.jumpLv = 1;
         this.landFx = 0;
-        this.isSurfing = false;
         this.dashing = false; this.dashT = 0; this.dashVx = 0; this.dashVy = 0; this.dashCD = 0; this.dashInitialSpeed = 0;
         this.stunT = 0;
         this.holdingSpace = false;   // NUEVO: si mantiene Espacio presionado
@@ -30,12 +29,14 @@ export default class Player {
         this.trail = []; 
         this.wasJumpingWhenDashed = false;
         this.currentWallLine = null;
+        this.attackRadiusMultiplier = 0;
+        this.damageMultiplierBonus = 0;
     }
 
     // Getters / Delegaciones
     get isStunned() { return this.stunT > 0; }
     get isDead() { return this.health.isDead; }
-    get isGrounded() { return !this.jumping && !this.wallJump.wallStick && !this.isSurfing; }
+    get isGrounded() { return !this.jumping && !this.wallJump.wallStick; }
     get hp() { return this.health.hp; }
     get activeSlam() { return this.combat.activeSlam; }
     set activeSlam(val) { this.combat.activeSlam = val; }
@@ -57,7 +58,7 @@ export default class Player {
         if (this.wallJump.wallStickCooldown > 0 || !this.wallJump.canStick(this.jumping, this.wallJump.wallStickCooldown)) return false;
 
         this.vx = 0; this.vy = 0; this.jumpVx = 0; this.jumpVy = 0;
-        this.dashing = false; this.jumping = false; this.isSurfing = false;
+        this.dashing = false; this.jumping = false; 
         this.combat.activeSlam = null;
         this.currentWallLine = wallLine;
 
@@ -116,14 +117,14 @@ export default class Player {
                     this.vx = jumpResult.vx; this.vy = jumpResult.vy;
                     this.jumping = true; this.jumpT = 0; this.jumpDur = JUMP_DUR[lv]; this.jumpLv = lv;
                     this.jumpVx = this.vx; this.jumpVy = this.vy;
-                    this.combat.hasSlammedThisJump = false; this.isSurfing = false; 
+                    this.combat.hasSlammedThisJump = false; 
                 }
             } else if (this.jumping && !this.combat.hasSlammedThisJump && this.combat.slamCooldown <= 0) {
                 if (currentSpeed >= SLAM.MIN_SPEED) this.combat.performSlam(currentSpeed);
             } else if (this.dashing && !this.jumping) {
                 this.jumping = true; this.jumpT = 0; this.jumpDur = JUMP_DUR[lv]; this.jumpHMax = JUMP_HMAX[lv]; this.jumpLv = lv;
                 this.jumpVx = this.vx; this.jumpVy = this.vy;
-                this.dashing = false; this.combat.hasSlammedThisJump = false; this.isSurfing = false;
+                this.dashing = false; this.combat.hasSlammedThisJump = false; 
             } else if (!this.jumping && !this.wallJump.wallStick) {
                 this.jumping = true; this.jumpT = 0; this.jumpDur = JUMP_DUR[lv]; this.jumpHMax = JUMP_HMAX[lv]; this.jumpLv = lv;
                 if (currentSpeed > 8) {
@@ -131,7 +132,7 @@ export default class Player {
                 } else {
                     this.jumpVx = Math.cos(this.facing) * MAX_SPD[1] * 0.45; this.jumpVy = Math.sin(this.facing) * MAX_SPD[1] * 0.45;
                 }
-                this.combat.hasSlammedThisJump = false; this.isSurfing = false;
+                this.combat.hasSlammedThisJump = false; 
             }
         }
 
@@ -162,16 +163,15 @@ export default class Player {
                 this.vx = this.dashVx * ease; this.vy = this.dashVy * ease;
             } else {
                 let af = 1;
-                if (moving && currentSpeed > 15) {
+                if (moving && currentSpeed > 5) {
                     const dot = (this.vx * this.moveDir.x + this.vy * this.moveDir.y) / currentSpeed;
-                    af = 0.12 + 0.88 * Math.pow((dot + 1) / 2, 1.6);
+                    af = 0.35 + 0.65 * Math.pow((dot + 1) / 2, 1.6);
                 }
                 const tk = this.lerpK(TURN_K[lv] * af, dt);
                 const sk = this.lerpK(STOP_K[lv], dt);
                 
                 const slowMult = this.slowTimer > 0 ? 0.4 : 1.0;
-                const surfMult = this.isSurfing ? 1.4 : 1.0;
-                const finalMult = slowMult * surfMult;
+                const finalMult = slowMult;
 
                 if (moving) {
                     this.vx += (this.moveDir.x * MAX_SPD[lv] * finalMult - this.vx) * tk;

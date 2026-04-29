@@ -109,13 +109,12 @@ export default class SVGMapLoader {
     }
     else if (geo.shapeType === 'path') {
       const pts = this.samplePath(geo.pathData, 12);
-      for (let i = 0; i < pts.length - 1; i++) {
+      const merged = this.mergeCollinearPoints(pts, 1.5);
+      for (let i = 0; i < merged.length - 1; i++) {
         lines.push({
-          start: pts[i],
-          end: pts[i + 1],
-          thickness: geo.thickness,
-          noStickStart: i > 0,
-          noStickEnd: i < pts.length - 2
+          start: merged[i],
+          end: merged[i + 1],
+          thickness: geo.thickness
         });
       }
     }
@@ -127,6 +126,32 @@ export default class SVGMapLoader {
       color: entity.color,
       hp: entity.hp != null ? entity.hp : null,  // número o null (indestructible)
     }));
+  }
+
+  // Colapsa puntos colineales en segmentos más largos.
+  // angleTolerance en grados: si el cambio de dirección es menor a esto, se fusionan.
+  mergeCollinearPoints(pts, angleTolerance = 1.5) {
+    if (pts.length < 3) return pts;
+    const thresh = Math.cos((angleTolerance * Math.PI) / 180);
+    const result = [pts[0]];
+
+    for (let i = 1; i < pts.length - 1; i++) {
+      const prev = result[result.length - 1];
+      const curr = pts[i];
+      const next = pts[i + 1];
+
+      const ax = curr.x - prev.x, ay = curr.y - prev.y;
+      const bx = next.x - curr.x, by = next.y - curr.y;
+      const lenA = Math.hypot(ax, ay), lenB = Math.hypot(bx, by);
+      if (lenA === 0 || lenB === 0) continue;
+
+      const dot = (ax / lenA) * (bx / lenB) + (ay / lenA) * (by / lenB);
+      // Si el ángulo entre segmentos es menor a la tolerancia, saltar el punto intermedio
+      if (dot < thresh) result.push(curr);
+    }
+
+    result.push(pts[pts.length - 1]);
+    return result;
   }
 
   samplePath(d, samplesPerSegment = 12) {

@@ -1,16 +1,12 @@
 export default class PlayerInput {
     constructor(scene) {
-        this.kb = scene.input.keyboard.addKeys('W,A,S,D,SPACE,SHIFT');
-        // Estado del frame anterior (inicialmente false)
+        this.kb = scene.input.keyboard.addKeys('W,A,S,D,SPACE,SHIFT,ESC,P');
         this._prevSpace = false;
         this._prevShift = false;
+        this._prevPause = false;  // NUEVO
     }
 
-    // Se llama una vez por frame, antes de leer las entradas
-    update() {
-        // No hacemos nada aquí; la gestión de estado se hace
-        // directamente en los métodos de consulta.
-    }
+    update() {}
 
     isSpaceDown() {
         return this.kb.SPACE.isDown;
@@ -19,7 +15,7 @@ export default class PlayerInput {
     isSpaceJustPressed() {
         const down = this.kb.SPACE.isDown;
         const just = down && !this._prevSpace;
-        this._prevSpace = down; // actualizar para el siguiente frame
+        this._prevSpace = down;
         return just;
     }
 
@@ -27,6 +23,14 @@ export default class PlayerInput {
         const down = this.kb.SHIFT.isDown;
         const just = down && !this._prevShift;
         this._prevShift = down;
+        return just;
+    }
+
+    // NUEVO: detecta ESC o P
+    isPauseJustPressed() {
+        const down = this.kb.ESC.isDown || this.kb.P.isDown;
+        const just = down && !this._prevPause;
+        this._prevPause = down;
         return just;
     }
 

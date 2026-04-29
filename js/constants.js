@@ -170,6 +170,9 @@ export const BUFF_TYPES = [
   'maxSpeed',
   'amplitude',
   'timer',
+  'dashCd',
+  'hitboxAmplitude',
+  'damageMult',
 ];
 
 // Colores de cada buff
@@ -180,6 +183,9 @@ export const BUFF_COLORS = {
   maxSpeed:  { hex: '#00cccc', color: 0x00cccc },
   amplitude: { hex: '#ffaa22', color: 0xffaa22 },
   timer:     { hex: '#dddddd', color: 0xdddddd },
+  dashCd:    { hex: '#ff3322', color: 0xff3322 },
+  hitboxAmplitude: { hex: '#aaff00', color: 0xaaff00 },
+  damageMult:      { hex: '#800D00', color: 0x800D00 },
 };
 
 // Valores por tick (primaria = 1x, secundaria = 2x)
@@ -190,4 +196,7 @@ export const BUFF_VALUES = {
   maxSpeed:  { primary: 0.02, secondary: 0.04 },
   amplitude: { primary: 0.02, secondary: 0.04 },
   timer:     { primary: 0.1,  secondary: 0.2  },
+  dashCd:    { primary: 0.1,  secondary: 0.2  },
+  hitboxAmplitude: { primary: 0.001, secondary: 0.002 },
+  damageMult:      { primary: 0.001, secondary: 0.002 },
 };
