@@ -7,6 +7,7 @@ import DynamicEnemy from '../core/DynamicEnemy.js';
 import angel from './angel.js';
 import devil from './devil.js';
 import bee from './bee.js';
+import bee2 from './bee2.js';
 import mibombo from './mibombo.js'
 
 // 3. Añádelos al array
@@ -14,7 +15,8 @@ const customEnemies = [
     angel,
     devil,
     bee,
-    mibombo
+    mibombo,
+    bee2
 ];
 
 export function registerAllCustomEnemies(registry) {

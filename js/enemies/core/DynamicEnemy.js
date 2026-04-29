@@ -262,7 +262,9 @@ export default class DynamicEnemy extends Enemy {
                 this.healPlayerOnDeath(p.amount || 20);
                 break;
             case 'momentumStack':
-                if (this.scene.player?.addMomentum) this.scene.player.addMomentum(p.amount || 1);
+                if (this.scene.momentum) {
+                    this.scene.momentum.addStacks(p.amount || 1);
+                }
                 break;
             case 'buffPlayer':
                 this.buffPlayerOnDeath(p.type || 'speed', p.duration || 5000, p.value || 1.5);

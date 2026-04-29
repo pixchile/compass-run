@@ -17,10 +17,6 @@ export default class RewardSystem {
 
   onEnemyKilled(enemyType) {
     this.killCount += 1;
-    // Notificar actividad al momentum para evitar pérdida pasiva
-    if (this.momentum) {
-      this.momentum.registerAction(Date.now());
-    }
   }
 
   update(delta, player) {

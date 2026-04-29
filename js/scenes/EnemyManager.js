@@ -69,6 +69,9 @@ export default class EnemyManager {
     if (typeof enemy.kill === 'function') enemy.kill(fatalSource);
     
     this.totalKills++;
+    if (this.scene?.momentum) {
+      this.scene.momentum.addMaxSpeed(0.1);
+    }
     if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
     // Los orbs y stacks al matar se manejan en DynamicEnemy.kill() → applyDeathEffect()
 

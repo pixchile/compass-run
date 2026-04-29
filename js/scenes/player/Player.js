@@ -29,8 +29,6 @@ export default class Player {
         this.trail = []; 
         this.wasJumpingWhenDashed = false;
         this.currentWallLine = null;
-        this.attackRadiusMultiplier = 0;
-        this.damageMultiplierBonus = 0;
     }
 
     // Getters / Delegaciones
@@ -155,8 +153,8 @@ export default class Player {
         if (!this.isStunned && !this.wallJump.wallStick) {
             if (this.jumping) {
                 const steer = moving ? 0.04 : 0;
-                this.vx = this.jumpVx + (moving ? this.moveDir.x * MAX_SPD[this.jumpLv] * steer : 0);
-                this.vy = this.jumpVy + (moving ? this.moveDir.y * MAX_SPD[this.jumpLv] * steer : 0);
+                this.vx = this.jumpVx + (moving ? this.moveDir.x * momentum.getEffectiveMaxSpeed(this.jumpLv) * steer : 0);
+                this.vy = this.jumpVy + (moving ? this.moveDir.y * momentum.getEffectiveMaxSpeed(this.jumpLv) * steer : 0);
                 if (moving) this.facing = Math.atan2(this.moveDir.y, this.moveDir.x);
             } else if (this.dashing) {
                 const ease = 1 - Math.pow(this.dashT / DASH_DUR, 2);
@@ -174,8 +172,9 @@ export default class Player {
                 const finalMult = slowMult;
 
                 if (moving) {
-                    this.vx += (this.moveDir.x * MAX_SPD[lv] * finalMult - this.vx) * tk;
-                    this.vy += (this.moveDir.y * MAX_SPD[lv] * finalMult - this.vy) * tk;
+                    const effSpd = momentum.getEffectiveMaxSpeed(lv);
+                    this.vx += (this.moveDir.x * effSpd * finalMult - this.vx) * tk;
+                    this.vy += (this.moveDir.y * effSpd * finalMult - this.vy) * tk;
                     this.facing = Math.atan2(this.moveDir.y, this.moveDir.x);
                 } else {
                     this.vx -= this.vx * sk; this.vy -= this.vy * sk;

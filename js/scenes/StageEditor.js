@@ -367,6 +367,7 @@ export default class StageEditor extends Phaser.Scene {
       reader.onload = async e => {
         this.currentMap = this.svgLoader.parseSVG(e.target.result, file.name);
         this.svgName = file.name;
+        this.svgContent = e.target.result;
         document.getElementById('se-svg-name').textContent = file.name;
       };
       reader.readAsText(file);
@@ -511,6 +512,7 @@ export default class StageEditor extends Phaser.Scene {
     const stage = {
       name:          this.stageName,
       svgName:       this.svgName,
+      svgContent:    this.svgContent || null,
       version:       4,
       timeLimit:     this.timeLimit,
       enemies:       this.enemies,
@@ -542,6 +544,10 @@ export default class StageEditor extends Phaser.Scene {
   _applyStage(stage) {
     this.stageName  = stage.name;
     this.svgName    = stage.svgName;
+    this.svgContent = stage.svgContent || null;
+    if (this.svgContent && this.svgName) {
+      this.currentMap = this.svgLoader.parseSVG(this.svgContent, this.svgName);
+    }
     this.timeLimit  = stage.timeLimit || 300;
     this.enemies    = stage.enemies  || [];
     this.spawners   = stage.spawners || [];

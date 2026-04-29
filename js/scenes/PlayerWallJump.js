@@ -95,14 +95,11 @@ export class WallJumpSystem {
 
         if (momentum) {
             const bonusStacks = WALL_JUMP.STACK_BONUS[level] || 3;
-            if (typeof momentum.addStacks === 'function') {
-                momentum.addStacks(bonusStacks);
-                if (typeof momentum.registerAction === 'function') {
-                    momentum.registerAction(now);
-                }
-            } else {
-                momentum.stacks = Math.min(90, momentum.stacks + bonusStacks);
-            }
+if (typeof momentum.addStacks === 'function') {
+    momentum.addStacks(bonusStacks);
+} else {
+    momentum.stacks = Math.min(90, momentum.stacks + bonusStacks);
+}
         }
 
         let dirX = moveDirActual.x;

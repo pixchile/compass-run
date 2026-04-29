@@ -83,8 +83,8 @@ export const WALL_JUMP = {
 
 export const ATTACK_RADIOS = {
     1: 50,
-    2: 100,
-    3: 100
+    2: 60,
+    3: 50
 };
 
 export const ATTACK_DAMAGE_MULTIPLIERS = {

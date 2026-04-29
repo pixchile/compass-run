@@ -87,8 +87,6 @@ export default class CompassSystem {
         break;
       case 'momentum':
         if (this.momentum) {
-          this.momentum.addStacks(value);
-          this.momentum.registerAction(now);
         }
         break;
       case 'maxSpeed':

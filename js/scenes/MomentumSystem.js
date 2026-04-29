@@ -52,10 +52,12 @@ export default class MomentumSystem {
   // ─── Stacks ────────────────────────────────────────────────
   addStacks(amount) {
     this.stacks = Math.min(SMAX, this.stacks + amount);
+    this._lastActionTime = Date.now();
+    this._decayAccum = 0;
   }
 
   halveStacks() {
-    this.stacks = Math.max(0, Math.floor(this.stacks / 2));
+    this.stacks = Math.max(0, Math.floor(this.stacks / 1.5));
   }
 
   reset() {
@@ -76,7 +78,7 @@ export default class MomentumSystem {
     if (inactivity >= 1000 && this.stacks > 0) {
       this._decayAccum += delta;
       while (this._decayAccum >= 1000) {
-        this.stacks = Math.max(0, this.stacks - 1);
+        this.stacks = Math.max(0, this.stacks - 3);
         this._decayAccum -= 1000;
       }
     }
