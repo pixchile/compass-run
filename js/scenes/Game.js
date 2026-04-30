@@ -78,6 +78,9 @@ export default class Game extends Phaser.Scene {
 
         this.restartKey = this.input.keyboard.addKey('SPACE');
         this.menuKey = this.input.keyboard.addKey('M');
+        this.pauseKey = this.input.keyboard.addKey('ESC');
+        this.pauseKey2 = this.input.keyboard.addKey('P');
+        this.isPaused = false;
 
         this.rewardSystem = new RewardSystem();
         this.orbManager = new OrbManager();
@@ -110,6 +113,16 @@ export default class Game extends Phaser.Scene {
             this.renderer.render(this.player, this.compass, true, this.gameOverAlpha, this.gameOverReason, this.timeRemaining, delta);
             return;
         }
+
+        if (Phaser.Input.Keyboard.JustDown(this.pauseKey) || Phaser.Input.Keyboard.JustDown(this.pauseKey2)) {
+            this.isPaused = !this.isPaused;
+            if (this.isPaused) {
+                this.renderer.uiManager.showPauseStats(this.player, this.compass);
+            } else {
+                this.renderer.uiManager.hidePauseStats();
+            }
+        }
+        if (this.isPaused) return;
 
         // Capturar posición antes del movimiento para el sweep de colisión
         this.player.update(delta, this.momentum);
@@ -151,7 +164,7 @@ export default class Game extends Phaser.Scene {
             this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines);
         }
 
-        this.zoneSystem.checkZones(this.player, this.currentMap.zones);
+        this.zoneSystem.checkZones(this.player, this.currentMap.zones, delta);
 
         this._wallEnemyLines = this.enemyManager.getWallEnemyLines();
         if (this._wallEnemyLines && this._wallEnemyLines.length > 0) {
@@ -170,6 +183,8 @@ export default class Game extends Phaser.Scene {
     }
 
     restartGame() {
+        this.isPaused = false;
+        this.renderer.uiManager.hidePauseStats();
         this.gameOver = false; this.gameOverAlpha = 0; this.gameOverReason = null;
         this.timeRemaining = this.timeLimit; this.lastTimeUpdate = this.time.now;
 

@@ -60,7 +60,7 @@ export default class PlayerCombat {
         }
 
         if (momentumLevel === 3) {
-            return { type: 'momentum3', baseDamage: currentSpeed * 0.025 * totalDamageMult, radius: finalRadius, now: now };
+            return { type: 'momentum3', baseDamage: currentSpeed * 0.1 * totalDamageMult, radius: finalRadius, now: now };
         }
 
         if (this.player.dashing) {

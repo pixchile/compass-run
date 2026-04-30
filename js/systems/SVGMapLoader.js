@@ -63,6 +63,7 @@ export default class SVGMapLoader {
         const layerLower = layerId.toLowerCase();
         if (layerLower.startsWith('void'))    type = 'void';
         else if (layerLower.startsWith('damage')) type = 'damage_zone';
+        else if (layerLower.startsWith('slow'))   type = 'slow_zone';
         else if (layerLower.startsWith('trap'))   type = 'trap';
         else if (layerLower.startsWith('trigger'))type = 'trigger';
         // cualquier otra cosa sigue siendo 'wall'
@@ -270,7 +271,7 @@ export default class SVGMapLoader {
     if (entity.type === 'wall') {
       const generatedLines = this.convertToLines(entity);
       mapData.lines.push(...generatedLines);
-    } else if (['void', 'damage_zone', 'trap'].includes(entity.type)) {
+    } else if (['void', 'damage_zone', 'slow_zone', 'trap'].includes(entity.type)) {
       if (entity.geometry.shapeType === 'path') {
         const pts = this.samplePath(entity.geometry.pathData, 20);
         if (pts.length > 0) {

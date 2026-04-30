@@ -67,29 +67,6 @@ export default class CombatSystem {
     if (attackPayload && isInAttackRange) {
         enemyDied = this._damageEnemy(enemy, attackPayload.type, attackPayload.baseDamage, attackPayload.radius, now);
     } 
-    else if (player.dashing) {
-        if (!this.damagedThisDash.has(enemy)) {
-            this.damagedThisDash.add(enemy);
-            this._dashAttackObj.type = player.wasJumpingWhenDashed ? 'aerialDash' : 'dash';
-            this._dashAttackObj.baseDamage = (player.dashInitialSpeed || currentSpeed) * 0.25;
-            this._dashAttackObj.now = now;
-            this._dashAttackObj.radius = player.getAttackRadius(momentumSystem.level);
-            
-            enemyDied = this._damageEnemy(enemy, this._dashAttackObj.type, this._dashAttackObj.baseDamage, this._dashAttackObj.radius, now);
-        }
-    } 
-    else if (momentumSystem.level === 3 && !isInAttackRange) {
-        this._pierceAttackObj.type = 'momentum3';
-        this._pierceAttackObj.baseDamage = currentSpeed * 0.025;
-        this._pierceAttackObj.now = now;
-        this._pierceAttackObj.radius = player.getAttackRadius(3);
-
-        if (typeof enemy.receiveDamage === 'function') {
-            enemyDied = enemy.receiveDamage(this._pierceAttackObj);
-        } else if (enemy.pierceable) {
-            enemy.hp = 0; enemyDied = true;
-        }
-    } 
     else if (!player.isInvincible && !isInAttackRange) {
         this._applyDamageToPlayer(enemy, player, now);
     }

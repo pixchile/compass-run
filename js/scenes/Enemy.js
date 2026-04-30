@@ -81,8 +81,6 @@ export default class Enemy {
         this.hp -= finalDamage;
         if (attackPayload.now) this.lastHurtTime = attackPayload.now;
 
-        console.log(`💥 [${this.type}] recibió ${finalDamage.toFixed(1)} dmg (Ataque: ${attackPayload.type} x${multiplier}). HP restante: ${this.hp.toFixed(1)}`);
-        
         return this.hp <= 0;
     }
 

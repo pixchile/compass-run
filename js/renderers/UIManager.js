@@ -55,6 +55,14 @@ export default class UIManager {
     this.pauseHint = scene.add.text(W / 2, H / 2 + 160, 'ESC o P para reanudar', {
       fontFamily: 'monospace', fontSize: '13px', color: '#888888'
     }).setOrigin(0.5).setAlpha(0).setDepth(1001);
+
+    this.pauseMenuBtn = scene.add.text(W / 2, H / 2 + 200, '← MENÚ PRINCIPAL', {
+      fontFamily: 'monospace', fontSize: '14px', color: '#ff8844',
+      backgroundColor: '#00000088', padding: { x: 16, y: 8 }
+    }).setOrigin(0.5).setAlpha(0).setDepth(1001).setInteractive();
+    this.pauseMenuBtn.on('pointerover', () => this.pauseMenuBtn.setStyle({ color: '#ffffff' }));
+    this.pauseMenuBtn.on('pointerout',  () => this.pauseMenuBtn.setStyle({ color: '#ff8844' }));
+    this.pauseMenuBtn.on('pointerdown', () => scene.scene.start('MainMenu'));
   }
 
   updateTexts(player, compassSystem, camera, gameOver, gameOverAlpha, gameOverReason, timeRemaining, time, credits = 0) {
@@ -211,6 +219,7 @@ export default class UIManager {
     this.pauseTitle.setAlpha(1);
     this.pauseStats.setAlpha(1);
     this.pauseHint.setAlpha(1);
+    this.pauseMenuBtn.setAlpha(1);
   }
 
   hidePauseStats() {
@@ -219,5 +228,6 @@ export default class UIManager {
     this.pauseTitle.setAlpha(0);
     this.pauseStats.setAlpha(0);
     this.pauseHint.setAlpha(0);
+    this.pauseMenuBtn.setAlpha(0);
   }
 }
