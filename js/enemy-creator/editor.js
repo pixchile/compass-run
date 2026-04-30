@@ -56,6 +56,26 @@ class EnemyEditor {
         document.getElementById('generateBtn')?.addEventListener('click', () => this.generate());
         document.getElementById('downloadBtn')?.addEventListener('click', () => this.download());
         document.getElementById('copyBtn')?.addEventListener('click', () => this.copyToClipboard());
+
+        // Carga de archivos
+        const loadBtn = document.getElementById('loadBtn');
+        const loadFile = document.getElementById('loadFileInput');
+        if (loadBtn && loadFile) {
+            loadBtn.addEventListener('click', () => loadFile.click());
+            loadFile.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        this.loadFromCode(event.target.result);
+                    } catch (err) {
+                        alert('Error al cargar el archivo: ' + err.message);
+                    }
+                };
+                reader.readAsText(file);
+            });
+        }
     }
 
     setupDynamicFields() {
@@ -63,9 +83,7 @@ class EnemyEditor {
         const movementStyle = document.getElementById('movementStyle');
         if (movementStyle) {
             movementStyle.addEventListener('change', () => {
-                const style = movementStyle.value;
-                document.getElementById('orbitRangeField').style.display = style === 'orbit' ? 'block' : 'none';
-                document.getElementById('erraticTimeField').style.display = style === 'erratic' ? 'block' : 'none';
+                this.updateDynamicFieldsVisibility();
                 this.generate();
             });
         }
@@ -74,10 +92,26 @@ class EnemyEditor {
         const spawnPattern = document.getElementById('spawnPattern');
         if (spawnPattern) {
             spawnPattern.addEventListener('change', () => {
-                const showCount = ['horde', 'radial', 'radial_player'].includes(spawnPattern.value);
-                document.getElementById('spawnCountField').style.display = showCount ? 'block' : 'none';
+                this.updateDynamicFieldsVisibility();
                 this.generate();
             });
+        }
+    }
+
+    updateDynamicFieldsVisibility() {
+        const movementStyle = document.getElementById('movementStyle');
+        if (movementStyle) {
+            const style = movementStyle.value;
+            const orbitField = document.getElementById('orbitRangeField');
+            const erraticField = document.getElementById('erraticTimeField');
+            if (orbitField) orbitField.style.display = style === 'orbit' ? 'block' : 'none';
+            if (erraticField) erraticField.style.display = style === 'erratic' ? 'block' : 'none';
+        }
+        const spawnPattern = document.getElementById('spawnPattern');
+        if (spawnPattern) {
+            const showCount = ['horde', 'radial', 'radial_player'].includes(spawnPattern.value);
+            const spawnCountField = document.getElementById('spawnCountField');
+            if (spawnCountField) spawnCountField.style.display = showCount ? 'block' : 'none';
         }
     }
 
@@ -181,6 +215,17 @@ class EnemyEditor {
         return el.value;
     }
 
+    // Helper para establecer valores del DOM
+    setVal(id, value) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (typeof value === 'boolean') {
+            el.value = value ? 'true' : 'false';
+        } else if (value !== undefined && value !== null) {
+            el.value = value;
+        }
+    }
+
     getConfig() {
         return {
             id: this.getVal('typeId'),
@@ -247,6 +292,99 @@ class EnemyEditor {
         };
     }
 
+    populateFromConfig(config) {
+        // Básico
+        this.setVal('enemyName', config.name);
+        this.setVal('typeId', config.id);
+        
+        if (config.basic) {
+            this.setVal('hp', config.basic.hp);
+            this.setVal('hpRegen', config.basic.hpRegen);
+            this.setVal('color', config.basic.color);
+            this.setVal('shape', config.basic.shape);
+            this.setVal('radius', config.basic.radius);
+            this.setVal('isBoss', config.basic.isBoss);
+            if (config.basic.selfDestruct) {
+                this.setVal('selfDestructType', config.basic.selfDestruct.type);
+                this.setVal('selfDestructValue', config.basic.selfDestruct.value);
+            }
+            if (config.basic.spawnTrigger) {
+                this.setVal('spawnTriggerType', config.basic.spawnTrigger.type);
+                this.setVal('spawnTriggerValue', config.basic.spawnTrigger.value);
+            }
+        }
+        
+        // Movimiento
+        if (config.movement) {
+            this.setVal('mobile', config.movement.mobile);
+            this.setVal('speed', config.movement.speed);
+            if (config.movement.scaling) {
+                this.setVal('speedTimeScale', config.movement.scaling.timeBase);
+                this.setVal('speedTimeMulti', config.movement.scaling.timeMultiplier);
+                this.setVal('speedHpScale', config.movement.scaling.hpBase);
+                this.setVal('speedHpMulti', config.movement.scaling.hpPercentage);
+            }
+            this.setVal('movementStyle', config.movement.style);
+            this.setVal('orbitRange', config.movement.orbitRange || 120);
+            this.setVal('erraticTime', config.movement.erraticTime || 2000);
+            this.setVal('distanceMin', config.movement.distanceMin || 0);
+            this.setVal('distanceMax', config.movement.distanceMax || 0);
+            this.setVal('ignoreWalls', config.movement.ignoreWalls);
+            this.setVal('isPhantom', config.movement.isPhantom);
+        }
+        
+        // Daño
+        if (config.damageMultipliers) {
+            this.setVal('dmgDash', config.damageMultipliers.dash);
+            this.setVal('dmgAerialDash', config.damageMultipliers.aerialDash);
+            this.setVal('dmgMomentum3', config.damageMultipliers.momentum3);
+            this.setVal('dmgSlam', config.damageMultipliers.slam);
+            this.setVal('dmgSlam3', config.damageMultipliers.slam3);
+            this.setVal('dmgVoid', config.damageMultipliers.void);
+            this.setVal('dmgWall', config.damageMultipliers.wallCrash);
+            this.setVal('dmgExplosion', config.damageMultipliers.explosion);
+        }
+        
+        // Avanzado
+        if (config.ambitious) {
+            this.setVal('isWall', config.ambitious.isWall);
+            if (config.ambitious.attack) {
+                this.setVal('attackType', config.ambitious.attack.type);
+                this.setVal('attackEffect', config.ambitious.attack.effect);
+            }
+            if (config.ambitious.defense) {
+                this.setVal('defenseAura', config.ambitious.defense.invulnerableAura);
+                this.setVal('evade', config.ambitious.defense.evade);
+            }
+            if (config.ambitious.spawn) {
+                this.setVal('spawnPattern', config.ambitious.spawn.pattern);
+                this.setVal('spawnCount', config.ambitious.spawn.count || 3);
+            }
+        }
+        
+        this.updateDynamicFieldsVisibility();
+    }
+
+    loadFromCode(code) {
+        // Quitar comentarios de una línea (//) para que no interfieran en el eval
+        let processed = code.replace(/\/\/.*$/gm, '');
+        // Reemplazar 'export default' por 'return' para obtener el objeto
+        processed = processed.replace(/export\s+default\s*/, 'return ');
+        
+        try {
+            const obj = new Function(processed)();
+            if (!obj || !obj.config) {
+                throw new Error('El archivo no contiene un objeto válido con "config".');
+            }
+            this.deathEffects = obj.config.onDeath ? JSON.parse(JSON.stringify(obj.config.onDeath)) : [];
+            this.populateFromConfig(obj.config);
+            this.renderDeathEffects();
+            this.generate();
+        } catch (error) {
+            throw new Error('Error al procesar el archivo: ' + error.message);
+        }
+    }
+
     generate() {
         const config = this.getConfig();
         const code = this.generateCode(config);
@@ -254,7 +392,7 @@ class EnemyEditor {
         if (preview) preview.innerHTML = this.highlightCode(code);
     }
 
-generateCode(config) {
+    generateCode(config) {
         const configStr = JSON.stringify(config, null, 4)
             .replace(/"([^"]+)":/g, '$1:')
             .replace(/: "([^"]+)"/g, ': "$1"');
@@ -265,7 +403,7 @@ generateCode(config) {
 
 export default {
     id: '${config.id}',
-    name: '${config.id}', // <--- AÑADE ESTA LÍNEA AQUÍ
+    name: '${config.name}',
     config: ${configStr}
 };`;
     }
@@ -296,7 +434,11 @@ export default {
 
     copyToClipboard() {
         const code = this.generateCode(this.getConfig());
-        navigator.clipboard.writeText(code).then(() => alert('Copiado!'));
+        navigator.clipboard.writeText(code).then(() => {
+            alert('¡Código copiado al portapapeles!');
+        }).catch(() => {
+            alert('Error al copiar el código');
+        });
     }
 }
 

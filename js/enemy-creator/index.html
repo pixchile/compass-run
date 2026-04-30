@@ -306,6 +306,13 @@
             <!-- Panel derecho: Vista previa -->
             <div class="preview-panel">
                 <h3>📄 Código JSON/JS Exportado</h3>
+                
+                <!-- Sección de carga de archivos -->
+                <div style="margin-bottom: 15px; display: flex; gap: 10px;">
+                    <button id="loadBtn" class="action-btn" style="flex: 1;">📂 Cargar archivo .js</button>
+                    <input type="file" id="loadFileInput" accept=".js" style="display: none;">
+                </div>
+                
                 <div class="code-preview" id="codePreview">
                     <span style="color:#888;">Cargando...</span>
                 </div>
