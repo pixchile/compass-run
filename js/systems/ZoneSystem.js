@@ -1,9 +1,17 @@
+// js/systems/ZoneSystem.js
 export default class ZoneSystem {
+    constructor() {
+        this._scene = null;   // referencia a la escena
+    }
+
+    setScene(scene) {
+        this._scene = scene;
+    }
+
     checkZones(player, zones, delta) {
-        if (!zones) return;
+        if (!zones || !this._scene) return;
 
         for (const zone of zones) {
-            // Las zonas vienen como entidades con geometry.bbox
             const bbox = zone.geometry?.bbox || zone;
             const x = bbox.x ?? zone.x;
             const y = bbox.y ?? zone.y;
@@ -21,6 +29,18 @@ export default class ZoneSystem {
                 case 'void':
                     if (player.health) player.health.takeDamage(9999);
                     break;
+
+                case 'shop':
+                case 'pit_stop': {
+                    // Usar el nombre completo de la capa como shopId (ej: "pit_n")
+                    const shopId = zone.tags?.join('_') || 'shop_default';
+                    
+                    // Solo abrir si no está ya abierta
+                    if (this._scene.shopUI && !this._scene.shopUI.visible) {
+                        this._scene.shopUI.open(shopId);
+                    }
+                    break;
+                }
 
                 case 'damage_zone':
                     // Daño continuo moderado

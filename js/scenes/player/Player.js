@@ -135,9 +135,10 @@ export default class Player {
         }
 
         if (this.input.isShiftJustPressed() && !this.dashing && !this.isStunned && this.dashCD === 0 && !this.wallJump.wallStick) {
-            // NUEVO: No permitir dash aéreo si mantiene Espacio presionado
-            if (!(this.jumping && this.holdingSpace)) {
-                this.dashing = true; this.dashT = 0; this.dashCD = DASH_CD;
+            // No permitir dash aéreo si mantiene Espacio presionado
+            if (!this.holdingSpace) {
+                const dashCDValue = this._dashCDBase || DASH_CD;
+                this.dashing = true; this.dashT = 0; this.dashCD = dashCDValue;
                 this.wasJumpingWhenDashed = this.jumping;
                 
                 this.dashInitialSpeed = currentSpeed * DASH_SPD;  
@@ -153,8 +154,9 @@ export default class Player {
         if (!this.isStunned && !this.wallJump.wallStick) {
             if (this.jumping) {
                 const steer = moving ? 0.04 : 0;
-                this.vx = this.jumpVx + (moving ? this.moveDir.x * momentum.getEffectiveMaxSpeed(this.jumpLv) * steer : 0);
-                this.vy = this.jumpVy + (moving ? this.moveDir.y * momentum.getEffectiveMaxSpeed(this.jumpLv) * steer : 0);
+                const maxSpd = this._demonMode ? 1000 : momentum.getEffectiveMaxSpeed(this.jumpLv);
+                this.vx = this.jumpVx + (moving ? this.moveDir.x * maxSpd * steer : 0);
+                this.vy = this.jumpVy + (moving ? this.moveDir.y * maxSpd * steer : 0);
                 if (moving) this.facing = Math.atan2(this.moveDir.y, this.moveDir.x);
             } else if (this.dashing) {
                 const ease = 1 - Math.pow(this.dashT / DASH_DUR, 2);
@@ -165,14 +167,25 @@ export default class Player {
                     const dot = (this.vx * this.moveDir.x + this.vy * this.moveDir.y) / currentSpeed;
                     af = 0.35 + 0.65 * Math.pow((dot + 1) / 2, 1.6);
                 }
-                const tk = this.lerpK(TURN_K[lv] * af, dt);
+
+                // DAB: giro instantáneo al seguir la brújula
+                const fx = this.scene.itemEffects;
+                if (fx?.has('DAB') && moving && this.isMovingInCompassDirection(momentum, currentSpeed)) {
+                    this.vx = this.moveDir.x * currentSpeed;
+                    this.vy = this.moveDir.y * currentSpeed;
+                }
+
+                // Control reduction (CCC malus)
+                const controlMalus = 1 - (this._controlReduction || 0);
+                const turnK_mod = TURN_K[lv] * af * controlMalus;
+                const tk = this.lerpK(turnK_mod, dt);
                 const sk = this.lerpK(STOP_K[lv], dt);
-                
+
                 const slowMult = this.slowTimer > 0 ? 0.4 : 1.0;
                 const finalMult = slowMult;
 
                 if (moving) {
-                    const effSpd = momentum.getEffectiveMaxSpeed(lv);
+                    const effSpd = this._demonMode ? 1000 : momentum.getEffectiveMaxSpeed(lv);
                     this.vx += (this.moveDir.x * effSpd * finalMult - this.vx) * tk;
                     this.vy += (this.moveDir.y * effSpd * finalMult - this.vy) * tk;
                     this.facing = Math.atan2(this.moveDir.y, this.moveDir.x);

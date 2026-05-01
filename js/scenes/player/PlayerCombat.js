@@ -21,6 +21,14 @@ export default class PlayerCombat {
         const applyKnockback = isHighSpeed && canPayHealth;
         
         if (applyKnockback) this.player.health.takeDamage(SLAM.SELF_DAMAGE);
+
+        // AAA: costo extra de 3 HP en slam
+        const fx = this.player.scene?.itemEffects;
+        if (fx?.has('AAA')) {
+            const cost = fx.getAAACost(this.player);
+            if (cost > 0) this.player.health.takeDamage(cost);
+        }
+
         if (this.player.scene.renderer) this.player.scene.renderer.addSlamEffect(this.player.px, this.player.py, applyKnockback);
         
         this.activeSlam = {
@@ -50,10 +58,13 @@ export default class PlayerCombat {
         const bonusMult = this.player.damageMultiplierBonus || 0;
         const totalDamageMult = baseDamageMult + bonusMult;
 
+        const fx = this.player.scene?.itemEffects;
+        const aaaMult = (fx && (this.activeSlam || this.player.dashing)) ? fx.getAAAMultiplier(this.player) : 1;
+
         if (this.activeSlam) {
             return {
                 type: this.activeSlam.isHighSpeed ? 'slam3' : 'slam',
-                baseDamage: this.activeSlam.speed * 0.1 * totalDamageMult,
+                baseDamage: this.activeSlam.speed * 0.1 * totalDamageMult * aaaMult,
                 radius: finalRadius * 1.5,
                 now: now
             };
@@ -66,7 +77,7 @@ export default class PlayerCombat {
         if (this.player.dashing) {
             return {
                 type: this.player.wasJumpingWhenDashed ? 'aerialDash' : 'dash',
-                baseDamage: this.player.dashInitialSpeed * 0.1 * totalDamageMult,
+                baseDamage: this.player.dashInitialSpeed * 0.1 * totalDamageMult * aaaMult,
                 radius: finalRadius,
                 now: now
             };

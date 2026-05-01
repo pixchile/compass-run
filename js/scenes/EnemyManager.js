@@ -73,6 +73,14 @@ export default class EnemyManager {
       this.scene.momentum.addMaxSpeed(0.1);
     }
     if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
+
+    // Drop de componente (chance global baja)
+    if (this.scene?.shopSystem) {
+      const drop = this.scene.shopSystem.tryDrop(enemy.x, enemy.y);
+      if (drop && this.scene.itemDropManager) {
+        this.scene.itemDropManager.spawnDrop(drop);
+      }
+    }
     // Los orbs y stacks al matar se manejan en DynamicEnemy.kill() → applyDeathEffect()
 
     this.enemies.splice(index, 1);

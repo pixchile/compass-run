@@ -9,8 +9,10 @@ import SVGMapLoader from '../systems/SVGMapLoader.js';
 import RewardSystem from './RewardSystem.js';
 import OrbManager from './OrbManager.js';
 import CollisionSystem from '../systems/CollisionSystem.js';
-
 import ZoneSystem from '../systems/ZoneSystem.js';
+import ShopSystem from '../systems/ShopSystem.js';
+import ShopUI from './ShopUI.js';
+import ItemEffects from '../systems/ItemEffects.js';
 import { registerAllCustomEnemies } from '../enemies/definitions/index.js';
 
 export default class Game extends Phaser.Scene {
@@ -20,7 +22,9 @@ export default class Game extends Phaser.Scene {
         this._wallEnemyLines = [];
 
         this.collisionSystem = new CollisionSystem();
-        this.zoneSystem = new ZoneSystem();
+        this.zoneSystem      = new ZoneSystem();
+        this.shopSystem      = new ShopSystem();
+        this.itemEffects     = null; // se instancia en create()
     }
 
     init(data) {
@@ -37,6 +41,7 @@ export default class Game extends Phaser.Scene {
             this.currentMap = { arena: { x: 50, y: 50, w: 2000, h: 2000 }, lines: [], zones: [] };
         }
 
+        // ─── Cargar datos de stage (enemigos, etc.) ──────────────────
         if (this.stageName) {
             try {
                 const stages = JSON.parse(localStorage.getItem('cr_stages') || '[]');
@@ -88,6 +93,36 @@ export default class Game extends Phaser.Scene {
 
         this.compass.setReferences(this.momentum, this.rewardSystem, this);
         this.enemyManager.setMomentumSystem(this.momentum);
+
+        // ─── Tienda / Zonas ──────────────────────────────────────
+        this.shopSystem.reset();
+        this.shopSystem.setScene(this);
+        this.itemEffects = new ItemEffects(this);
+        this.shopUI = new ShopUI(this);
+
+        // Inicializar solo las tiendas que existen en el mapa
+        const shopIds = this._collectShopIds(this.currentMap.zones || []);
+        this.shopSystem.initShops(shopIds);
+
+        // Dar referencia de la escena al ZoneSystem
+        this.zoneSystem.setScene(this);
+    }
+
+    /**
+     * Extrae los shopId únicos de las zonas de tipo 'shop'
+     */
+    _collectShopIds(zones) {
+        const ids = new Set();
+        for (const zone of zones) {
+            if (zone.type === 'shop' && zone.tags) {
+                ids.add(zone.tags.join('_'));
+            }
+        }
+        // Si no hay ninguna, ponemos una por defecto para que no falle
+        if (ids.size === 0) {
+            ids.add('shop_default');
+        }
+        return Array.from(ids);
     }
 
     update(t, delta) {
@@ -132,6 +167,7 @@ export default class Game extends Phaser.Scene {
         this._visibleLines = (this.currentMap.lines || []).filter(l => !l._broken);
 
         this.enemyManager.update(delta, this.time.now, this.player, this._visibleLines);
+        this.itemEffects?.update(delta, this.player, this.momentum, this.enemyManager);
         this.rewardSystem.update(delta, this.player);
         this.orbManager.update(delta, this.player);
 
@@ -164,7 +200,9 @@ export default class Game extends Phaser.Scene {
             this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines);
         }
 
+        // Zonas (daño, void, tienda...)
         this.zoneSystem.checkZones(this.player, this.currentMap.zones, delta);
+        this.shopUI?.update();
 
         this._wallEnemyLines = this.enemyManager.getWallEnemyLines();
         if (this._wallEnemyLines && this._wallEnemyLines.length > 0) {
@@ -194,6 +232,13 @@ export default class Game extends Phaser.Scene {
         this.compass.setReferences(this.momentum, this.rewardSystem, this);
         this.rewardSystem.reset();
         this.orbManager.reset();
+        this.shopSystem.reset();
+        this.itemEffects?.reset();
+        if (this.shopUI?.visible) this.shopUI.close();
+
+        // Reinicializar tiendas con los mismos shopIds del mapa
+        const shopIds = this._collectShopIds(this.currentMap.zones || []);
+        this.shopSystem.initShops(shopIds);
 
         this.camera.x = this.camera.viewWidth / 2; this.camera.y = this.camera.viewHeight / 2;
         this.camera.zoom = 1.0; this.camera.targetZoom = 1.0;

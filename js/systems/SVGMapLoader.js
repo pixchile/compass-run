@@ -1,14 +1,7 @@
+// SVGMapLoader.js
 export default class SVGMapLoader {
   constructor() {
-    // Solo zonas/triggers y muro genérico (negro). Sin verde ni rojo.
-    this.colorMap = {
-      '#000000': 'wall',       // Negro -> muro normal
-      '#ff00ff': 'void',       // Magenta
-      '#ffa500': 'damage_zone',// Naranja
-      '#0000ff': 'trap',       // Azul
-      '#00ffff': 'trigger',    // Cian
-      '#ffff00': 'trigger'     // Amarillo
-    };
+    // Sin mapa de colores; todo se decide por nombre de capa (id o inkscape:label)
   }
 
   async loadMapFromURL(url) {
@@ -22,10 +15,62 @@ export default class SVGMapLoader {
     }
   }
 
+  /**
+   * Obtiene el identificador de capa real para una forma.
+   * Prioriza inkscape:label sobre id.
+   * Recorre ancestros buscando nombres de capa válidos.
+   */
+  getLayerId(element) {
+    let current = element;
+    
+    while (current && current.getAttribute) {
+      const label = current.getAttribute('inkscape:label');
+      if (label) {
+        const lowerLabel = label.toLowerCase();
+        if (this.isValidLayerPrefix(lowerLabel)) {
+          return lowerLabel;
+        }
+      }
+      
+      const id = current.getAttribute('id');
+      if (id) {
+        const lowerId = id.toLowerCase();
+        if (this.isValidLayerPrefix(lowerId)) {
+          return lowerId;
+        }
+      }
+      
+      if (!current.parentElement || current.tagName.toLowerCase() === 'svg') {
+        break;
+      }
+      current = current.parentElement;
+    }
+    
+    // Fallback: devolver cualquier label/id que encuentre
+    let fallback = element;
+    while (fallback && fallback.getAttribute) {
+      const label = fallback.getAttribute('inkscape:label');
+      if (label) return label.toLowerCase();
+      
+      const id = fallback.getAttribute('id');
+      if (id) return id.toLowerCase();
+      
+      if (!fallback.parentElement || fallback.tagName.toLowerCase() === 'svg') break;
+      fallback = fallback.parentElement;
+    }
+    
+    return '';
+  }
+
+  isValidLayerPrefix(layerName) {
+    const validPrefixes = ['wall', 'pit', 'shop', 'trap', 'damage', 'void', 'trigger', 'slow'];
+    return validPrefixes.some(prefix => layerName.startsWith(prefix));
+  }
+
   parseSVG(svgText, mapName) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(svgText, "image/svg+xml");
-    
+
     const mapData = {
       name: mapName,
       version: 4,
@@ -46,42 +91,27 @@ export default class SVGMapLoader {
     const shapes = doc.querySelectorAll('rect, circle, polygon, path, polyline, line');
 
     shapes.forEach(shape => {
-      let color = shape.getAttribute('fill') || shape.style.fill;
-      if (!color || color === 'none') {
-        color = shape.getAttribute('stroke') || shape.style.stroke;
-      }
-      color = this.normalizeColor(color);
+      const layerId = this.getLayerId(shape);
+      
+      // Clasificación según prefijos
+      let type = 'wall';
+      if (layerId.startsWith('wall'))      type = 'wall';
+      else if (layerId.startsWith('pit') || layerId.startsWith('shop')) type = 'shop';
+      else if (layerId.startsWith('trap'))    type = 'trap';
+      else if (layerId.startsWith('damage'))  type = 'damage_zone';
+      else if (layerId.startsWith('void'))    type = 'void';
+      else if (layerId.startsWith('trigger')) type = 'trigger';
+      else if (layerId.startsWith('slow'))    type = 'slow_zone';
 
-      let type = this.colorMap[color] || 'wall'; // por defecto, muro normal
-
-      const shapeId   = shape.getAttribute('id') || '';
-      const parentId  = shape.parentElement?.getAttribute('id') || '';
-      const layerId   = shapeId || parentId;
-
-      // Si el color no es específico, intentar por nombre de capa para zonas/triggers
-      if (type === 'wall' && layerId) {
-        const layerLower = layerId.toLowerCase();
-        if (layerLower.startsWith('void'))    type = 'void';
-        else if (layerLower.startsWith('damage')) type = 'damage_zone';
-        else if (layerLower.startsWith('slow'))   type = 'slow_zone';
-        else if (layerLower.startsWith('trap'))   type = 'trap';
-        else if (layerLower.startsWith('trigger'))type = 'trigger';
-        // cualquier otra cosa sigue siendo 'wall'
-      }
-
-      const tags = layerId.toLowerCase().split('_');
+      const tags = layerId.split('_');
       const geometry = this.extractGeometry(shape);
 
       if (geometry) {
-        const entity = { type, color, tags, geometry };
+        const entity = { type, tags, geometry };
         this.extractThresholds(entity);
         this.categorizeEntity(entity, mapData);
       }
     });
-
-    // DEPURACIÓN OPCIONAL: imprime las primeras líneas con HP
-    // const linesWithHP = mapData.lines.filter(l => l.hp != null);
-    // console.log(`Líneas con HP: ${linesWithHP.length}`, linesWithHP.slice(0,5).map(l => ({hp: l.hp, broken: l._broken})));
 
     return mapData;
   }
@@ -89,13 +119,13 @@ export default class SVGMapLoader {
   convertToLines(entity) {
     const lines = [];
     const geo = entity.geometry;
-    
+
     if (geo.shapeType === 'rect') {
       lines.push({ start: { x: geo.x, y: geo.y }, end: { x: geo.x + geo.w, y: geo.y }, thickness: geo.thickness });
       lines.push({ start: { x: geo.x + geo.w, y: geo.y }, end: { x: geo.x + geo.w, y: geo.y + geo.h }, thickness: geo.thickness });
       lines.push({ start: { x: geo.x + geo.w, y: geo.y + geo.h }, end: { x: geo.x, y: geo.y + geo.h }, thickness: geo.thickness });
       lines.push({ start: { x: geo.x, y: geo.y + geo.h }, end: { x: geo.x, y: geo.y }, thickness: geo.thickness });
-    } 
+    }
     else if (geo.shapeType === 'polygon') {
       const pts = geo.points.trim().split(/[\s,]+/).map(Number);
       for (let i = 0; i < pts.length; i += 2) {
@@ -120,17 +150,14 @@ export default class SVGMapLoader {
       }
     }
 
-    // Mapear a líneas finales con tipo 'wall' y HP si existe
     return lines.map(l => ({
       ...l,
-      type: 'wall',                        // siempre wall genérico
-      color: entity.color,
-      hp: entity.hp != null ? entity.hp : null,  // número o null (indestructible)
+      type: 'wall',
+      color: '#000000',
+      hp: entity.hp != null ? entity.hp : null,
     }));
   }
 
-  // Colapsa puntos colineales en segmentos más largos.
-  // angleTolerance en grados: si el cambio de dirección es menor a esto, se fusionan.
   mergeCollinearPoints(pts, angleTolerance = 1.5) {
     if (pts.length < 3) return pts;
     const thresh = Math.cos((angleTolerance * Math.PI) / 180);
@@ -147,7 +174,6 @@ export default class SVGMapLoader {
       if (lenA === 0 || lenB === 0) continue;
 
       const dot = (ax / lenA) * (bx / lenB) + (ay / lenA) * (by / lenB);
-      // Si el ángulo entre segmentos es menor a la tolerancia, saltar el punto intermedio
       if (dot < thresh) result.push(curr);
     }
 
@@ -181,25 +207,6 @@ export default class SVGMapLoader {
     }
   }
 
-  normalizeColor(colorString) {
-    if (!colorString) return null;
-    colorString = colorString.toLowerCase().trim();
-
-    const rgbMatch = colorString.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/);
-    if (rgbMatch) {
-      const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0');
-      const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0');
-      const b = parseInt(rgbMatch[3]).toString(16).padStart(2, '0');
-      return `#${r}${g}${b}`;
-    }
-
-    if (colorString.match(/^#[0-9a-f]{3}$/)) {
-      return `#${colorString[1]}${colorString[1]}${colorString[2]}${colorString[2]}${colorString[3]}${colorString[3]}`;
-    }
-
-    return colorString;
-  }
-
   extractGeometry(shape) {
     const tagName = shape.tagName.toLowerCase();
     let thickness = shape.getAttribute('stroke-width') || shape.style.strokeWidth || 2;
@@ -214,7 +221,7 @@ export default class SVGMapLoader {
         h: parseFloat(shape.getAttribute('height') || 0),
         thickness
       };
-    } 
+    }
     else if (tagName === 'line') {
       return {
         shapeType: 'line',
@@ -241,37 +248,34 @@ export default class SVGMapLoader {
   }
 
   extractThresholds(entity) {
-  entity.hp = null;
-  
-  // Método 1: buscar 'hp' en los tags separados por '_'
-  if (entity.tags && Array.isArray(entity.tags)) {
-    const hpIndex = entity.tags.findIndex(tag => tag === 'hp');
-    if (hpIndex !== -1 && entity.tags.length > hpIndex + 1) {
-      const hpVal = parseInt(entity.tags[hpIndex + 1], 10);
+    entity.hp = null;
+
+    if (entity.tags && Array.isArray(entity.tags)) {
+      const hpIndex = entity.tags.findIndex(tag => tag === 'hp');
+      if (hpIndex !== -1 && entity.tags.length > hpIndex + 1) {
+        const hpVal = parseInt(entity.tags[hpIndex + 1], 10);
+        if (!isNaN(hpVal)) {
+          entity.hp = hpVal;
+          return;
+        }
+      }
+    }
+
+    const fullName = (entity.tags || []).join('_');
+    const hpMatch = fullName.match(/hp_(\d+)/);
+    if (hpMatch) {
+      const hpVal = parseInt(hpMatch[1], 10);
       if (!isNaN(hpVal)) {
         entity.hp = hpVal;
-        return;
       }
     }
   }
-  
-  // Método 2 (respaldo): buscar 'hp_' en el nombre completo de la capa
-  // Reconstruimos el nombre original uniendo los tags
-  const fullName = (entity.tags || []).join('_');
-  const hpMatch = fullName.match(/hp_(\d+)/);
-  if (hpMatch) {
-    const hpVal = parseInt(hpMatch[1], 10);
-    if (!isNaN(hpVal)) {
-      entity.hp = hpVal;
-    }
-  }
-}
 
   categorizeEntity(entity, mapData) {
     if (entity.type === 'wall') {
       const generatedLines = this.convertToLines(entity);
       mapData.lines.push(...generatedLines);
-    } else if (['void', 'damage_zone', 'slow_zone', 'trap'].includes(entity.type)) {
+    } else if (['void', 'damage_zone', 'slow_zone', 'shop', 'trap'].includes(entity.type)) {
       if (entity.geometry.shapeType === 'path') {
         const pts = this.samplePath(entity.geometry.pathData, 20);
         if (pts.length > 0) {

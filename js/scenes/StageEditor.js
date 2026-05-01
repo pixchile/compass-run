@@ -87,6 +87,7 @@ export default class StageEditor extends Phaser.Scene {
           <button class="se-btn se-btn-play" id="se-play">▶ Probar Stage</button>
           <button class="se-btn se-btn-save" id="se-save">💾 Guardar Stage</button>
           <button class="se-btn se-btn-load" id="se-load-stage">📂 Cargar Stage</button>
+          <button class="se-btn se-btn-delete" id="se-delete-stage" style="background:#552222;color:#ff8888;">🗑 Borrar Stage</button>
           <button class="se-btn se-btn-exit" id="se-exit">✕ Salir</button>
         </div>
       </div>
@@ -412,6 +413,7 @@ export default class StageEditor extends Phaser.Scene {
 
     document.getElementById('se-save')?.addEventListener('click', () => this._save());
     document.getElementById('se-load-stage')?.addEventListener('click', () => this._loadStage());
+    document.getElementById('se-delete-stage')?.addEventListener('click', () => this._deleteStage());
     document.getElementById('se-exit')?.addEventListener('click', () => this.scene.start('MainMenu'));
 
     // Línea de tiempo — click y drag para mover el cursor
@@ -530,6 +532,19 @@ export default class StageEditor extends Phaser.Scene {
     if (idx !== -1) all[idx] = stage; else all.push(stage);
     localStorage.setItem('cr_stages', JSON.stringify(all));
     this._toast(`Stage "${this.stageName}" guardado`, 'ok');
+  }
+
+  _deleteStage() {
+    const all = this._getAllStages();
+    if (!all.length) { this._toast('No hay stages guardados', 'err'); return; }
+    const name = prompt('Stages disponibles:\n' + all.map(s=>s.name).join('\n') + '\n\nEscribe el nombre a BORRAR:');
+    if (!name) return;
+    const idx = all.findIndex(s => s.name === name);
+    if (idx === -1) { this._toast('No encontrado', 'err'); return; }
+    if (!confirm(`¿Borrar stage "${name}"? Esto no se puede deshacer.`)) return;
+    all.splice(idx, 1);
+    localStorage.setItem('cr_stages', JSON.stringify(all));
+    this._toast(`Stage "${name}" borrado`, 'ok');
   }
 
   _loadStage() {
