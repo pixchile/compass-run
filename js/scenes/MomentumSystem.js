@@ -35,6 +35,7 @@ export default class MomentumSystem {
   }
 
   getEffectiveMaxSpeed(level) {
+    if (this._maxSpeedOverride) return this._maxSpeedOverride;
     return (MAX_SPD[level] || 300) + this._maxSpeedBonus;
   }
 
@@ -51,7 +52,10 @@ export default class MomentumSystem {
 
   // ─── Stacks ────────────────────────────────────────────────
   addStacks(amount) {
-    this.stacks = Math.min(SMAX, this.stacks + amount);
+    const bonus = this._stackRateBonus || 0;
+    const malus = this._stackRateMalus || 0;
+    const final = amount * (1 + bonus) * (1 - malus);
+    this.stacks = Math.min(SMAX, this.stacks + final);
     this._lastActionTime = Date.now();
     this._decayAccum = 0;
   }

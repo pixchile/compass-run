@@ -4,8 +4,8 @@ export const TRAIL_MAX = 16;
 export const L2 = 40, L3 = 50, SMAX = 90;
 
 export const MAX_SPD = [0, 300,  400,  440];
-export const TURN_K  = [0, 0.25, 0.25, 0.12];
-export const STOP_K  = [0, 0.25, 0.25, 0.12];
+export const TURN_K  = [0, 0.25, 0.25, 0.06];
+export const STOP_K  = [0, 0.25, 0.25, 0.06];
 
 // Jump params [_, L1, L2, L3]
 export const JUMP_DUR    = [0,  400,  800,  800];

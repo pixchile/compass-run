@@ -150,6 +150,10 @@ export default class Game extends Phaser.Scene {
         }
 
         if (Phaser.Input.Keyboard.JustDown(this.pauseKey) || Phaser.Input.Keyboard.JustDown(this.pauseKey2)) {
+            if (this.shopUI?.visible) {
+                this.shopUI.close(true); // ESC = cierre manual
+                return;
+            }
             this.isPaused = !this.isPaused;
             if (this.isPaused) {
                 this.renderer.uiManager.showPauseStats(this.player, this.compass);
@@ -191,13 +195,13 @@ export default class Game extends Phaser.Scene {
             const endX = this.player.px; const endY = this.player.py;
 
             this.player.px = midX; this.player.py = midY;
-            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines);
+            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines, this.itemEffects);
 
             this.player.prevX = this.player.px; this.player.prevY = this.player.py;
             this.player.px = endX; this.player.py = endY;
-            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines);
+            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines, this.itemEffects);
         } else {
-            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines);
+            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines, this.itemEffects);
         }
 
         // Zonas (daño, void, tienda...)
@@ -206,11 +210,11 @@ export default class Game extends Phaser.Scene {
 
         this._wallEnemyLines = this.enemyManager.getWallEnemyLines();
         if (this._wallEnemyLines && this._wallEnemyLines.length > 0) {
-            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._wallEnemyLines);
+            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._wallEnemyLines, this.itemEffects);
         }
 
         if (this.player.activeSlam) {
-            this.enemyManager.processSlam(this.player.activeSlam, this.time.now);
+            this.enemyManager.processSlam(this.player.activeSlam, this.time.now, this.momentum);
             this.player.activeSlam = null;
         }
 

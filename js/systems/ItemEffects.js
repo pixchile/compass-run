@@ -150,19 +150,19 @@ export default class ItemEffects {
   // ─── DDD: Fénix ─────────────────────────────────────────────
   _updateDDD(delta, player) {
     this.dddCD = Math.max(0, this.dddCD - delta);
-    // Reducir límite de 100 a 10 en 3s
-    if (this.dddLimit < 100) {
-      this.dddLimit = Math.max(10, this.dddLimit - (90 / 3000) * delta);
-    }
+    // Reducir límite de 100 a 10 continuamente mientras Fénix esté equipado
+    this.dddLimit = Math.max(10, this.dddLimit - (90 / 3000) * delta);
   }
 
-  // Llamado antes de aplicar daño letal. Devuelve true si se absorbió.
   onLethalDamage(player) {
     if (!this.has('DDD') || this.dddCD > 0) return false;
-    player.health.hp = this.dddLimit;
-    this.dddLimit    = 100; // reiniciar para que baje de nuevo
-    this.dddCD       = 60000;
+    // Subir maxHp permanentemente
     player.health.maxHp = (player.health.maxHp || 100) + 10;
+    // Revivir con el límite actual (que ya habrá bajado a ~10)
+    player.health.hp = this.dddLimit;
+    // Reiniciar límite para que vuelva a bajar
+    this.dddLimit = player.health.maxHp;
+    this.dddCD    = 60000;
     return true;
   }
 
@@ -222,8 +222,10 @@ export default class ItemEffects {
   // ─── CAD: Vampiro ────────────────────────────────────────────
   onDashHit(player, momentum) {
     if (!this.has('CAD')) return;
+    if (this._cadHealedThisDash) return;
+    this._cadHealedThisDash = true;
     const heal = momentum.level;
-    player.health.hp = Math.min(player.health.maxHp || 100, (player.health.hp || 0) + heal);
+    player.health.hp = Math.min(player.health.maxHp, (player.health.hp || 0) + heal);
   }
 
   // ─── ABC: Brújula Activa ─────────────────────────────────────
@@ -282,6 +284,23 @@ export default class ItemEffects {
       // Ganar hasta nivel 2
       while (momentum.level < 2 && momentum.stacks < 90) momentum.stacks++;
     }
+  }
+
+  // ─── CCC: Incendiario ────────────────────────────────────────
+  // Llamado desde Player cuando hay derrapaje con CCC equipado.
+  // Crea una zona de daño temporal en currentMap.zones.
+  onSkid(x, y) {
+    if (!this.has('CCC')) return;
+    const R = 40;
+    const zones = this.scene.currentMap?.zones;
+    if (!zones) return;
+    zones.push({
+      type: 'damage_zone',
+      damagePerSec: 20,
+      timeLeft: 5000,
+      geometry: { bbox: { x: x - R, y: y - R, w: R * 2, h: R * 2 } },
+      _isFire: true,
+    });
   }
 
   // ─── CCB: velocidad = créditos (aplicado en update) ──────────

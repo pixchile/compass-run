@@ -21,44 +21,42 @@ export default class SVGMapLoader {
    * Recorre ancestros buscando nombres de capa válidos.
    */
   getLayerId(element) {
+    const INKSCAPE_NS = 'http://www.inkscape.org/namespaces/inkscape';
+
+    const getLabel = (el) => {
+      // Intentar con namespace (cuando xmlns:inkscape está declarado en el SVG)
+      const nsLabel = el.getAttributeNS?.(INKSCAPE_NS, 'label');
+      if (nsLabel) return nsLabel.toLowerCase();
+      // Fallback: atributo plano (SVGs sin namespace inkscape)
+      const plainLabel = el.getAttribute?.('inkscape:label');
+      if (plainLabel) return plainLabel.toLowerCase();
+      return null;
+    };
+
+    // Subir por ancestros buscando prefijo válido en label o id
     let current = element;
-    
     while (current && current.getAttribute) {
-      const label = current.getAttribute('inkscape:label');
-      if (label) {
-        const lowerLabel = label.toLowerCase();
-        if (this.isValidLayerPrefix(lowerLabel)) {
-          return lowerLabel;
-        }
-      }
-      
+      const label = getLabel(current);
+      if (label && this.isValidLayerPrefix(label)) return label;
+
       const id = current.getAttribute('id');
-      if (id) {
-        const lowerId = id.toLowerCase();
-        if (this.isValidLayerPrefix(lowerId)) {
-          return lowerId;
-        }
-      }
-      
-      if (!current.parentElement || current.tagName.toLowerCase() === 'svg') {
-        break;
-      }
+      if (id && this.isValidLayerPrefix(id.toLowerCase())) return id.toLowerCase();
+
+      if (!current.parentElement || current.tagName.toLowerCase() === 'svg') break;
       current = current.parentElement;
     }
-    
-    // Fallback: devolver cualquier label/id que encuentre
-    let fallback = element;
+
+    // Fallback: devolver el label/id del primer ancestro <g> (no del shape mismo)
+    let fallback = element.parentElement;
     while (fallback && fallback.getAttribute) {
-      const label = fallback.getAttribute('inkscape:label');
-      if (label) return label.toLowerCase();
-      
+      if (fallback.tagName.toLowerCase() === 'svg') break;
+      const label = getLabel(fallback);
+      if (label) return label;
       const id = fallback.getAttribute('id');
       if (id) return id.toLowerCase();
-      
-      if (!fallback.parentElement || fallback.tagName.toLowerCase() === 'svg') break;
       fallback = fallback.parentElement;
     }
-    
+
     return '';
   }
 
@@ -105,9 +103,10 @@ export default class SVGMapLoader {
 
       const tags = layerId.split('_');
       const geometry = this.extractGeometry(shape);
+      const color = this.extractColor(shape);
 
       if (geometry) {
-        const entity = { type, tags, geometry };
+        const entity = { type, tags, geometry, color };
         this.extractThresholds(entity);
         this.categorizeEntity(entity, mapData);
       }
@@ -207,6 +206,29 @@ export default class SVGMapLoader {
     }
   }
 
+  /**
+   * Extrae el color de relleno o trazo de un elemento SVG.
+   * Prioriza fill sobre stroke. Devuelve '#ffffff' como fallback.
+   */
+  extractColor(shape) {
+    // Intentar desde atributo directo
+    const fill = shape.getAttribute('fill');
+    if (fill && fill !== 'none' && fill.startsWith('#')) return fill;
+
+    const stroke = shape.getAttribute('stroke');
+    if (stroke && stroke !== 'none' && stroke.startsWith('#')) return stroke;
+
+    // Intentar desde style inline
+    const style = shape.getAttribute('style') || '';
+    const fillMatch = style.match(/fill:\s*(#[0-9a-fA-F]{3,6})/);
+    if (fillMatch) return fillMatch[1];
+
+    const strokeMatch = style.match(/stroke:\s*(#[0-9a-fA-F]{3,6})/);
+    if (strokeMatch) return strokeMatch[1];
+
+    return '#ffffff';
+  }
+
   extractGeometry(shape) {
     const tagName = shape.tagName.toLowerCase();
     let thickness = shape.getAttribute('stroke-width') || shape.style.strokeWidth || 2;
@@ -276,16 +298,28 @@ export default class SVGMapLoader {
       const generatedLines = this.convertToLines(entity);
       mapData.lines.push(...generatedLines);
     } else if (['void', 'damage_zone', 'slow_zone', 'shop', 'trap'].includes(entity.type)) {
-      if (entity.geometry.shapeType === 'path') {
-        const pts = this.samplePath(entity.geometry.pathData, 20);
+      const geo = entity.geometry;
+      if (geo.shapeType === 'path') {
+        const pts = this.samplePath(geo.pathData, 20);
         if (pts.length > 0) {
           const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
-          entity.geometry.bbox = {
+          geo.bbox = {
             x: Math.min(...xs), y: Math.min(...ys),
             w: Math.max(...xs) - Math.min(...xs),
             h: Math.max(...ys) - Math.min(...ys)
           };
         }
+      } else if (geo.shapeType === 'rect') {
+        geo.bbox = { x: geo.x, y: geo.y, w: geo.w, h: geo.h };
+      } else if (geo.shapeType === 'polygon' && geo.points) {
+        const pts = geo.points.trim().split(/[\s,]+/).map(Number);
+        const xs = [], ys = [];
+        for (let i = 0; i < pts.length; i += 2) { xs.push(pts[i]); ys.push(pts[i+1]); }
+        geo.bbox = {
+          x: Math.min(...xs), y: Math.min(...ys),
+          w: Math.max(...xs) - Math.min(...xs),
+          h: Math.max(...ys) - Math.min(...ys)
+        };
       }
       mapData.zones.push(entity);
     } else if (entity.type === 'trigger') {

@@ -30,7 +30,13 @@ export default class PlayerHealth {
 
     takeDamage(amount) {
         if (this.isInvincible) return;
-        this.hp = Math.max(0, this.hp - amount);
+        const newHp = this.hp - amount;
+        // DDD: Fénix — interceptar daño letal
+        if (newHp <= 0) {
+            const fx = this.player?.scene?.itemEffects;
+            if (fx?.onLethalDamage(this.player)) return; // absorbido
+        }
+        this.hp = Math.max(0, newHp);
         this.hpRegenT = 0;
         this.hpHitFlash = 280;
         this.isInvincible = true;

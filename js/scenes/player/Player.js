@@ -44,10 +44,12 @@ export default class Player {
     lerpK(k, dt) { return 1 - Math.pow(1 - k, dt * 60); }
 
     isMovingInCompassDirection(momentum, currentSpeed) {
-        if (!momentum || momentum.cIdx === undefined || currentSpeed < 15) return false;
-        const cd = DIRS[momentum.cIdx];
-        if (!cd) return false;
-        let diff = Math.abs(Math.atan2(this.vy, this.vx) - Math.atan2(cd.dy, cd.dx));
+        if (currentSpeed < 15) return false;
+        const compass = this.scene?.compass;
+        if (!compass) return false;
+        const pd = compass.primaryDir;
+        if (!pd) return false;
+        let diff = Math.abs(Math.atan2(this.vy, this.vx) - Math.atan2(pd.dy, pd.dx));
         if (diff > Math.PI) diff = Math.PI * 2 - diff;
         return (diff * (180 / Math.PI)) <= 22.5;
     }
@@ -75,10 +77,14 @@ export default class Player {
         this.combat.update(delta);
 
         this.moveDir = this.input.getMoveDirection();
+        // Bloquear movimiento si el shop está abierto
+        if (this.scene?.shopUI?.visible) {
+            this.moveDir = { x: 0, y: 0 };
+            this.holdingSpace = false;
+        } else {
+            this.holdingSpace = this.input.isSpaceDown();
+        }
         const moving = this.moveDir.x !== 0 || this.moveDir.y !== 0;
-
-        // NUEVO: guardar si mantiene Espacio presionado (para atravesar muros en salto)
-        this.holdingSpace = this.input.isSpaceDown();
 
         this.stunT = Math.max(0, this.stunT - delta);
         this.slowTimer  = Math.max(0, (this.slowTimer  || 0) - delta);
@@ -137,16 +143,45 @@ export default class Player {
         if (this.input.isShiftJustPressed() && !this.dashing && !this.isStunned && this.dashCD === 0 && !this.wallJump.wallStick) {
             // No permitir dash aéreo si mantiene Espacio presionado
             if (!this.holdingSpace) {
-                const dashCDValue = this._dashCDBase || DASH_CD;
-                this.dashing = true; this.dashT = 0; this.dashCD = dashCDValue;
-                this.wasJumpingWhenDashed = this.jumping;
-                
-                this.dashInitialSpeed = currentSpeed * DASH_SPD;  
-                const dirX = currentSpeed > 8 ? this.vx / currentSpeed : Math.cos(this.facing);
-                const dirY = currentSpeed > 8 ? this.vy / currentSpeed : Math.sin(this.facing);
-                this.dashVx = dirX * this.dashInitialSpeed;
-                this.dashVy = dirY * this.dashInitialSpeed;
-                if (this.jumping) { this.jumpVx = this.dashVx; this.jumpVy = this.dashVy; }
+                const fx = this.scene?.itemEffects;
+
+                // AAB: eyectar enemigo agarrado en lugar de dash normal
+                if (fx?.onDashWhileGrabbing(this)) {
+                    // el gancho maneja el lanzamiento, no iniciamos dash
+                } else {
+                    const dashCDValue = this._dashCDBase || DASH_CD;
+                    this.dashing = true; this.dashT = 0; this.dashCD = dashCDValue;
+                    this.wasJumpingWhenDashed = this.jumping;
+
+                    const speedMult = fx?.getDashSpeedMult() ?? 1;
+                    this.dashInitialSpeed = currentSpeed * DASH_SPD * speedMult;
+
+                    // AAA: Berserker — coste de HP al hacer dash
+                    if (fx?.has('AAA')) {
+                        const cost = fx.getAAACost(this);
+                        if (cost > 0) this.health.takeDamage(cost);
+                    }
+                    const dirX = currentSpeed > 8 ? this.vx / currentSpeed : Math.cos(this.facing);
+                    const dirY = currentSpeed > 8 ? this.vy / currentSpeed : Math.sin(this.facing);
+                    this.dashVx = dirX * this.dashInitialSpeed;
+                    this.dashVy = dirY * this.dashInitialSpeed;
+                    if (this.jumping) { this.jumpVx = this.dashVx; this.jumpVy = this.dashVy; }
+
+                    // ABC: Brújula Activa — dar stacks si el dash va en dirección de la brújula
+                    if (fx?.has('ABC')) {
+                        const compass = this.scene?.compass;
+                        if (compass) {
+                            const dot = (dir, vx, vy) => (dir.dx ?? 0) * vx + (dir.dy ?? 0) * vy;
+                            const pd = compass.primaryDir;
+                            const sd = compass.secondaryDir;
+                            if (pd && dot(pd, dirX, dirY) > 0.7)      fx.onDashInCompassDir(this, this.scene.momentum, true);
+                            else if (sd && dot(sd, dirX, dirY) > 0.7) fx.onDashInCompassDir(this, this.scene.momentum, false);
+                        }
+                    }
+
+                    // BBB: dash aéreo activa Modo Demonio
+                    if (this.jumping) fx?.onAerialDash(this, this.scene.momentum);
+                }
             }
         }
 
@@ -178,6 +213,18 @@ export default class Player {
                 // Control reduction (CCC malus)
                 const controlMalus = 1 - (this._controlReduction || 0);
                 const turnK_mod = TURN_K[lv] * af * controlMalus;
+
+                // CCC: detectar derrapaje y emitir rastro de fuego
+                const fxCCC = this.scene.itemEffects;
+                if (fx?.has('CCC') && moving && currentSpeed > 150 && lv >= 2 && af < 0.5) {
+                    this._skidTimer = (this._skidTimer || 0) + delta;
+                    if (this._skidTimer >= 100) {
+                        this._skidTimer = 0;
+                        fx.onSkid(this.px, this.py);
+                    }
+                } else {
+                    this._skidTimer = 0;
+                }
                 const tk = this.lerpK(turnK_mod, dt);
                 const sk = this.lerpK(STOP_K[lv], dt);
 

@@ -1,7 +1,8 @@
 // js/systems/ZoneSystem.js
 export default class ZoneSystem {
     constructor() {
-        this._scene = null;   // referencia a la escena
+        this._scene = null;
+        this._inShopZone = false; // si el jugador está dentro de alguna zona shop
     }
 
     setScene(scene) {
@@ -11,8 +12,11 @@ export default class ZoneSystem {
     checkZones(player, zones, delta) {
         if (!zones || !this._scene) return;
 
+        let playerInShop = false;
+
         for (const zone of zones) {
-            const bbox = zone.geometry?.bbox || zone;
+            const geo = zone.geometry;
+            const bbox = geo?.bbox || geo || zone;
             const x = bbox.x ?? zone.x;
             const y = bbox.y ?? zone.y;
             const w = bbox.w ?? zone.w;
@@ -32,23 +36,23 @@ export default class ZoneSystem {
 
                 case 'shop':
                 case 'pit_stop': {
-                    // Usar el nombre completo de la capa como shopId (ej: "pit_n")
+                    playerInShop = true;
                     const shopId = zone.tags?.join('_') || 'shop_default';
-                    
-                    // Solo abrir si no está ya abierta
-                    if (this._scene.shopUI && !this._scene.shopUI.visible) {
-                        this._scene.shopUI.open(shopId);
+                    const ui = this._scene.shopUI;
+                    if (ui && !ui.visible && !ui.manuallyClosed) {
+                        ui.open(shopId);
                     }
                     break;
                 }
 
                 case 'damage_zone':
-                    // Daño continuo moderado
-                    if (player.health) player.health.takeDamage(0.5 * (delta / 1000) * 60);
+                    if (player.health) {
+                        const dps = zone.damagePerSec ?? 30;
+                        player.health.takeDamage(dps * (delta / 1000));
+                    }
                     break;
 
                 case 'slow_zone':
-                    // Aplica slow timer para reducir velocidad
                     player.slowTimer = (player.slowTimer || 0) + delta * 1.5;
                     break;
 
@@ -59,6 +63,25 @@ export default class ZoneSystem {
                 case 'heal':
                     if (player.health) player.health.heal(zone.amount || 10);
                     break;
+            }
+        }
+
+        // Al salir del área: cerrar shop si estaba abierto, y limpiar flag manual
+        if (!playerInShop) {
+            if (this._inShopZone && this._scene.shopUI?.visible) {
+                this._scene.shopUI.close();
+            }
+            if (this._scene.shopUI) this._scene.shopUI.manuallyClosed = false;
+        }
+        this._inShopZone = playerInShop;
+
+        // Expirar zonas temporales (ej: rastro de fuego de CCC)
+        // El parámetro "zones" ya contiene la referencia al array necesario
+        for (let i = zones.length - 1; i >= 0; i--) {
+            const z = zones[i];
+            if (z.timeLeft !== undefined) {
+                z.timeLeft -= delta;
+                if (z.timeLeft <= 0) zones.splice(i, 1);
             }
         }
     }

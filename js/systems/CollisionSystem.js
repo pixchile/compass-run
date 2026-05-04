@@ -9,7 +9,7 @@ export default class CollisionSystem {
         this._colResult = { collided: false, hitX: 0, hitY: 0, distance: 0 };
     }
 
-    checkLineCollisions(player, momentum, lines) {
+    checkLineCollisions(player, momentum, lines, itemEffects) {
         if (!lines || lines.length === 0) return;
 
         const currentSpeed = Math.hypot(player.vx, player.vy);
@@ -81,8 +81,14 @@ export default class CollisionSystem {
                     // Penalizaciones normales por chocar en dash
                     if (!line._broken) {
                         player.stunT = DASH_WALL_STUN_DUR;
-                        if (momentum) momentum.halveStacks();
-                        if (player.health) player.health.takeDamage(Math.floor(HP_DMG_DASH_WALL * impactSpeed));
+                        if (momentum) {
+                            momentum.halveStacks();
+                            itemEffects?.onDerape(momentum); // BCD: Equilibrio
+                        }
+                        const rawDmg = Math.floor(HP_DMG_DASH_WALL * impactSpeed);
+                        const reduction = itemEffects?.getADDDamageReduction() || 0;
+                        const finalDmg = Math.max(0, rawDmg - reduction);
+                        if (player.health) player.health.takeDamage(finalDmg);
                         player.dashing = false;
                         player.vx = 0; player.vy = 0;
                     }

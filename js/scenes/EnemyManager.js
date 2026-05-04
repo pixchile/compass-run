@@ -47,8 +47,8 @@ export default class EnemyManager {
     this.combatSystem.processPlayerInteractions(player, delta, now, momentumSystem);
   }
 
-  processSlam(slamData, now) {
-    this.combatSystem.processSlam(slamData, now);
+  processSlam(slamData, now, momentum) {
+    this.combatSystem.processSlam(slamData, now, momentum);
   }
 
   checkSolidCollision(player, playerRadius = 12) {

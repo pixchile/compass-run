@@ -17,14 +17,8 @@ export default class ShopUI {
     this._cursor  = 0;
     this._items   = [];       // lista actual visible
 
-    this._keys = {
-      up:    scene.input.keyboard.addKey('W'),
-      down:  scene.input.keyboard.addKey('S'),
-      left:  scene.input.keyboard.addKey('A'),
-      right: scene.input.keyboard.addKey('D'),
-      enter: scene.input.keyboard.addKey('SPACE'),
-      close: scene.input.keyboard.addKey('ESC'),
-    };
+    // Reutilizar las keys del PlayerInput para evitar conflictos con Phaser
+    this._kb = scene.player?.input?.kb || scene.input.keyboard.addKeys('W,A,S,D,SPACE');
     this._prev = {};
 
     this._root = scene.add.container(0, 0).setDepth(2000).setAlpha(0);
@@ -68,7 +62,7 @@ export default class ShopUI {
       wordWrap: { width: bw - PAD * 2 }, align: 'center'
     }).setOrigin(0.5);
 
-    this._hint = this.scene.add.text(cx, by + bh - 24, 'W/S navegar  ·  ESPACIO comprar/vender  ·  ESC cerrar', {
+    this._hint = this.scene.add.text(cx, by + bh - 24, 'W/S navegar  ·  A/D cambiar tab  ·  ESPACIO comprar/vender  ·  ESC salir', {
       fontFamily: 'monospace', fontSize: '11px', color: '#445566'
     }).setOrigin(0.5);
 
@@ -143,9 +137,10 @@ export default class ShopUI {
     } else {
       // Vender componentes
       if (shop.components.length === 0 && shop.equippedItems.length === 0) {
-        this.scene.add.text(cx, startY + 20, 'Inventario vacío', {
+        const emptyText = this.scene.add.text(cx, startY + 20, 'Inventario vacío', {
           fontFamily: 'monospace', fontSize: '13px', color: '#555555'
         }).setOrigin(0.5);
+        this._listContainer.add(emptyText);
         return;
       }
 
@@ -206,6 +201,12 @@ export default class ShopUI {
     const priceText = price !== null ? this.scene.add.text(cx + 240, y + 12, `${price} cr`, {
       fontFamily: 'monospace', fontSize: '12px', color: '#ffdd44'
     }).setOrigin(1, 0.5) : null;
+
+    // Transferir ownership al container (evita conflicto con el display list de la escena)
+    this.scene.sys.displayList.remove(bg);
+    this.scene.sys.displayList.remove(nameText);
+    this.scene.sys.displayList.remove(subText);
+    if (priceText) this.scene.sys.displayList.remove(priceText);
 
     this._listContainer.add([bg, nameText, subText]);
     if (priceText) this._listContainer.add(priceText);
@@ -306,6 +307,7 @@ export default class ShopUI {
   open(shopId) {
     this.shopId  = shopId;
     this.visible = true;
+    this.manuallyClosed = false;
     this._tab    = 'buy';
     this._cursor = 0;
     this._root.setAlpha(1);
@@ -313,8 +315,9 @@ export default class ShopUI {
     this._refresh();
   }
 
-  close() {
+  close(manual = false) {
     this.visible = false;
+    this.manuallyClosed = manual;
     this._root.setAlpha(0);
     this._listContainer.removeAll(true);
     this._items = [];
@@ -324,12 +327,11 @@ export default class ShopUI {
   update() {
     if (!this.visible) return;
 
-    const up    = this._keys.up.isDown;
-    const down  = this._keys.down.isDown;
-    const enter = this._keys.enter.isDown;
-    const close = this._keys.close.isDown;
-    const left  = this._keys.left.isDown;
-    const right = this._keys.right.isDown;
+    const up    = this._kb.W.isDown;
+    const down  = this._kb.S.isDown;
+    const enter = this._kb.SPACE.isDown;
+    const left  = this._kb.A.isDown;
+    const right = this._kb.D.isDown;
 
     if (up && !this._prev.up && this._items.length > 0) {
       this._cursor = (this._cursor - 1 + this._items.length) % this._items.length;
@@ -344,8 +346,7 @@ export default class ShopUI {
     if (enter && !this._prev.enter && this._items[this._cursor]) {
       this._items[this._cursor].onBuy();
     }
-    if (close && !this._prev.close) this.close();
 
-    this._prev = { up, down, enter, close, left, right };
+    this._prev = { up, down, enter, left, right };
   }
 }

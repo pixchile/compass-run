@@ -22,7 +22,12 @@ export default class CombatSystem {
   }
 
   processPlayerInteractions(player, delta, now, momentumSystem) {
-    if (player.dashing && !this.wasDashing) this.damagedThisDash.clear();
+    const fx = this.manager.scene?.itemEffects;
+
+    if (player.dashing && !this.wasDashing) {
+      this.damagedThisDash.clear();
+      if (fx) fx._cadHealedThisDash = false;
+    }
     this.wasDashing = player.dashing;
 
     const attackPayload = player.getCurrentAttackPayload(momentumSystem.level);
@@ -31,8 +36,20 @@ export default class CombatSystem {
 
     for (let i = enemies.length - 1; i >= 0; i--) {
       const enemy = enemies[i];
-      if (this._processSingleInteraction(enemy, player, attackPayload, auraEmitters, now, momentumSystem)) {
+      const died = this._processSingleInteraction(enemy, player, attackPayload, auraEmitters, now, momentumSystem);
+      if (died) {
+        // AAD: explosión al morir
+        fx?.onEnemyDied(enemy, this.manager);
+        // BBB: matar en Modo Demonio reinicia duración
+        fx?.onEnemyKilledInDemon();
+        // CAD: vampiro también cura al matar con dash
+        if (player.dashing) fx?.onDashHit(player, momentumSystem);
         this.manager.killEnemy(i, enemy, attackPayload?.type || 'any');
+      } else if (attackPayload && player.dashing) {
+        // CAD: vampiro — recuperar HP al golpear con dash
+        fx?.onDashHit(player, momentumSystem);
+        // AAB: intentar agarrar al primer enemigo golpeado
+        fx?.tryGrab(enemy, player);
       }
     }
   }
@@ -101,13 +118,19 @@ export default class CombatSystem {
       }
   }
 
-  processSlam(slamData, now) {
+  processSlam(slamData, now, momentum) {
     const { x, y, isHighSpeed, applyKnockback } = slamData;
+    const fx = this.manager.scene?.itemEffects;
+    const player = this.manager.scene?.player;
+    const isMomentum3 = (momentum?.level === 3);
 
     this._slamAttackObj.type = isHighSpeed ? 'slam3' : 'slam';
     this._slamAttackObj.baseDamage = SLAM.DAMAGE;
     this._slamAttackObj.now = now;
     this._slamAttackObj.radius = SLAM.RADIUS;
+
+    // DDC: Sand King — activa en momentum lvl 3
+    if (isMomentum3) fx?.applySandKingBonus(x, y, SLAM.DAMAGE, this.manager);
 
     const enemies = this.manager.enemies;
 
@@ -119,7 +142,11 @@ export default class CombatSystem {
       if (dist > SLAM.RADIUS) continue;
 
       if (this._damageEnemy(enemy, this._slamAttackObj.type, SLAM.DAMAGE, SLAM.RADIUS, now)) {
+        fx?.onEnemyDied(enemy, this.manager);
+        fx?.onEnemyKilledInDemon();
         this.manager.killEnemy(i, enemy, this._slamAttackObj.type);
+        // BBC: rebote
+        fx?.onSlamHit(player, this.manager, x, y);
         continue;
       }
 
