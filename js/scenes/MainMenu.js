@@ -59,6 +59,23 @@ export default class MainMenu extends Phaser.Scene {
 
     this._container.add([title, sub, hint]);
 
+    // Toggle: permitir items duplicados
+    const allowDupes = localStorage.getItem('cr_allow_duplicates') === 'true';
+    this._dupeToggle = allowDupes;
+    const toggleLabel = () => `Items duplicados: ${this._dupeToggle ? '[ ON ]' : '[ OFF ]'}`;
+    const toggleColor = () => this._dupeToggle ? '#ffaa22' : '#446688';
+    this._toggleBtn = this.add.text(cx, cy - 155, toggleLabel(), {
+      fontSize: '13px', fill: toggleColor(),
+      backgroundColor: '#111111cc', padding: { x: 12, y: 6 }
+    }).setOrigin(0.5).setInteractive();
+    this._toggleBtn.on('pointerdown', () => {
+      this._dupeToggle = !this._dupeToggle;
+      localStorage.setItem('cr_allow_duplicates', String(this._dupeToggle));
+      this._toggleBtn.setText(toggleLabel());
+      this._toggleBtn.setStyle({ fill: toggleColor() });
+    });
+    this._container.add(this._toggleBtn);
+
     const options = [
       { label: '▶  JUGAR',             color: '#44ff88', action: () => this._buildStageSelect() },
       { label: '⚙  EDITOR DE STAGES',  color: '#4488ff', action: () => this.scene.start('StageEditor') },

@@ -1,6 +1,6 @@
 // js/scenes/GameRenderer.js
 
-import { W, H, ARENA, SMAX, L2, L3, DASH_CD, C, DIRS, HP_MAX, SLAM, ATTACK_RADIOS } from '../constants.js';
+import { W, H, ARENA, SMAX, L2, L3, DASH_CD, C, HP_MAX, SLAM, ATTACK_RADIOS } from '../constants.js';
 
 import HealthBar from '../renderers/HealthBar.js';
 import MomentumBar from '../renderers/MomentumBar.js';
@@ -12,6 +12,7 @@ import ArenaRenderer from '../renderers/ArenaRenderer.js';
 import PlayerRenderer from '../renderers/PlayerRenderer.js';
 import EnemyRenderer from '../renderers/EnemyRenderer.js';
 import MapRenderer from '../renderers/MapRenderer.js';
+import DamageNumberManager from '../renderers/DamageNumberManager.js';
 
 export default class GameRenderer {
   constructor(scene, camera, gameScene) {
@@ -30,6 +31,7 @@ export default class GameRenderer {
     this.arenaRenderer = new ArenaRenderer();
     this.playerRenderer = new PlayerRenderer();
     this.mapRenderer = new MapRenderer();
+    this.damageNumbers = new DamageNumberManager(scene);
 
     this.customLines = [];
     this.customZones = [];
@@ -46,11 +48,11 @@ export default class GameRenderer {
     this.customZones = zones || [];
   }
 
-  addSlamEffect(x, y, isHighSpeed) {
+  addSlamEffect(x, y, isHighSpeed, maxRadius) {
     this.slamEffects.push({
       x, y,
       radius: 0,
-      maxRadius: SLAM.RADIUS,
+      maxRadius: maxRadius || SLAM.RADIUS,
       alpha: 0.8,
       isHighSpeed: isHighSpeed,
       life: SLAM.EFFECT_DURATION || 300
@@ -80,6 +82,30 @@ export default class GameRenderer {
       this.g.lineStyle(1, 0xffcc88, effect.alpha * 0.6);
       this.g.strokeCircle(effect.x, effect.y, effect.radius * 0.6);
     }
+  }
+
+  drawBounceHighlights(player, enemies, time) {
+    if (!player._stickState) return;
+    const fx = this.gameScene.itemEffects;
+    if (!fx?.has('BBC')) return;
+
+    // Dibujar el enemigo stuck con un anillo brillante
+    const se = player._stickEnemy;
+    if (se && se.hp > 0) {
+      const pulse = 0.8 + 0.2 * Math.sin(time.now * 0.01);
+      const r = (se.radius || 12) + 6;
+      this.g.lineStyle(2, 0xff8844, pulse);
+      this.g.strokeCircle(se.x, se.y, r);
+    }
+  }
+
+  drawSandKingIndicator(player) {
+    const fx = this.gameScene.itemEffects;
+    if (!fx?.has('DDC')) return;
+    const radius = SLAM.RADIUS * SLAM.SANDKING_RADIUS_MULT;
+    const alpha = 0.15 + 0.05 * Math.sin(this.scene.time.now * 0.003);
+    this.g.lineStyle(1.5, 0xc8a860, alpha);
+    this.g.strokeCircle(player.px, player.py, radius);
   }
 
   drawAttackRadius(player, momentumLevel) {
@@ -128,6 +154,7 @@ export default class GameRenderer {
     const momentum = compassSystem?.momentum || null;
 
     this.updateSlamEffects(delta);
+    this.damageNumbers.update(delta);
 
     g.clear();
     const time = {
@@ -162,6 +189,8 @@ export default class GameRenderer {
     }
 
     this.drawSlamEffects();
+    this.drawBounceHighlights(player, this.gameScene.enemyManager.getEnemies(), time);
+    this.drawSandKingIndicator(player);
 
     // Brújula nueva: pasar compassSystem
     this.compass.render(g, player, compassSystem, this.camera);
@@ -185,7 +214,7 @@ export default class GameRenderer {
       this.gameScene.rewardSystem?.displayCredits ?? 0
     );
 
-    this.uiManager.updateLevelLabels(this.momentumBar.getWidth(), this.momentumBar.getX());
+    this.uiManager.updateLevelLabels(this.momentumBar.getWidth(), this.momentumBar.getX(), momentum);
   }
 
   clearGameOver() {

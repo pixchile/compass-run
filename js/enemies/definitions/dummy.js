@@ -1,32 +1,32 @@
 // Enemigo generado con Enemy Creator (v2.0)
-// Nombre: mibombo
-// Fecha: 09-04-2026, 10:20:47 p. m.
+// Nombre: dummy 
+// Fecha: 07-05-2026, 1:24:32 p. m.
 
 export default {
-    id: 'mibombo',
-    name: 'mibombo', // <--- AÑADE ESTA LÍNEA AQUÍ
+    id: 'dummy',
+    name: 'dummy ',
     config: {
-    id: "mibombo",
-    name: "mibombo",
+    id: "dummy",
+    name: "dummy ",
     basic: {
-        hp: 1,
-        hpRegen: 0,
-        color: "0xFFEA00",
-        shape: "circle",
-        radius: 80,
+        hp: 2000,
+        hpRegen: 100,
+        color: "0xB4FEB5",
+        shape: "rectangle",
+        radius: 25,
         isBoss: false,
         selfDestruct: {
-            type: "time",
-            value: 25
+            type: "none",
+            value: 0
         },
         spawnTrigger: {
-            type: "kills",
-            value: "5"
+            type: "immediate",
+            value: "0"
         }
     },
     movement: {
-        mobile: true,
-        speed: 6,
+        mobile: false,
+        speed: 0,
         scaling: {
             timeBase: false,
             timeMultiplier: 1,
@@ -37,37 +37,36 @@ export default {
         orbitRange: 120,
         erraticTime: 2000,
         distanceMin: 0,
-        distanceMax: 20,
+        distanceMax: 0,
         ignoreWalls: false,
-        isPhantom: true
+        isPhantom: false
     },
     damageMultipliers: {
         dash: 1,
-        aerialDash: 1,
-        momentum3: 10,
-        slam: 10,
-        slam3: 10,
+        aerialDash: 2,
+        momentum3: 0,
+        slam: 1,
+        slam3: 2,
         void: 100,
         wallCrash: 0,
         explosion: 1
     },
     onDeath: [
         {
-            type: "explode",
+            type: "respawn",
             chance: 100,
             condition: "any",
-            params: {
-                delay: 2,
-                damage: 200,
-                radius: 300
-            }
+            params: {}
         }
     ],
     ambitious: {
         isWall: false,
+        seeThroughWalls: false,
         attack: {
             type: "contact",
-            effect: "none"
+            effect: "none",
+            damage: 0,
+            cooldown: 60000
         },
         defense: {
             invulnerableAura: false,
@@ -75,7 +74,7 @@ export default {
         },
         spawn: {
             pattern: "normal",
-            count: 32
+            count: 3
         }
     }
 }

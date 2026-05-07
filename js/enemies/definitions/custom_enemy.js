@@ -1,17 +1,17 @@
 // Enemigo generado con Enemy Creator (v2.0)
-// Nombre: bee2
-// Fecha: 28-04-2026, 9:10:44 p. m.
+// Nombre: CustomEnemy
+// Fecha: 06-05-2026, 7:01:11 p. m.
 
 export default {
-    id: 'bee2',
-    name: 'bee2', // <--- AÑADE ESTA LÍNEA AQUÍ
+    id: 'custom_enemy',
+    name: 'CustomEnemy',
     config: {
-    id: "bee2",
-    name: "bee2",
+    id: "custom_enemy",
+    name: "CustomEnemy",
     basic: {
-        hp: 10,
+        hp: 100,
         hpRegen: 0,
-        color: "0xFF0045",
+        color: "0xFF6666",
         shape: "circle",
         radius: 16,
         isBoss: false,
@@ -26,7 +26,7 @@ export default {
     },
     movement: {
         mobile: true,
-        speed: 2,
+        speed: 50,
         scaling: {
             timeBase: false,
             timeMultiplier: 1,
@@ -38,8 +38,8 @@ export default {
         erraticTime: 2000,
         distanceMin: 0,
         distanceMax: 0,
-        ignoreWalls: true,
-        isPhantom: true
+        ignoreWalls: false,
+        isPhantom: false
     },
     damageMultipliers: {
         dash: 1,
@@ -51,21 +51,15 @@ export default {
         wallCrash: 0,
         explosion: 1
     },
-    onDeath: [
-        {
-            type: "momentumStack",
-            chance: 100,
-            condition: "any",
-            params: {
-                amount: 1
-            }
-        }
-    ],
+    onDeath: [],
     ambitious: {
         isWall: false,
+        seeThroughWalls: false,
         attack: {
             type: "contact",
-            effect: "none"
+            effect: "none",
+            damage: 1,
+            cooldown: 250
         },
         defense: {
             invulnerableAura: false,

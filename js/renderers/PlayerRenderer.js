@@ -42,12 +42,6 @@ export default class PlayerRenderer {
       }
     }
     
-    // Efecto stun
-    if (player.isStunned && (player.stunT % 120) < 60) {
-      graphics.fillStyle(0xff4422, 0.32);
-      graphics.fillRect(0, 0, 2000, 2000); // Mantenido por retrocompatibilidad
-    }
-    
     // Aura de nivel 2 y 3
     if (lv >= 2 && !player.isStunned) {
       const stackPct = (momentum.stacks - L2) / (SMAX - L2);

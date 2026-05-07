@@ -35,9 +35,9 @@ export default class Camera {
     this.lastTargetZoom = this.zoom;
   }
 
-  updateEditor(pointer) {
+  updateEditor(mouseX, mouseY) {
     let dx = 0, dy = 0;
-    
+
     const cursors = this.scene?.input?.keyboard?.createCursorKeys();
     if (cursors) {
       if (cursors.left.isDown) dx = -1;
@@ -45,14 +45,11 @@ export default class Camera {
       if (cursors.up.isDown) dy = -1;
       if (cursors.down.isDown) dy = 1;
     }
-    
-    if (dx === 0 && dy === 0 && pointer && this.edgeThreshold > 0) {
-      const mouseX = pointer.x;
-      const mouseY = pointer.y;
-      
+
+    if (dx === 0 && dy === 0 && this.edgeThreshold > 0) {
       if (mouseX < this.edgeThreshold) dx = -1;
       else if (mouseX > this.viewWidth - this.edgeThreshold) dx = 1;
-      
+
       if (mouseY < this.edgeThreshold) dy = -1;
       else if (mouseY > this.viewHeight - this.edgeThreshold) dy = 1;
     }

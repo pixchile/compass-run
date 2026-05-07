@@ -88,6 +88,8 @@ export default class CollisionSystem {
                         const rawDmg = Math.floor(HP_DMG_DASH_WALL * impactSpeed);
                         const reduction = itemEffects?.getADDDamageReduction() || 0;
                         const finalDmg = Math.max(0, rawDmg - reduction);
+                        const mitigated = rawDmg - finalDmg;
+                        if (mitigated > 0 && itemEffects) itemEffects.statADDMitigated += mitigated;
                         if (player.health) player.health.takeDamage(finalDmg);
                         player.dashing = false;
                         player.vx = 0; player.vy = 0;

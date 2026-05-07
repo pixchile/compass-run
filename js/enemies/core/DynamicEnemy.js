@@ -5,42 +5,31 @@ export default class DynamicEnemy extends Enemy {
     constructor(x, y, scene, config) {
         super(x, y, scene, config);
 
-        // 1. CONFIGURACIÓN DE MOVIMIENTO
         const mov = config.movement || {};
 
-        this.isMobile = mov.mobile ?? (config.behaviors?.mobile !== false);
-        this.baseSpeed = mov.speed || config.speed || 50;
+        this.isMobile = mov.mobile ?? true;
+        this.baseSpeed = mov.speed || 50;
         this.speed = this.baseSpeed;
 
-        // Escalado dinámico
         this.speedScaling = mov.scaling || { hpBase: 'none', hpPercentage: 0 };
 
-        this.movementStyle = mov.style || config.movementStyle || 'seek'; 
-        this.distanceMin = mov.distanceMin || config.distanceMin || 0;
-        this.distanceMax = mov.distanceMax || config.distanceMax || 0;
-        this.orbitRadius = mov.orbitRange || config.orbitRadius || 120;
+        this.movementStyle = mov.style || 'seek';
+        this.orbitRadius = mov.orbitRange || 120;
         this.erraticTime = mov.erraticTime || 2000;
 
-        this.ignoreWalls = mov.ignoreWalls ?? (config.ignoreWalls === true);
+        this.ignoreWalls = mov.ignoreWalls ?? false;
         this.isPhantom = mov.isPhantom || false;
 
-        // Comportamientos ambiciosos
         const amb = config.ambitious || {};
         this.isWall = amb.isWall || false;
+        this.evade = amb.defense?.evade || false;
+        this.invulnerableAura = amb.defense?.invulnerableAura || false;
 
-        // Inicialización de estado para evitar errores en update
-        this.state = {
-            ...this.state,
-            stuckCounter: 0,
-            lastX: x,
-            lastY: y,
-            wanderAngle: Math.random() * Math.PI * 2,
-            orbitAngle: Math.random() * Math.PI * 2
-        };
+        // Enemy inicializa orbitAngle a 0; DynamicEnemy usa aleatorio
+        this.state.orbitAngle = Math.random() * Math.PI * 2;
 
-        // 3. SELF DESTRUCT
         const basic = config.basic || {};
-        const sd = basic.selfDestruct || config.selfDestruct || {};
+        const sd = basic.selfDestruct || {};
         this.selfDestructType  = sd.type  || 'none';
         this.selfDestructValue = parseFloat(sd.value) || 0;
         this.selfDestructTimer = 0;
@@ -68,7 +57,30 @@ export default class DynamicEnemy extends Enemy {
             }
         }
 
-        if (!this.isMobile) return;
+        // AAB: Gancho — lanzado como proyectil
+        if (this._projectileTimer > 0) {
+            this._projectileTimer -= delta;
+            this.x += (this._projectileVx || 0) * (delta / 1000);
+            this.y += (this._projectileVy || 0) * (delta / 1000);
+            if (!this.ignoreWalls && lines) this.handleWallCollisions(lines, player, delta);
+            if (this._projectileTimer <= 0) {
+                this._projectileVx = 0; this._projectileVy = 0;
+            }
+            return;
+        }
+
+        if (!this.isMobile) { this.trapped = false; return; }
+
+        // Trapped enemies can't move (flyers immune)
+        if (this.trapped && !this.ignoreWalls) { this.trapped = false; return; }
+
+        // BBC: frozen by stick — no movement
+        if (this._frozen) return;
+
+        // --- PATH FOLLOWING (sobrescribe AI si tiene ruta asignada) ---
+        if (this._path && this._path.length > 0) {
+            if (this._followPath(delta, player)) return;
+        }
 
         // --- SISTEMA DE ESCALADO DINÁMICO DE VELOCIDAD ---
         if (this.speedScaling.hpBase === 'proportional') {
@@ -79,10 +91,34 @@ export default class DynamicEnemy extends Enemy {
             this.speed = this.baseSpeed * (1 + (missingHpPct * maxBoost));
         }
 
+        // --- LINE OF SIGHT: enemigos que no ven a traves de muros pierden rastro ---
+        const seeThrough = this.customConfig?.ambitious?.seeThroughWalls;
+        let effectiveStyle = this.movementStyle;
+        if (!seeThrough && lines && lines.length > 0) {
+            const dist = Math.hypot(player.px - this.x, player.py - this.y);
+            if (dist < 500) {
+                if (!this.state._losTimer) this.state._losTimer = 0;
+                this.state._losTimer += delta;
+                if (this.state._losTimer >= 300) {
+                    this.state._losTimer = 0;
+                    this.state._losBlocked = !this.scene?.hasLineOfSight?.(this.x, this.y, player.px, player.py, lines);
+                }
+                if (this.state._losBlocked) {
+                    const trackingStyles = ['seek', 'flee', 'orbit', 'circle', 'axisX', 'axisY'];
+                    if (trackingStyles.includes(effectiveStyle)) {
+                        effectiveStyle = 'erratic';
+                    }
+                }
+            } else {
+                this.state._losBlocked = false;
+                this.state._losTimer = 0;
+            }
+        }
+
         // --- LÓGICA DE DIRECCIONES ---
         let moveX = 0, moveY = 0;
 
-        switch (this.movementStyle) {
+        switch (effectiveStyle) {
             case 'seek':
                 const seek = this._seekMovement(player, delta);
                 moveX = seek.x; moveY = seek.y;
@@ -101,41 +137,18 @@ export default class DynamicEnemy extends Enemy {
                 const circle = this._circleMovement(player, delta);
                 moveX = circle.x; moveY = circle.y;
                 break;
-            case 'axisX':
-                moveX = this._seekMovement(player, delta).x;
-                break;
-            case 'axisY':
-                moveY = this._seekMovement(player, delta).y;
-                break;
             default:
                 const defaultSeek = this._seekMovement(player, delta);
                 moveX = defaultSeek.x; moveY = defaultSeek.y;
         }
 
-        // --- RESTRICCIONES DE DISTANCIA ---
-        const dx = player.px - this.x;
-        const dy = player.py - this.y;
-        const distToPlayer = Math.hypot(dx, dy);
-
-        if (this.distanceMin > 0 && distToPlayer < this.distanceMin) {
-            const angle = Math.atan2(dy, dx);
-            moveX = moveX * 0.5 + (-Math.cos(angle) * this.speed * (delta / 16)) * 0.5;
-            moveY = moveY * 0.5 + (-Math.sin(angle) * this.speed * (delta / 16)) * 0.5;
-        }
-
-        if (this.distanceMax > 0 && distToPlayer > this.distanceMax) {
-            const angle = Math.atan2(dy, dx);
-            moveX = moveX * 0.5 + (Math.cos(angle) * this.speed * (delta / 16)) * 0.5;
-            moveY = moveY * 0.5 + (Math.sin(angle) * this.speed * (delta / 16)) * 0.5;
-        }
-
-        // Aplicar movimiento inicial
+        // Aplicar movimiento
         this.x += moveX;
         this.y += moveY;
 
         // --- COLISIONES CON MUROS ---
         if (!this.ignoreWalls && lines) {
-            this.handleWallCollisions(lines);
+            this.handleWallCollisions(lines, player, delta);
         }
 
         // --- SISTEMA DESATASCAR ---
@@ -153,10 +166,13 @@ export default class DynamicEnemy extends Enemy {
 
         this.state.lastX = this.x;
         this.state.lastY = this.y;
+        this.trapped = false;
     }
 
-    handleWallCollisions(lines) {
+    handleWallCollisions(lines, player, delta) {
+        let hitWall = false;
         for (const line of lines) {
+            if (line._broken) continue;
             const { start, end } = line;
             const abx = end.x - start.x;
             const aby = end.y - start.y;
@@ -177,9 +193,97 @@ export default class DynamicEnemy extends Enemy {
                 const overlap = this.radius - dist;
                 this.x += (dx / dist) * overlap;
                 this.y += (dy / dist) * overlap;
-                this.state.stuckCounter = 0;
+                hitWall = true;
+
+                if (line.hp != null && player && delta) {
+                    this._wallStuckFrames = (this._wallStuckFrames || 0) + delta;
+                    if (this._wallStuckFrames > 500) {
+                        const playerDist = Math.hypot(player.px - this.x, player.py - this.y);
+                        if (playerDist <= 800) {
+                            line.hp -= 30 * (delta / 1000);
+                            if (line.hp <= 0) line._broken = true;
+                        }
+                    }
+                }
             }
         }
+        if (!hitWall) this._wallStuckFrames = 0;
+    }
+
+    // ─── PATH FOLLOWING ────────────────────────────────────────
+
+    _followPath(delta, player) {
+        const path = this._path;
+        const mode = this._pathMode || 'loop';
+        const idx = this._pathIndex || 0;
+
+        // chase mode: si el jugador está cerca, soltar ruta y pelear
+        if (mode === 'chase' && player && !player.isDead) {
+            const chaseRadius = this._chaseRadius ?? 300;
+            const dp = Math.hypot(player.px - this.x, player.py - this.y);
+            if (dp <= chaseRadius) return false;
+        }
+
+        const target = path[idx];
+        if (!target) return true;
+
+        // Si estamos esperando en el waypoint
+        if (this._pathTimer > 0) {
+            this._pathTimer -= delta;
+            return true;
+        }
+
+        const dx = target.x - this.x;
+        const dy = target.y - this.y;
+        const dist = Math.hypot(dx, dy);
+        const threshold = 4;
+
+        if (dist < threshold) {
+            // Llegamos al waypoint
+            this.x = target.x;
+            this.y = target.y;
+
+            if (target.wait && target.wait > 0) {
+                this._pathTimer = target.wait;
+            }
+
+            // Avanzar al siguiente waypoint
+            if (mode === 'loop' || mode === 'chase') {
+                this._pathIndex = (idx + 1) % path.length;
+            } else if (mode === 'pingpong') {
+                if (this._pathReverse) {
+                    if (idx === 0) {
+                        this._pathReverse = false;
+                        this._pathIndex = 1;
+                    } else {
+                        this._pathIndex = idx - 1;
+                    }
+                } else {
+                    if (idx === path.length - 1) {
+                        this._pathReverse = true;
+                        this._pathIndex = idx - 1;
+                    } else {
+                        this._pathIndex = idx + 1;
+                    }
+                }
+            } else { // 'once'
+                if (idx < path.length - 1) {
+                    this._pathIndex = idx + 1;
+                } else {
+                    // Llegó al final — remover path y volver a AI normal
+                    this._path = null;
+                    this._pathMode = null;
+                    this._pathIndex = 0;
+                    this._pathTimer = 0;
+                }
+            }
+        } else {
+            // Moverse hacia el waypoint
+            const speed = this.speed || this.baseSpeed || 50;
+            this.x += (dx / dist) * speed * (delta / 16);
+            this.y += (dy / dist) * speed * (delta / 16);
+        }
+        return true;
     }
 
     // Movimiento Helpers
@@ -285,7 +389,7 @@ export default class DynamicEnemy extends Enemy {
                 const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
                 if (dist < radius) {
                     const falloff = 1 - (dist / radius);
-                    enemy.receiveDamage({ type: 'explosion', baseDamage: damage * falloff, now: Date.now() });
+                    enemy.receiveDamage({ type: 'explosion', baseDamage: damage * falloff, now: this.scene?.time?.now ?? Date.now() });
                 }
             }
         }

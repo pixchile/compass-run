@@ -38,7 +38,7 @@ export default class RewardSystem {
 
   reset() {
     this.killCount    = 0;
-    this.credits      = 0;
+    this.credits      = 7500;
     this._tickTimer   = 0;
     this._creditAccum = 0;
     this._secTimer    = 0;

@@ -3,9 +3,9 @@ import { HP_MAX, HP_DMG_ENEMY_HIT, HP_DMG_VOID, HP_REGEN_DELAY, HP_REGEN_RATE, W
 export default class PlayerHealth {
     constructor(player) {
         this.player = player;
-        this.hp = HP_MAX;
+        this.maxHp = HP_MAX;       // puede crecer con Fénix
+        this.hp = this.maxHp;
         this.hpRegenT = 0;
-        this.hpHitFlash = 0;
         this.isInvincible = false;
         this.invincibleTimer = 0;
     }
@@ -13,17 +13,15 @@ export default class PlayerHealth {
     get isDead() { return this.hp <= 0; }
 
     update(delta, dt, wallStick) {
-        this.hpHitFlash = Math.max(0, this.hpHitFlash - delta);
-
         if (this.isInvincible) {
             this.invincibleTimer -= delta;
             if (this.invincibleTimer <= 0) this.isInvincible = false;
         }
 
-        if (this.hp < HP_MAX && this.hp > 0 && !wallStick) {
+        if (this.hp < this.maxHp && this.hp > 0 && !wallStick) {
             this.hpRegenT += delta;
             if (this.hpRegenT >= HP_REGEN_DELAY) {
-                this.hp = Math.min(HP_MAX, this.hp + HP_REGEN_RATE * dt);
+                this.hp = Math.min(this.maxHp, this.hp + HP_REGEN_RATE * dt);
             }
         }
     }
@@ -38,14 +36,21 @@ export default class PlayerHealth {
         }
         this.hp = Math.max(0, newHp);
         this.hpRegenT = 0;
-        this.hpHitFlash = 280;
         this.isInvincible = true;
         this.invincibleTimer = 50;
+        // DBB: notificar daño recibido
+        this.player?.scene?.itemEffects?.onPlayerTookDamage();
+        this.player?.scene?.spawnDamageNumber?.(this.player.px, this.player.py, amount, 'playerDamage');
     }
 
-    takeEnemyDamage() { this.takeDamage(HP_DMG_ENEMY_HIT); }
+    takeEnemyDamage(mult = 1) { this.takeDamage(HP_DMG_ENEMY_HIT * mult); }
 
-    heal(amount) { this.hp = Math.min(HP_MAX, this.hp + amount); }
+    heal(amount) {
+        const before = this.hp;
+        this.hp = Math.min(this.maxHp, this.hp + amount);
+        const actual = this.hp - before;
+        if (actual > 0) this.player?.scene?.spawnDamageNumber?.(this.player.px, this.player.py, actual, 'heal');
+    }
 
     fallIntoVoid() {
         this.takeDamage(HP_DMG_VOID);

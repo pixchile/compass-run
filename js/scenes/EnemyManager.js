@@ -29,7 +29,7 @@ export default class EnemyManager {
   setSpawnList(enemies)       { this.spawner.setSpawnList(enemies); }
 
   update(delta, currentTime, player, lines) {
-    this.spawner.update(currentTime, player);
+    this.spawner.update(delta, currentTime, player);
 
     for (let i = this.enemies.length - 1; i >= 0; i--) {
         const enemy = this.enemies[i];

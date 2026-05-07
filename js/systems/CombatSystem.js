@@ -28,6 +28,13 @@ export default class CombatSystem {
       this.damagedThisDash.clear();
       if (fx) fx._cadHealedThisDash = false;
     }
+
+    // BBC: si el jugador aterrizó (jumping pasó de true a false) sin rebotar → resetear cadena
+    const wasJumping = this.wasDashingJumping ?? false; // reutilizamos slot
+    const isJumping  = player.jumping;
+    if (wasJumping && !isJumping && fx) fx.onPlayerLanded();
+    this.wasDashingJumping = isJumping;
+
     this.wasDashing = player.dashing;
 
     const attackPayload = player.getCurrentAttackPayload(momentumSystem.level);
@@ -36,6 +43,8 @@ export default class CombatSystem {
 
     for (let i = enemies.length - 1; i >= 0; i--) {
       const enemy = enemies[i];
+      const distToPlayer = Math.hypot(enemy.x - player.px, enemy.y - player.py);
+      const inAttackRange = attackPayload && distToPlayer <= attackPayload.radius;
       const died = this._processSingleInteraction(enemy, player, attackPayload, auraEmitters, now, momentumSystem);
       if (died) {
         // AAD: explosión al morir
@@ -45,7 +54,7 @@ export default class CombatSystem {
         // CAD: vampiro también cura al matar con dash
         if (player.dashing) fx?.onDashHit(player, momentumSystem);
         this.manager.killEnemy(i, enemy, attackPayload?.type || 'any');
-      } else if (attackPayload && player.dashing) {
+      } else if (attackPayload && player.dashing && inAttackRange) {
         // CAD: vampiro — recuperar HP al golpear con dash
         fx?.onDashHit(player, momentumSystem);
         // AAB: intentar agarrar al primer enemigo golpeado
@@ -79,12 +88,21 @@ export default class CombatSystem {
         return false;
     }
 
+    // BBC: Stick — jugador salta sobre un enemigo y se pega
+    const fx2 = this.manager.scene?.itemEffects;
+    if (fx2?.has('BBC') && player.jumping && isColliding && !player._stickState) {
+      const result = fx2.onStickEnemy(player, enemy, now, momentumSystem);
+      if (result) return false; // stick exitoso, sin danio
+    }
+
     let enemyDied = false;
 
     if (attackPayload && isInAttackRange) {
+        if (player.dashing && this.damagedThisDash.has(enemy)) return false;
         enemyDied = this._damageEnemy(enemy, attackPayload.type, attackPayload.baseDamage, attackPayload.radius, now);
-    } 
-    else if (!player.isInvincible && !isInAttackRange) {
+        if (player.dashing && !enemyDied) this.damagedThisDash.add(enemy);
+    }
+    else if (!player.isInvincible && !isInAttackRange && !enemy.isGrabbed && !player._stickState) {
         this._applyDamageToPlayer(enemy, player, now);
     }
 
@@ -92,19 +110,42 @@ export default class CombatSystem {
   }
 
   _damageEnemy(enemy, type, damage, radius, now) {
+    if (damage > 0) this.scene?.compass?.recordHitDamage(damage);
+    const hpBefore = enemy.hp;
+    let died;
     if (typeof enemy.receiveDamage === 'function') {
-        return enemy.receiveDamage({ type, baseDamage: damage, radius, now });
+        died = enemy.receiveDamage({ type, baseDamage: damage, radius, now });
+    } else {
+        enemy.hp = (enemy.hp || 1) - damage;
+        died = enemy.hp <= 0;
     }
-    enemy.hp = (enemy.hp || 1) - damage;
-    return enemy.hp <= 0;
+    const actualDamage = hpBefore - enemy.hp;
+    if (actualDamage > 0) {
+        const colorKey = (type === 'slam' || type === 'slam3') ? 'slamDamage' : 'enemyDamage';
+        this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, actualDamage, colorKey);
+    }
+    return died;
   }
 
   _applyDamageToPlayer(enemy, player, now) {
-      if (!enemy.state) enemy.state = {}; 
-      if (now - (enemy.state.lastAttackTime || 0) < 250) return;
+      if (!enemy.state) enemy.state = {};
+      const cooldown = enemy.customConfig?.ambitious?.attack?.cooldown ?? 100;
+      if (now - (enemy.state.lastAttackTime || 0) < cooldown) return;
+
+      // LOS: si no ve a traves de muros, verificar que no haya pared en medio
+      if (!enemy.customConfig?.ambitious?.seeThroughWalls) {
+        const lines = this.scene?.currentMap?.lines;
+        if (lines && lines.length > 0) {
+          const dist = Math.hypot(player.px - enemy.x, player.py - enemy.y);
+          if (dist < 600 && !this.scene.hasLineOfSight(enemy.x, enemy.y, player.px, player.py, lines)) {
+            return;
+          }
+        }
+      }
 
       enemy.state.lastAttackTime = now;
-      player.takeEnemyDamage();
+      const dmgMult = enemy.customConfig?.ambitious?.attack?.damage ?? 1;
+      player.takeEnemyDamage(dmgMult);
 
       const effect = enemy.customConfig?.ambitious?.attack?.effect;
       if (effect === 'slow') {
@@ -124,13 +165,16 @@ export default class CombatSystem {
     const player = this.manager.scene?.player;
     const isMomentum3 = (momentum?.level === 3);
 
+    const hasSandKing = fx?.has('DDC');
+    const slamRadius = hasSandKing ? SLAM.RADIUS * SLAM.SANDKING_RADIUS_MULT : SLAM.RADIUS;
+
     this._slamAttackObj.type = isHighSpeed ? 'slam3' : 'slam';
     this._slamAttackObj.baseDamage = SLAM.DAMAGE;
     this._slamAttackObj.now = now;
-    this._slamAttackObj.radius = SLAM.RADIUS;
+    this._slamAttackObj.radius = slamRadius;
 
     // DDC: Sand King — activa en momentum lvl 3
-    if (isMomentum3) fx?.applySandKingBonus(x, y, SLAM.DAMAGE, this.manager);
+    if (isMomentum3) fx?.applySandKingBonus(x, y, SLAM.DAMAGE, this.manager, now);
 
     const enemies = this.manager.enemies;
 
@@ -138,15 +182,13 @@ export default class CombatSystem {
       const enemy = enemies[i];
       const dx = enemy.x - x, dy = enemy.y - y;
       const dist = Math.hypot(dx, dy);
-      
-      if (dist > SLAM.RADIUS) continue;
 
-      if (this._damageEnemy(enemy, this._slamAttackObj.type, SLAM.DAMAGE, SLAM.RADIUS, now)) {
+      if (dist > slamRadius) continue;
+
+      if (this._damageEnemy(enemy, this._slamAttackObj.type, SLAM.DAMAGE, slamRadius, now)) {
         fx?.onEnemyDied(enemy, this.manager);
         fx?.onEnemyKilledInDemon();
         this.manager.killEnemy(i, enemy, this._slamAttackObj.type);
-        // BBC: rebote
-        fx?.onSlamHit(player, this.manager, x, y);
         continue;
       }
 

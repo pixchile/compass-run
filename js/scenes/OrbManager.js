@@ -33,7 +33,7 @@ export default class OrbManager {
         REWARDS.ORB_HEAL_MIN,
         Math.min(REWARDS.ORB_HEAL_MAX, speed * REWARDS.ORB_HEAL_MAX / REWARDS.ORB_HEAL_SPEED_CAP)
       );
-      player.hp = Math.min(HP_MAX, player.hp + heal);
+      player.health?.heal(heal);
       this.orbs.splice(i, 1);
     }
   }

@@ -4,8 +4,8 @@ export const TRAIL_MAX = 16;
 export const L2 = 40, L3 = 50, SMAX = 90;
 
 export const MAX_SPD = [0, 300,  400,  440];
-export const TURN_K  = [0, 0.25, 0.25, 0.06];
-export const STOP_K  = [0, 0.25, 0.25, 0.06];
+export const TURN_K  = [0, 0.24, 0.12, 0.06];
+export const STOP_K  = [0, 0.24, 0.12, 0.06];
 
 // Jump params [_, L1, L2, L3]
 export const JUMP_DUR    = [0,  400,  800,  800];
@@ -20,9 +20,8 @@ export const DASH_SPD = 2.0;
 // Health
 export const HP_MAX             = 100;
 export const HP_DMG_DASH_WALL   = 0.01;
-export const HP_DMG_ENEMY_HIT   = 0.65;
-export const HP_DMG_VOID        = 100;
-export const HP_LOW_SPD         = 29;
+export const HP_DMG_ENEMY_HIT   = 1;
+export const HP_DMG_VOID        = 1000;
 export const HP_REGEN_DELAY     = 4000;
 export const HP_REGEN_RATE      = 0.2;
 
@@ -30,41 +29,13 @@ export const HP_REGEN_RATE      = 0.2;
 // Muros destructibles
 export const WALL_DEFAULT_HP = 100;
 export const DASH_WALL_DAMAGE_FACTOR = 0.1; // 10% de la velocidad de impacto
-
-// Momentum system - Airborne balance (obsoleto, pero se conserva por si acaso)
-export const AIR_GAIN_RATE   = 120;
-export const AIR_DRAIN_RATE  = 1000;
-export const AIR_BONUS_MULT  = 1.8;
+export const ENEMY_WALL_DAMAGE_RATE = 30;  // HP/segundo que un enemigo atascado inflige al muro
+export const ENEMY_WALL_BREAK_RANGE = 800; // distancia máxima jugador para que enemigo rompa muros
 
 export const C = {
   L1: 0x4488ff, L2: 0xffaa22, L3: 0xff3322,
   compass: 0xffff44, arena: 0x0c1020, grid: 0x131825, wall: 0x28384e,
   hpHigh: 0x44dd77, hpMid: 0xffcc22, hpLow: 0xff3322,
-};
-
-export const DIRS = [
-  { id:'N',  key:'W',   dx: 0,       dy:-1      },
-  { id:'NE', key:'W+D', dx: 0.7071,  dy:-0.7071 },
-  { id:'E',  key:'D',   dx: 1,       dy: 0      },
-  { id:'SE', key:'S+D', dx: 0.7071,  dy: 0.7071 },
-  { id:'S',  key:'S',   dx: 0,       dy: 1      },
-  { id:'SW', key:'S+A', dx:-0.7071,  dy: 0.7071 },
-  { id:'W',  key:'A',   dx:-1,       dy: 0      },
-  { id:'NW', key:'W+A', dx:-0.7071,  dy:-0.7071 },
-];
-
-// Map Editor Configuration
-export const EDITOR = {
-  GRID_SIZE: 32,
-  BRUSH_SIZES: [1, 2, 3, 5],
-  DEFAULT_WALL_WIDTH: 32,
-  DEFAULT_WALL_HEIGHT: 32,
-  MAX_WALLS: 500,
-};
-
-export const MAPS = {
-  SAVE_SLOTS: 5,
-  DEFAULT_MAP: 'default',
 };
 
 // Wall Jump Configuration
@@ -95,9 +66,10 @@ export const ATTACK_DAMAGE_MULTIPLIERS = {
 
 export const SLAM = {
     MIN_SPEED: 600,
-    HIGH_SPEED_THRESHOLD: 999,
+    HIGH_SPEED_THRESHOLD: 500,
     DAMAGE: 20,
     RADIUS: 100,
+    SANDKING_RADIUS_MULT: 2.2,
     SELF_DAMAGE: 10,
     KNOCKBACK_DIST: 100,
     WALL_COLLISION_DAMAGE: 100,
@@ -116,14 +88,6 @@ export const REWARDS = {
   CREDIT_TICK_RATE:      100,
   CREDIT_SPEED_FACTOR: 0.0002,
 
-  SPEED_MIN_BONUS_PER_KILL: 0.1,
-  SPEED_MAX_BONUS_PER_KILL: [0, 0.4, 0.6, 0.6],
-};
-
-// Wall Run Configuration
-export const WALL_RUN = {
-    MAX_DURATION: 2000,
-    SPEEDS: [0, 350, 700, 700],
 };
 
 // Dash Wall Impact
@@ -149,9 +113,9 @@ export const COMPASS_DIRS_SECONDARY = [
 ];
 
 // Intervalos de cambio de dirección (ms)
-export const COMPASS_PRIMARY_BASE   = 3600;   // intervalo base (0 stacks)
-export const COMPASS_PRIMARY_MIN    = 2000;   // intervalo mínimo
-export const COMPASS_STACK_FACTOR   = 18;     // reducción por stack (ms por stack)
+export const COMPASS_PRIMARY_BASE   = 6000;   // intervalo base (0 stacks)
+export const COMPASS_PRIMARY_MIN    = 3000;   // intervalo mínimo
+export const COMPASS_STACK_FACTOR   = 22;     // reducción por stack (ms por stack)
 export const COMPASS_SPEEDUP_RATE   = 0.10;   // 10% más rápido por minuto
 export const COMPASS_SPEEDUP_INTERVAL = 60000; // cada 60s
 export const COMPASS_SECONDARY_MULT = 2.0;    // secundaria cambia el doble de rápido
@@ -161,6 +125,13 @@ export const COMPASS_TICK_RATE = 100;
 
 // Umbral para secundaria (producto punto con cos(22.5°))
 export const COMPASS_STRICT_DOT = 0.9238795;
+
+// Speed-based buff scaling: at COMPASS_SPEED_BUFF_BASE or below → 1x,
+// at COMPASS_SPEED_BUFF_MAX or above → COMPASS_SPEED_BUFF_MULT_MAX
+// linear interpolation between
+export const COMPASS_SPEED_BUFF_BASE = 300;
+export const COMPASS_SPEED_BUFF_MAX  = 1000;
+export const COMPASS_SPEED_BUFF_MULT_MAX = 3;
 
 // Tipos de buff
 export const BUFF_TYPES = [
@@ -190,13 +161,13 @@ export const BUFF_COLORS = {
 
 // Valores por tick (primaria = 1x, secundaria = 2x)
 export const BUFF_VALUES = {
-  heal:      { primary: 0.05, secondary: 0.10 },
-  credit:    { primary: 0.2,  secondary: 0.4  },
-  momentum:  { primary: 0.2,  secondary: 0.4  },
-  maxSpeed:  { primary: 0.02, secondary: 0.04 },
-  amplitude: { primary: 0.02, secondary: 0.04 },
-  timer:     { primary: 0.1,  secondary: 0.2  },
-  dashCd:    { primary: 0.1,  secondary: 0.2  },
-  hitboxAmplitude: { primary: 0.001, secondary: 0.002 },
-  damageMult:      { primary: 0.001, secondary: 0.002 },
+  heal:      { primary: 0.2, secondary: 0.4 },
+  credit:    { primary: 0.6,  secondary: 1.2 },
+  momentum:  { primary: 0.5,  secondary: 1 },
+  maxSpeed:  { primary: 0.15, secondary: 0.3 },
+  amplitude: { primary: 0.025, secondary: 0.5 },
+  timer:     { primary: 0.25,  secondary: 0.5  },
+  dashCd:    { primary: 0.2,  secondary: 0.4  },
+  hitboxAmplitude: { primary: 0.0005, secondary: 0.001 },
+  damageMult:      { primary: 0.0009, secondary: 0.0018 },
 };

@@ -10,6 +10,9 @@ import {
   COMPASS_SECONDARY_MULT,
   COMPASS_TICK_RATE,
   COMPASS_STRICT_DOT,
+  COMPASS_SPEED_BUFF_BASE,
+  COMPASS_SPEED_BUFF_MAX,
+  COMPASS_SPEED_BUFF_MULT_MAX,
   BUFF_TYPES,
   BUFF_COLORS,
   BUFF_VALUES,
@@ -27,6 +30,9 @@ export default class CompassSystem {
     this._totalTime      = 0;
 
     this._tickAccum = 0;
+
+    this._primaryAccum   = 0;
+    this._secondaryAccum = 0;
 
     this.momentum  = null;
     this.rewards   = null;
@@ -52,12 +58,11 @@ export default class CompassSystem {
   }
 
   _isFollowingPrimary(vx, vy) {
+    const speed = Math.hypot(vx, vy);
+    if (speed < 5) return false;
     const d = this.primaryDir;
-    if (d.id === 'N') return vy < 0;
-    if (d.id === 'S') return vy > 0;
-    if (d.id === 'E') return vx > 0;
-    if (d.id === 'O') return vx < 0;
-    return false;
+    const dot = (vx * d.dx + vy * d.dy) / speed;
+    return dot >= 0.7;
   }
 
   _isFollowingSecondary(vx, vy) {
@@ -74,20 +79,19 @@ export default class CompassSystem {
     return isSecondary ? entry.secondary : entry.primary;
   }
 
-  _applyBuff(buffType, isSecondary, player, now) {
-    const value = this._getBuffValue(buffType, isSecondary);
+  _applyBuff(buffType, isSecondary, player, now, mult = 1) {
+    const value = this._getBuffValue(buffType, isSecondary) * mult;
     if (value === 0) return;
 
     switch (buffType) {
       case 'heal':
-        if (player.health) player.health.hp = Math.min(100, player.health.hp + value);
+        if (player.health) player.health.hp = Math.min(player.health.maxHp, player.health.hp + value);
         break;
       case 'credit':
         if (this.rewards) this.rewards.credits += value;
         break;
       case 'momentum':
-        if (this.momentum) {
-        }
+        if (this.momentum) this.momentum.addStacks(value);
         break;
       case 'maxSpeed':
         if (this.momentum) this.momentum.addMaxSpeed(value);
@@ -96,7 +100,10 @@ export default class CompassSystem {
         if (this.momentum) this.momentum.addAmplitude(value);
         break;
       case 'timer':
-        if (this.gameScene) this.gameScene.timeRemaining += value;
+        if (this.gameScene) {
+          this.gameScene.timeRemaining += value;
+          this._totalTimeEarned = (this._totalTimeEarned || 0) + value;
+        }
         break;
       case 'dashCd':
         if (player.dashCD > 0) {
@@ -130,6 +137,7 @@ export default class CompassSystem {
       this._primaryTimer = 0;
       this.primaryDir = this._randomPrimary();
       this.primaryBuff = this._randomBuff();
+      this._primaryAccum = 0;
     }
 
     this._secondaryTimer += delta;
@@ -137,6 +145,7 @@ export default class CompassSystem {
       this._secondaryTimer = 0;
       this.secondaryDir = this._randomSecondary();
       this.secondaryBuff = this._randomBuff();
+      this._secondaryAccum = 0;
     }
 
     this._tickAccum += delta;
@@ -145,15 +154,27 @@ export default class CompassSystem {
 
       const vx = player.vx;
       const vy = player.vy;
+      const speed = Math.hypot(vx, vy);
 
-      const followPrimary = this._isFollowingPrimary(vx, vy);
-      const followSecondary = this._isFollowingSecondary(vx, vy);
+      const actualDx = player.px - (this._lastPx ?? player.px);
+      const actualDy = player.py - (this._lastPy ?? player.py);
+      const actualSpeed = Math.hypot(actualDx, actualDy);
+      this._lastPx = player.px;
+      this._lastPy = player.py;
+
+      const followPrimary = this._isFollowingPrimary(vx, vy) && actualSpeed > 5;
+      const followSecondary = this._isFollowingSecondary(vx, vy) && actualSpeed > 5;
+
+      const t = (speed - COMPASS_SPEED_BUFF_BASE) / (COMPASS_SPEED_BUFF_MAX - COMPASS_SPEED_BUFF_BASE);
+      const mult = 1 + Math.max(0, Math.min(1, t)) * (COMPASS_SPEED_BUFF_MULT_MAX - 1);
 
       if (followPrimary) {
-        this._applyBuff(this.primaryBuff, false, player, now);
+        this._applyBuff(this.primaryBuff, false, player, now, mult);
+        this._primaryAccum += this._getBuffValue(this.primaryBuff, false) * mult;
       }
       if (followSecondary) {
-        this._applyBuff(this.secondaryBuff, true, player, now);
+        this._applyBuff(this.secondaryBuff, true, player, now, mult);
+        this._secondaryAccum += this._getBuffValue(this.secondaryBuff, true) * mult;
       }
     }
   }
@@ -180,4 +201,33 @@ export default class CompassSystem {
 
   get primaryDirectionId() { return this.primaryDir.id; }
   get secondaryDirectionId() { return this.secondaryDir.id; }
+
+  get primaryAccum()   { return this._primaryAccum; }
+  get secondaryAccum() { return this._secondaryAccum; }
+
+  get totalTimeEarned() { return this._totalTimeEarned || 0; }
+  get highestHitDamage() { return this._highestHitDamage || 0; }
+
+  recordHitDamage(dmg) {
+    if (dmg > (this._highestHitDamage || 0)) this._highestHitDamage = dmg;
+  }
+
+  isFollowingPrimary(vx, vy) { return this._isFollowingPrimary(vx, vy); }
+  isFollowingSecondary(vx, vy) { return this._isFollowingSecondary(vx, vy); }
+
+  getBuffLabel(buffType) {
+    const labels = {
+      heal: 'HP', credit: 'Cr', momentum: 'Stk', maxSpeed: 'Spd',
+      amplitude: 'Amp', timer: 'Time', dashCd: 'CD',
+      hitboxAmplitude: 'AtkR', damageMult: 'Dmg',
+    };
+    return labels[buffType] || buffType;
+  }
+
+  getBuffPerSec(buffType, isSecondary) {
+    const entry = BUFF_VALUES[buffType];
+    if (!entry) return 0;
+    const perTick = isSecondary ? entry.secondary : entry.primary;
+    return perTick * (1000 / COMPASS_TICK_RATE); // per-second value
+  }
 }

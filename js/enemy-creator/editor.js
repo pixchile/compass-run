@@ -33,10 +33,11 @@ class EnemyEditor {
             'selfDestructType', 'selfDestructValue', 'spawnTriggerType', 'spawnTriggerValue',
             // Movimiento
             'mobile', 'speed', 'speedTimeScale', 'speedTimeMulti', 'speedHpScale', 'speedHpMulti',
-            'movementStyle', 'orbitRange', 'erraticTime', 'distanceMin', 'distanceMax', 
+            'movementStyle', 'orbitRange', 'erraticTime',
             'ignoreWalls', 'isPhantom',
             // Ambitious (Avanzados)
-            'isWall', 'attackType', 'attackEffect', 'defenseAura', 'evade', 
+            'isWall', 'attackType', 'attackEffect', 'attackDamage', 'attackCooldown', 'defenseAura', 'evade',
+            'seeThroughWalls',
             'spawnPattern', 'spawnCount'
         ];
 
@@ -56,6 +57,7 @@ class EnemyEditor {
         document.getElementById('generateBtn')?.addEventListener('click', () => this.generate());
         document.getElementById('downloadBtn')?.addEventListener('click', () => this.download());
         document.getElementById('copyBtn')?.addEventListener('click', () => this.copyToClipboard());
+        document.getElementById('saveToProjectBtn')?.addEventListener('click', () => this.saveToProject());
 
         // Carga de archivos
         const loadBtn = document.getElementById('loadBtn');
@@ -226,6 +228,18 @@ class EnemyEditor {
         }
     }
 
+    _pickerToHex(c) {
+        if (!c) return '0xFF6666';
+        if (c.startsWith('#')) return '0x' + c.slice(1).toUpperCase();
+        return c;
+    }
+    _hexToPicker(c) {
+        if (c === undefined || c === null) return '#ff6666';
+        if (typeof c === 'number') c = '0x' + c.toString(16).padStart(6, '0');
+        const s = String(c).replace(/^0x/i, '');
+        return '#' + s.toLowerCase();
+    }
+
     getConfig() {
         return {
             id: this.getVal('typeId'),
@@ -233,7 +247,7 @@ class EnemyEditor {
             basic: {
                 hp: this.getVal('hp', 'number'),
                 hpRegen: this.getVal('hpRegen', 'number'),
-                color: this.getVal('color'),
+                color: this._pickerToHex(this.getVal('color')),
                 shape: this.getVal('shape'),
                 radius: this.getVal('radius', 'number'),
                 isBoss: this.getVal('isBoss', 'boolean'),
@@ -255,11 +269,9 @@ class EnemyEditor {
                     hpBase: this.getVal('speedHpScale'), // 'none', 'proportional', 'inverse'
                     hpPercentage: this.getVal('speedHpMulti', 'number')
                 },
-                style: this.getVal('movementStyle'), // 'chase', 'flee', 'erratic', 'orbit', 'axisX', 'axisY', 'dashOnly'
+                style: this.getVal('movementStyle'), // 'seek', 'flee', 'erratic', 'orbit', 'dashOnly'
                 orbitRange: this.getVal('orbitRange', 'number'),
                 erraticTime: this.getVal('erraticTime', 'number'),
-                distanceMin: this.getVal('distanceMin', 'number'),
-                distanceMax: this.getVal('distanceMax', 'number'),
                 ignoreWalls: this.getVal('ignoreWalls', 'boolean'),
                 isPhantom: this.getVal('isPhantom', 'boolean')
             },
@@ -276,9 +288,12 @@ class EnemyEditor {
             onDeath: this.deathEffects,
             ambitious: {
                 isWall: this.getVal('isWall', 'boolean'),
+                seeThroughWalls: this.getVal('seeThroughWalls', 'boolean'),
                 attack: {
                     type: this.getVal('attackType'), // 'contact', 'shoot', 'dash'
-                    effect: this.getVal('attackEffect') // 'none', 'slow', 'push', 'noJump'
+                    effect: this.getVal('attackEffect'), // 'none', 'slow', 'push', 'noJump'
+                    damage: this.getVal('attackDamage', 'number'),
+                    cooldown: this.getVal('attackCooldown', 'number')
                 },
                 defense: {
                     invulnerableAura: this.getVal('defenseAura', 'boolean'),
@@ -300,7 +315,7 @@ class EnemyEditor {
         if (config.basic) {
             this.setVal('hp', config.basic.hp);
             this.setVal('hpRegen', config.basic.hpRegen);
-            this.setVal('color', config.basic.color);
+            this.setVal('color', this._hexToPicker(config.basic.color));
             this.setVal('shape', config.basic.shape);
             this.setVal('radius', config.basic.radius);
             this.setVal('isBoss', config.basic.isBoss);
@@ -327,8 +342,6 @@ class EnemyEditor {
             this.setVal('movementStyle', config.movement.style);
             this.setVal('orbitRange', config.movement.orbitRange || 120);
             this.setVal('erraticTime', config.movement.erraticTime || 2000);
-            this.setVal('distanceMin', config.movement.distanceMin || 0);
-            this.setVal('distanceMax', config.movement.distanceMax || 0);
             this.setVal('ignoreWalls', config.movement.ignoreWalls);
             this.setVal('isPhantom', config.movement.isPhantom);
         }
@@ -348,9 +361,12 @@ class EnemyEditor {
         // Avanzado
         if (config.ambitious) {
             this.setVal('isWall', config.ambitious.isWall);
+            this.setVal('seeThroughWalls', config.ambitious.seeThroughWalls ?? false);
             if (config.ambitious.attack) {
                 this.setVal('attackType', config.ambitious.attack.type);
                 this.setVal('attackEffect', config.ambitious.attack.effect);
+                this.setVal('attackDamage', config.ambitious.attack.damage ?? 1.0);
+                this.setVal('attackCooldown', config.ambitious.attack.cooldown ?? 250);
             }
             if (config.ambitious.defense) {
                 this.setVal('defenseAura', config.ambitious.defense.invulnerableAura);
@@ -430,6 +446,83 @@ export default {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+    }
+
+    async saveToProject() {
+        const config = this.getConfig();
+        const enemyId = config.id;
+        if (!enemyId) { alert('Set a Type ID first.'); return; }
+
+        const enemyCode = this.generateCode(config);
+
+        // Check for File System Access API
+        if (!window.showDirectoryPicker) {
+            alert('Your browser does not support the File System Access API.\n\nUse the Download button instead, then move the file manually.');
+            return;
+        }
+
+        try {
+            // Get or reuse directory handle
+            if (!this._dirHandle) {
+                this._dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            }
+
+            // Write enemy .js file
+            const enemyFile = await this._dirHandle.getFileHandle(`${enemyId}.js`, { create: true });
+            const enemyWritable = await enemyFile.createWritable();
+            await enemyWritable.write(enemyCode);
+            await enemyWritable.close();
+
+            // Read and update index.js
+            let indexPath = 'index.js';
+            let indexContent;
+            try {
+                const indexFile = await this._dirHandle.getFileHandle(indexPath);
+                const file = await indexFile.getFile();
+                indexContent = await file.text();
+            } catch {
+                // No index.js in this folder — just save the enemy file
+                alert(`Saved ${enemyId}.js to project.\n\nNo index.js found in this folder — register it manually.`);
+                return;
+            }
+
+            const importLine = `import ${enemyId} from './${enemyId}.js';`;
+            const arrayEntry = `    ${enemyId},`;
+
+            // Check if already registered
+            if (indexContent.includes(`'./${enemyId}.js'`)) {
+                alert(`Updated ${enemyId}.js.\n\nAlready registered in index.js — no changes needed there.`);
+                return;
+            }
+
+            // Insert import after marker
+            if (!indexContent.includes(importLine)) {
+                indexContent = indexContent.replace(
+                    /(\/\/ Add editor-generated enemy imports here:)/,
+                    `$1\n${importLine}`
+                );
+            }
+
+            // Insert array entry after marker
+            if (!indexContent.includes(arrayEntry.trim())) {
+                indexContent = indexContent.replace(
+                    /(\/\/ Add editor-generated enemies here:)/,
+                    `$1\n${arrayEntry}`
+                );
+            }
+
+            // Write updated index.js
+            const indexFileHandle = await this._dirHandle.getFileHandle(indexPath, { create: false });
+            const indexWritable = await indexFileHandle.createWritable();
+            await indexWritable.write(indexContent);
+            await indexWritable.close();
+
+            alert(`Saved ${enemyId}.js and updated index.js. Ready to play.`);
+        } catch (err) {
+            if (err.name === 'AbortError') return;
+            console.error('Save to project failed:', err);
+            alert('Save failed: ' + err.message);
+        }
     }
 
     copyToClipboard() {

@@ -108,6 +108,10 @@ export default class Game extends Phaser.Scene {
         this.zoneSystem.setScene(this);
     }
 
+    spawnDamageNumber(x, y, value, colorKey) {
+        this.renderer?.damageNumbers?.spawn(x, y, value, colorKey, this.camera);
+    }
+
     /**
      * Extrae los shopId únicos de las zonas de tipo 'shop'
      */
@@ -124,6 +128,39 @@ export default class Game extends Phaser.Scene {
         }
         return Array.from(ids);
     }
+
+    hasLineOfSight(x1, y1, x2, y2, lines) {
+        if (!lines || lines.length === 0) return true;
+        for (const line of lines) {
+            if (line._broken) continue;
+            if (this._segmentsIntersect(
+                x1, y1, x2, y2,
+                line.start.x, line.start.y, line.end.x, line.end.y
+            )) return false;
+        }
+        return true;
+    }
+
+    _segmentsIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+        const d1 = this._orient(x1, y1, x2, y2, x3, y3);
+        const d2 = this._orient(x1, y1, x2, y2, x4, y4);
+        const d3 = this._orient(x3, y3, x4, y4, x1, y1);
+        const d4 = this._orient(x3, y3, x4, y4, x2, y2);
+        if (d1 !== d2 && d3 !== d4) return true;
+        if (d1 === 0 && this._inRange(x3, x1, x2) && this._inRange(y3, y1, y2)) return true;
+        if (d2 === 0 && this._inRange(x4, x1, x2) && this._inRange(y4, y1, y2)) return true;
+        if (d3 === 0 && this._inRange(x1, x3, x4) && this._inRange(y1, y3, y4)) return true;
+        if (d4 === 0 && this._inRange(x2, x3, x4) && this._inRange(y2, y3, y4)) return true;
+        return false;
+    }
+
+    _orient(px, py, qx, qy, rx, ry) {
+        const v = (qy - py) * (rx - qx) - (qx - px) * (ry - qy);
+        if (v === 0) return 0;
+        return v > 0 ? 1 : -1;
+    }
+
+    _inRange(v, a, b) { return v >= Math.min(a, b) && v <= Math.max(a, b); }
 
     update(t, delta) {
         if (!this.currentMap) return;
@@ -247,6 +284,16 @@ export default class Game extends Phaser.Scene {
         this.camera.x = this.camera.viewWidth / 2; this.camera.y = this.camera.viewHeight / 2;
         this.camera.zoom = 1.0; this.camera.targetZoom = 1.0;
 
+        // Limpiar zonas dinamicas (fuego CCC) y restaurar muros destruidos
+        this.currentMap.zones = this.currentMap.zones.filter(z => !z._isFire);
+        for (const line of this.currentMap.lines) {
+            if (line._broken) { line._broken = false; line.hp = line._origHp; }
+        }
+        this.renderer?.setCustomZones(this.currentMap.zones);
+        this.renderer?.setCustomLines(this.currentMap.lines);
+
+        this.renderer?.damageNumbers?.reset();
+        this.renderer?.uiManager?.resetElapsedTime();
         this.enemyManager.clearAll();
         this.enemyManager.setSpawnList(this.currentMap.enemies || []);
         this.enemyManager.setMomentumSystem(this.momentum);

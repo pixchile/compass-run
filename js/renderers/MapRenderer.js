@@ -43,10 +43,20 @@ export default class MapRenderer {
       const color = this.hexToNumber(zone.color);
       const geo = zone.geometry;
 
-      // Dibujamos las zonas con baja opacidad (20%) para no tapar a los enemigos ni la cuadrícula
-      g.fillStyle(color, 0.2); 
-      
-      if (geo.shapeType === 'rect') {
+      g.fillStyle(color, 0.2);
+
+      // Draw polygon from vertices if available (covers path, polygon, and transformed rect shapes)
+      if (geo.vertices && geo.vertices.length >= 3) {
+        g.beginPath();
+        g.moveTo(geo.vertices[0].x, geo.vertices[0].y);
+        for (let i = 1; i < geo.vertices.length; i++) {
+          g.lineTo(geo.vertices[i].x, geo.vertices[i].y);
+        }
+        g.closePath();
+        g.fillPath();
+        g.lineStyle(2, color, 0.4);
+        g.strokePath();
+      } else if (geo.shapeType === 'rect') {
         g.fillRect(geo.x, geo.y, geo.w, geo.h);
         g.lineStyle(2, color, 0.4);
         g.strokeRect(geo.x, geo.y, geo.w, geo.h);

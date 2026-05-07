@@ -93,7 +93,7 @@ export class WallJumpSystem {
         const penaltyFactor = this.getPenaltyFactor(now);
         jumpDistance *= penaltyFactor;
 
-        if (momentum) {
+        if (momentum && !this.scene.itemEffects?.bbcActive) {
             const bonusStacks = WALL_JUMP.STACK_BONUS[level] || 3;
 if (typeof momentum.addStacks === 'function') {
     momentum.addStacks(bonusStacks);

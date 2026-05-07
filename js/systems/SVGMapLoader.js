@@ -1,12 +1,23 @@
 // SVGMapLoader.js
 export default class SVGMapLoader {
+  _VALID_PREFIXES = ['wall', 'pit', 'shop', 'trap', 'damage', 'void', 'trigger', 'slow'];
+
+  _HP_REGEX = /hp_(\d+)/;
+
   constructor() {
-    // Sin mapa de colores; todo se decide por nombre de capa (id o inkscape:label)
+    const NS = 'http://www.w3.org/2000/svg';
+    // Persistent off-screen element reused by samplePath to avoid per-call DOM churn
+    this._sampleSvg = document.createElementNS(NS, 'svg');
+    this._sampleSvg.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;';
+    this._samplePath = document.createElementNS(NS, 'path');
+    this._sampleSvg.appendChild(this._samplePath);
+    document.body.appendChild(this._sampleSvg);
   }
 
   async loadMapFromURL(url) {
     try {
-      const response = await fetch(url);
+      const cacheBusted = url + '?t=' + Date.now();
+      const response = await fetch(cacheBusted);
       const svgText = await response.text();
       return this.parseSVG(svgText, url.split('/').pop());
     } catch (error) {
@@ -15,59 +26,90 @@ export default class SVGMapLoader {
     }
   }
 
-  /**
-   * Obtiene el identificador de capa real para una forma.
-   * Prioriza inkscape:label sobre id.
-   * Recorre ancestros buscando nombres de capa válidos.
-   */
+  _validPrefix(name) {
+    return this._VALID_PREFIXES.some(p => name.startsWith(p));
+  }
+
+  /** Collect cumulative transform from element and all ancestors. */
+  getCumulativeTransform(element) {
+    const transforms = [];
+    let current = element;
+    while (current && current.getAttribute) {
+      const t = current.getAttribute('transform');
+      if (t) transforms.unshift(t);
+      if (current.tagName && current.tagName.toLowerCase() === 'svg') break;
+      current = current.parentElement;
+    }
+    return transforms.length > 0 ? transforms.join(' ') : null;
+  }
+
+  /** Apply a 2D affine transform string to {x,y} points using raw matrix math. */
+  transformPoints(points, transformStr) {
+    if (!transformStr || !points) return points;
+    try {
+      const m = new DOMMatrix(transformStr);
+      const { a, b, c, d, e, f } = m;
+      return points.map(p => ({
+        x: a * p.x + c * p.y + e,
+        y: b * p.x + d * p.y + f
+      }));
+    } catch (err) {
+      console.warn('transformPoints failed:', err);
+      return points;
+    }
+  }
+
+  /** Compute bounding box and assign to geometry from an array of vertices. */
+  _setBBox(geo, vertices) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const v of vertices) {
+      if (v.x < minX) minX = v.x;
+      if (v.y < minY) minY = v.y;
+      if (v.x > maxX) maxX = v.x;
+      if (v.y > maxY) maxY = v.y;
+    }
+    geo.bbox = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+    geo.vertices = vertices;
+  }
+
+  /** Gets the layer identifier, walking up ancestors. Single traversal with fallback. */
   getLayerId(element) {
     const INKSCAPE_NS = 'http://www.inkscape.org/namespaces/inkscape';
 
     const getLabel = (el) => {
-      // Intentar con namespace (cuando xmlns:inkscape está declarado en el SVG)
       const nsLabel = el.getAttributeNS?.(INKSCAPE_NS, 'label');
       if (nsLabel) return nsLabel.toLowerCase();
-      // Fallback: atributo plano (SVGs sin namespace inkscape)
       const plainLabel = el.getAttribute?.('inkscape:label');
       if (plainLabel) return plainLabel.toLowerCase();
       return null;
     };
 
-    // Subir por ancestros buscando prefijo válido en label o id
+    let fallback = '';
     let current = element;
     while (current && current.getAttribute) {
       const label = getLabel(current);
-      if (label && this.isValidLayerPrefix(label)) return label;
+      if (label) {
+        if (this._validPrefix(label)) return label;
+        if (!fallback) fallback = label;
+      }
 
       const id = current.getAttribute('id');
-      if (id && this.isValidLayerPrefix(id.toLowerCase())) return id.toLowerCase();
+      if (id) {
+        const idLower = id.toLowerCase();
+        if (this._validPrefix(idLower)) return idLower;
+        if (!fallback) fallback = idLower;
+      }
 
-      if (!current.parentElement || current.tagName.toLowerCase() === 'svg') break;
+      if (current.tagName && current.tagName.toLowerCase() === 'svg') break;
       current = current.parentElement;
     }
 
-    // Fallback: devolver el label/id del primer ancestro <g> (no del shape mismo)
-    let fallback = element.parentElement;
-    while (fallback && fallback.getAttribute) {
-      if (fallback.tagName.toLowerCase() === 'svg') break;
-      const label = getLabel(fallback);
-      if (label) return label;
-      const id = fallback.getAttribute('id');
-      if (id) return id.toLowerCase();
-      fallback = fallback.parentElement;
-    }
-
-    return '';
-  }
-
-  isValidLayerPrefix(layerName) {
-    const validPrefixes = ['wall', 'pit', 'shop', 'trap', 'damage', 'void', 'trigger', 'slow'];
-    return validPrefixes.some(prefix => layerName.startsWith(prefix));
+    return fallback;
   }
 
   parseSVG(svgText, mapName) {
     const parser = new DOMParser();
-    const doc = parser.parseFromString(svgText, "image/svg+xml");
+    const doc = parser.parseFromString(svgText, 'image/svg+xml');
 
     const mapData = {
       name: mapName,
@@ -90,26 +132,26 @@ export default class SVGMapLoader {
 
     shapes.forEach(shape => {
       const layerId = this.getLayerId(shape);
-      
-      // Clasificación según prefijos
+      if (!layerId) return;
+
       let type = 'wall';
-      if (layerId.startsWith('wall'))      type = 'wall';
-      else if (layerId.startsWith('pit') || layerId.startsWith('shop')) type = 'shop';
-      else if (layerId.startsWith('trap'))    type = 'trap';
-      else if (layerId.startsWith('damage'))  type = 'damage_zone';
-      else if (layerId.startsWith('void'))    type = 'void';
-      else if (layerId.startsWith('trigger')) type = 'trigger';
-      else if (layerId.startsWith('slow'))    type = 'slow_zone';
+      if (layerId.startsWith('wall'))           type = 'wall';
+      else if (layerId.startsWith('pit'))       type = 'shop';
+      else if (layerId.startsWith('shop'))      type = 'shop';
+      else if (layerId.startsWith('trap'))      type = 'trap';
+      else if (layerId.startsWith('damage'))    type = 'damage_zone';
+      else if (layerId.startsWith('void'))      type = 'void';
+      else if (layerId.startsWith('trigger'))   type = 'trigger';
+      else if (layerId.startsWith('slow'))      type = 'slow_zone';
+
+      const geometry = this.extractGeometry(shape);
+      if (!geometry) return;
 
       const tags = layerId.split('_');
-      const geometry = this.extractGeometry(shape);
       const color = this.extractColor(shape);
-
-      if (geometry) {
-        const entity = { type, tags, geometry, color };
-        this.extractThresholds(entity);
-        this.categorizeEntity(entity, mapData);
-      }
+      const entity = { type, tags, geometry, color };
+      this.extractThresholds(entity);
+      this.categorizeEntity(entity, mapData);
     });
 
     return mapData;
@@ -118,43 +160,48 @@ export default class SVGMapLoader {
   convertToLines(entity) {
     const lines = [];
     const geo = entity.geometry;
+    const xf = geo.transform;
 
     if (geo.shapeType === 'rect') {
-      lines.push({ start: { x: geo.x, y: geo.y }, end: { x: geo.x + geo.w, y: geo.y }, thickness: geo.thickness });
-      lines.push({ start: { x: geo.x + geo.w, y: geo.y }, end: { x: geo.x + geo.w, y: geo.y + geo.h }, thickness: geo.thickness });
-      lines.push({ start: { x: geo.x + geo.w, y: geo.y + geo.h }, end: { x: geo.x, y: geo.y + geo.h }, thickness: geo.thickness });
-      lines.push({ start: { x: geo.x, y: geo.y + geo.h }, end: { x: geo.x, y: geo.y }, thickness: geo.thickness });
-    }
-    else if (geo.shapeType === 'polygon') {
-      const pts = geo.points.trim().split(/[\s,]+/).map(Number);
-      for (let i = 0; i < pts.length; i += 2) {
-        const x1 = pts[i], y1 = pts[i+1];
-        const nextIdx = (i + 2) % pts.length;
-        const x2 = pts[nextIdx], y2 = pts[nextIdx+1];
-        lines.push({ start: { x: x1, y: y1 }, end: { x: x2, y: y2 }, thickness: geo.thickness });
+      const corners = this.transformPoints([
+        { x: geo.x, y: geo.y },
+        { x: geo.x + geo.w, y: geo.y },
+        { x: geo.x + geo.w, y: geo.y + geo.h },
+        { x: geo.x, y: geo.y + geo.h }
+      ], xf);
+      for (let i = 0; i < 4; i++) {
+        lines.push({ start: corners[i], end: corners[(i + 1) % 4], thickness: geo.thickness });
       }
-    }
-    else if (geo.shapeType === 'line') {
-      lines.push({ start: geo.start, end: geo.end, thickness: geo.thickness });
-    }
-    else if (geo.shapeType === 'path') {
-      const pts = this.samplePath(geo.pathData, 12);
+    } else if (geo.shapeType === 'polygon') {
+      const rawPts = geo.points.trim().split(/[\s,]+/).map(Number);
+      const pts = new Array(rawPts.length / 2);
+      for (let i = 0; i < rawPts.length; i += 2) {
+        pts[i >> 1] = { x: rawPts[i], y: rawPts[i + 1] };
+      }
+      const tpts = this.transformPoints(pts, xf);
+      for (let i = 0; i < tpts.length; i++) {
+        lines.push({ start: tpts[i], end: tpts[(i + 1) % tpts.length], thickness: geo.thickness });
+      }
+    } else if (geo.shapeType === 'line') {
+      const [s, e] = this.transformPoints([geo.start, geo.end], xf);
+      lines.push({ start: s, end: e, thickness: geo.thickness });
+    } else if (geo.shapeType === 'path') {
+      const localPts = this.samplePath(geo.pathData, 12);
+      const pts = this.transformPoints(localPts, xf);
       const merged = this.mergeCollinearPoints(pts, 1.5);
       for (let i = 0; i < merged.length - 1; i++) {
-        lines.push({
-          start: merged[i],
-          end: merged[i + 1],
-          thickness: geo.thickness
-        });
+        lines.push({ start: merged[i], end: merged[i + 1], thickness: geo.thickness });
       }
     }
 
-    return lines.map(l => ({
-      ...l,
-      type: 'wall',
-      color: '#000000',
-      hp: entity.hp != null ? entity.hp : null,
-    }));
+    const hp = entity.hp != null ? entity.hp : null;
+    for (const l of lines) {
+      l.type = 'wall';
+      l.color = '#000000';
+      l.hp = hp;
+      l._origHp = hp;
+    }
+    return lines;
   }
 
   mergeCollinearPoints(pts, angleTolerance = 1.5) {
@@ -172,7 +219,7 @@ export default class SVGMapLoader {
       const lenA = Math.hypot(ax, ay), lenB = Math.hypot(bx, by);
       if (lenA === 0 || lenB === 0) continue;
 
-      const dot = (ax / lenA) * (bx / lenB) + (ay / lenA) * (by / lenB);
+      const dot = (ax * bx + ay * by) / (lenA * lenB);
       if (dot < thresh) result.push(curr);
     }
 
@@ -180,25 +227,19 @@ export default class SVGMapLoader {
     return result;
   }
 
+  /** Sample a path string into {x,y} points. Uses a persistent off-screen element. */
   samplePath(d, samplesPerSegment = 12) {
     try {
-      const svgNS = 'http://www.w3.org/2000/svg';
-      const tmpSvg = document.createElementNS(svgNS, 'svg');
-      const tmpPath = document.createElementNS(svgNS, 'path');
-      tmpPath.setAttribute('d', d);
-      tmpSvg.appendChild(tmpPath);
-      document.body.appendChild(tmpSvg);
-
-      const totalLength = tmpPath.getTotalLength();
+      this._samplePath.setAttribute('d', d);
+      const totalLength = this._samplePath.getTotalLength();
       const numSamples = Math.max(2, Math.ceil(totalLength / samplesPerSegment));
-      const points = [];
+      const points = new Array(numSamples + 1);
 
       for (let i = 0; i <= numSamples; i++) {
-        const pt = tmpPath.getPointAtLength((i / numSamples) * totalLength);
-        points.push({ x: pt.x, y: pt.y });
+        const pt = this._samplePath.getPointAtLength((i / numSamples) * totalLength);
+        points[i] = { x: pt.x, y: pt.y };
       }
 
-      document.body.removeChild(tmpSvg);
       return points;
     } catch (e) {
       console.warn('samplePath falló:', e);
@@ -206,19 +247,13 @@ export default class SVGMapLoader {
     }
   }
 
-  /**
-   * Extrae el color de relleno o trazo de un elemento SVG.
-   * Prioriza fill sobre stroke. Devuelve '#ffffff' como fallback.
-   */
   extractColor(shape) {
-    // Intentar desde atributo directo
     const fill = shape.getAttribute('fill');
     if (fill && fill !== 'none' && fill.startsWith('#')) return fill;
 
     const stroke = shape.getAttribute('stroke');
     if (stroke && stroke !== 'none' && stroke.startsWith('#')) return stroke;
 
-    // Intentar desde style inline
     const style = shape.getAttribute('style') || '';
     const fillMatch = style.match(/fill:\s*(#[0-9a-fA-F]{3,6})/);
     if (fillMatch) return fillMatch[1];
@@ -233,6 +268,7 @@ export default class SVGMapLoader {
     const tagName = shape.tagName.toLowerCase();
     let thickness = shape.getAttribute('stroke-width') || shape.style.strokeWidth || 2;
     thickness = parseFloat(thickness);
+    const transform = this.getCumulativeTransform(shape);
 
     if (tagName === 'rect') {
       return {
@@ -241,29 +277,33 @@ export default class SVGMapLoader {
         y: parseFloat(shape.getAttribute('y') || 0),
         w: parseFloat(shape.getAttribute('width') || 0),
         h: parseFloat(shape.getAttribute('height') || 0),
-        thickness
+        thickness,
+        transform
       };
     }
-    else if (tagName === 'line') {
+    if (tagName === 'line') {
       return {
         shapeType: 'line',
         start: { x: parseFloat(shape.getAttribute('x1')), y: parseFloat(shape.getAttribute('y1')) },
         end: { x: parseFloat(shape.getAttribute('x2')), y: parseFloat(shape.getAttribute('y2')) },
-        thickness
+        thickness,
+        transform
       };
     }
-    else if (tagName === 'polyline' || tagName === 'polygon') {
+    if (tagName === 'polyline' || tagName === 'polygon') {
       return {
         shapeType: 'polygon',
         points: shape.getAttribute('points'),
-        thickness
+        thickness,
+        transform
       };
     }
-    else if (tagName === 'path') {
+    if (tagName === 'path') {
       return {
         shapeType: 'path',
         pathData: shape.getAttribute('d'),
-        thickness
+        thickness,
+        transform
       };
     }
     return null;
@@ -272,24 +312,19 @@ export default class SVGMapLoader {
   extractThresholds(entity) {
     entity.hp = null;
 
-    if (entity.tags && Array.isArray(entity.tags)) {
-      const hpIndex = entity.tags.findIndex(tag => tag === 'hp');
+    if (entity.tags && entity.tags.length) {
+      const hpIndex = entity.tags.indexOf('hp');
       if (hpIndex !== -1 && entity.tags.length > hpIndex + 1) {
         const hpVal = parseInt(entity.tags[hpIndex + 1], 10);
-        if (!isNaN(hpVal)) {
-          entity.hp = hpVal;
-          return;
-        }
+        if (!isNaN(hpVal)) { entity.hp = hpVal; return; }
       }
     }
 
-    const fullName = (entity.tags || []).join('_');
-    const hpMatch = fullName.match(/hp_(\d+)/);
+    const fullName = entity.tags ? entity.tags.join('_') : '';
+    const hpMatch = fullName.match(this._HP_REGEX);
     if (hpMatch) {
       const hpVal = parseInt(hpMatch[1], 10);
-      if (!isNaN(hpVal)) {
-        entity.hp = hpVal;
-      }
+      if (!isNaN(hpVal)) entity.hp = hpVal;
     }
   }
 
@@ -297,33 +332,39 @@ export default class SVGMapLoader {
     if (entity.type === 'wall') {
       const generatedLines = this.convertToLines(entity);
       mapData.lines.push(...generatedLines);
-    } else if (['void', 'damage_zone', 'slow_zone', 'shop', 'trap'].includes(entity.type)) {
-      const geo = entity.geometry;
-      if (geo.shapeType === 'path') {
-        const pts = this.samplePath(geo.pathData, 20);
-        if (pts.length > 0) {
-          const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
-          geo.bbox = {
-            x: Math.min(...xs), y: Math.min(...ys),
-            w: Math.max(...xs) - Math.min(...xs),
-            h: Math.max(...ys) - Math.min(...ys)
-          };
-        }
-      } else if (geo.shapeType === 'rect') {
-        geo.bbox = { x: geo.x, y: geo.y, w: geo.w, h: geo.h };
-      } else if (geo.shapeType === 'polygon' && geo.points) {
-        const pts = geo.points.trim().split(/[\s,]+/).map(Number);
-        const xs = [], ys = [];
-        for (let i = 0; i < pts.length; i += 2) { xs.push(pts[i]); ys.push(pts[i+1]); }
-        geo.bbox = {
-          x: Math.min(...xs), y: Math.min(...ys),
-          w: Math.max(...xs) - Math.min(...xs),
-          h: Math.max(...ys) - Math.min(...ys)
-        };
-      }
-      mapData.zones.push(entity);
     } else if (entity.type === 'trigger') {
       mapData.triggers.push(entity);
+    } else {
+      // zone types: void, damage_zone, slow_zone, shop, trap
+      const geo = entity.geometry;
+      const xf = geo.transform;
+
+      if (geo.shapeType === 'path') {
+        const localPts = this.samplePath(geo.pathData, 20);
+        const vertices = this.transformPoints(localPts, xf);
+        if (vertices.length > 0) this._setBBox(geo, vertices);
+      } else if (geo.shapeType === 'rect') {
+        const vertices = this.transformPoints([
+          { x: geo.x, y: geo.y },
+          { x: geo.x + geo.w, y: geo.y },
+          { x: geo.x + geo.w, y: geo.y + geo.h },
+          { x: geo.x, y: geo.y + geo.h }
+        ], xf);
+        this._setBBox(geo, vertices);
+      } else if (geo.shapeType === 'polygon' && geo.points) {
+        const rawPts = geo.points.trim().split(/[\s,]+/).map(Number);
+        const pts = new Array(rawPts.length / 2);
+        for (let i = 0; i < rawPts.length; i += 2) {
+          pts[i >> 1] = { x: rawPts[i], y: rawPts[i + 1] };
+        }
+        const vertices = this.transformPoints(pts, xf);
+        this._setBBox(geo, vertices);
+      } else if (geo.shapeType === 'line') {
+        const [s, e] = this.transformPoints([geo.start, geo.end], xf);
+        this._setBBox(geo, [s, e]);
+      }
+
+      mapData.zones.push(entity);
     }
   }
 }

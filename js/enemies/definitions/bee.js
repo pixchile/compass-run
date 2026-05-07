@@ -1,17 +1,17 @@
 // Enemigo generado con Enemy Creator (v2.0)
 // Nombre: bee
-// Fecha: 09-04-2026, 2:17:23 p. m.
+// Fecha: 06-05-2026, 7:23:15 p. m.
 
 export default {
     id: 'bee',
-    name: 'bee', // <--- AÑADE ESTA LÍNEA AQUÍ
+    name: 'bee',
     config: {
     id: "bee",
     name: "bee",
     basic: {
-        hp: 30,
+        hp: 199,
         hpRegen: 0,
-        color: "0xFFEA00",
+        color: "0xFFD500",
         shape: "circle",
         radius: 16,
         isBoss: false,
@@ -21,50 +21,53 @@ export default {
         },
         spawnTrigger: {
             type: "immediate",
-            value: "0"
+            value: ""
         }
     },
     movement: {
         mobile: true,
-        speed: 4,
+        speed: 2,
         scaling: {
-            timeBase: false,
-            timeMultiplier: 1,
-            hpBase: "none",
-            hpPercentage: 0
+            timeBase: true,
+            timeMultiplier: 1.1,
+            hpBase: "proportional",
+            hpPercentage: 50
         },
-        style: "orbit",
+        style: "flee",
         orbitRange: 120,
         erraticTime: 2000,
         distanceMin: 0,
-        distanceMax: 100,
+        distanceMax: 7,
         ignoreWalls: true,
         isPhantom: true
     },
     damageMultipliers: {
         dash: 1,
-        aerialDash: 1,
-        momentum3: 10,
-        slam: 10,
-        slam3: 10,
-        void: 100,
-        wallCrash: 0,
-        explosion: 1
+        aerialDash: 2,
+        momentum3: 0,
+        slam: 1,
+        slam3: 2,
+        void: 0,
+        wallCrash: 1,
+        explosion: 2
     },
     onDeath: [],
     ambitious: {
         isWall: false,
+        seeThroughWalls: true,
         attack: {
             type: "contact",
-            effect: "none"
+            effect: "none",
+            damage: 1,
+            cooldown: 250
         },
         defense: {
             invulnerableAura: false,
             evade: false
         },
         spawn: {
-            pattern: "radial",
-            count: 32
+            pattern: "normal",
+            count: 3
         }
     }
 }

@@ -1,4 +1,4 @@
-import { W, H, TRAIL_MAX, MAX_SPD, TURN_K, STOP_K, JUMP_DUR, JUMP_HMAX, JUMP_DIST_K, DASH_DUR, DASH_CD, DASH_SPD, DIRS, SLAM } from '../../constants.js';
+import { W, H, TRAIL_MAX, MAX_SPD, TURN_K, STOP_K, JUMP_DUR, JUMP_HMAX, JUMP_DIST_K, DASH_DUR, DASH_CD, DASH_SPD, SLAM } from '../../constants.js';
 import { WallJumpSystem } from '../PlayerWallJump.js';
 import PlayerInput from './PlayerInput.js';
 import PlayerHealth from './PlayerHealth.js';
@@ -24,6 +24,11 @@ export default class Player {
         this.dashing = false; this.dashT = 0; this.dashVx = 0; this.dashVy = 0; this.dashCD = 0; this.dashInitialSpeed = 0;
         this.stunT = 0;
         this.holdingSpace = false;   // NUEVO: si mantiene Espacio presionado
+        this._stickState = false;        // BBC: stuck to enemy
+        this._stickTimer = 0;           // remaining ms before auto-kick
+        this._stickEnemy = null;        // enemy reference while stuck
+        this.attackRadiusMultiplier = 0;
+        this.damageMultiplierBonus = 0;
         
         this.moveDir = { x: 0, y: 0 };
         this.trail = []; 
@@ -39,7 +44,7 @@ export default class Player {
     get activeSlam() { return this.combat.activeSlam; }
     set activeSlam(val) { this.combat.activeSlam = val; }
 
-    takeEnemyDamage() { this.health.takeEnemyDamage(); }
+    takeEnemyDamage(mult) { this.health.takeEnemyDamage(mult); }
     getCurrentAttackPayload(lvl) { return this.combat.getCurrentAttackPayload(lvl); }
     lerpK(k, dt) { return 1 - Math.pow(1 - k, dt * 60); }
 
@@ -58,8 +63,9 @@ export default class Player {
         if (this.wallJump.wallStickCooldown > 0 || !this.wallJump.canStick(this.jumping, this.wallJump.wallStickCooldown)) return false;
 
         this.vx = 0; this.vy = 0; this.jumpVx = 0; this.jumpVy = 0;
-        this.dashing = false; this.jumping = false; 
+        this.dashing = false; this.jumping = false;
         this.combat.activeSlam = null;
+        this._stickState = false; this._stickTimer = 0; this._stickEnemy = null;
         this.currentWallLine = wallLine;
 
         return this.wallJump.stick(wallNormalAngle, currentSpeed);
@@ -84,6 +90,10 @@ export default class Player {
         } else {
             this.holdingSpace = this.input.isSpaceDown();
         }
+        // Trap: no horizontal input while grounded (can still jump to escape)
+        if (this.trapped && this.isGrounded) {
+            this.moveDir = { x: 0, y: 0 };
+        }
         const moving = this.moveDir.x !== 0 || this.moveDir.y !== 0;
 
         this.stunT = Math.max(0, this.stunT - delta);
@@ -91,6 +101,25 @@ export default class Player {
         this.noJumpTimer = Math.max(0, (this.noJumpTimer || 0) - delta);
         this.dashCD = Math.max(0, this.dashCD - delta);
         this.landFx = Math.max(0, this.landFx - delta);
+
+        // BBC: stick timer — auto-kick tras 1s sin saltar
+        if (this._stickState) {
+            this._stickTimer -= delta;
+            if (this._stickTimer <= 0) {
+                this._stickState = false;
+                this._stickTimer = 0;
+                this.scene?.itemEffects?.onStickExpired(this._stickEnemy);
+                this._stickEnemy = null;
+            }
+        }
+
+        // Limpiar stick si se entra en estado incompatible
+        if (this._stickState && (this.dashing || this.wallJump.wallStick || this.isStunned)) {
+            this.scene?.itemEffects?.onStickExpired(this._stickEnemy);
+            this._stickState = false;
+            this._stickTimer = 0;
+            this._stickEnemy = null;
+        }
 
         const wallResult = this.wallJump.update(delta, (vx, vy) => {
             this.vx = vx; this.vy = vy; this.jumping = true;
@@ -128,7 +157,25 @@ export default class Player {
             } else if (this.dashing && !this.jumping) {
                 this.jumping = true; this.jumpT = 0; this.jumpDur = JUMP_DUR[lv]; this.jumpHMax = JUMP_HMAX[lv]; this.jumpLv = lv;
                 this.jumpVx = this.vx; this.jumpVy = this.vy;
-                this.dashing = false; this.combat.hasSlammedThisJump = false; 
+                this.dashing = false; this.combat.hasSlammedThisJump = false;
+            } else if (this._stickState) {
+                // BBC: Space durante stick — saltar del enemigo en 8 direcciones
+                let dirX = 0, dirY = 0;
+                const kb = this.input.kb;
+                if (kb.W.isDown) dirY -= 1;
+                if (kb.S.isDown) dirY += 1;
+                if (kb.A.isDown) dirX -= 1;
+                if (kb.D.isDown) dirX += 1;
+                // Sin input direccional: saltar hacia arriba
+                if (dirX === 0 && dirY === 0) dirY = -1;
+                const len = Math.hypot(dirX, dirY);
+                dirX /= len; dirY /= len;
+
+                const enemy = this._stickEnemy;
+                this._stickState = false;
+                this._stickTimer = 0;
+                this._stickEnemy = null;
+                this.scene?.itemEffects?.onJumpOffEnemy(this, enemy, dirX, dirY, this.scene.momentum);
             } else if (!this.jumping && !this.wallJump.wallStick) {
                 this.jumping = true; this.jumpT = 0; this.jumpDur = JUMP_DUR[lv]; this.jumpHMax = JUMP_HMAX[lv]; this.jumpLv = lv;
                 if (currentSpeed > 8) {
@@ -140,32 +187,38 @@ export default class Player {
             }
         }
 
-        if (this.input.isShiftJustPressed() && !this.dashing && !this.isStunned && this.dashCD === 0 && !this.wallJump.wallStick) {
+        if (this.input.isShiftJustPressed() && !this.dashing && !this.isStunned && !this.wallJump.wallStick) {
             // No permitir dash aéreo si mantiene Espacio presionado
             if (!this.holdingSpace) {
                 const fx = this.scene?.itemEffects;
 
-                // AAB: eyectar enemigo agarrado en lugar de dash normal
-                if (fx?.onDashWhileGrabbing(this)) {
-                    // el gancho maneja el lanzamiento, no iniciamos dash
-                } else {
+                // Calcular dirección y velocidad del dash (independiente de si hay agarre)
+                const dashDirX  = currentSpeed > 8 ? this.vx / currentSpeed : Math.cos(this.facing);
+                const dashDirY  = currentSpeed > 8 ? this.vy / currentSpeed : Math.sin(this.facing);
+                const speedMult = fx?.getDashSpeedMult() ?? 1;
+                const dashSpeed = currentSpeed * DASH_SPD * speedMult;
+
+                // AAB: si hay enemigo agarrado, lanzarlo — el dash NO ocurre, sin CD
+                if (fx?.aabGrabbed && fx.onDashWhileGrabbing(this, dashDirX, dashDirY, dashSpeed)) {
+                    // lanzamiento ejecutado
+
+                } else if (!fx?.aabGrabbed && this.dashCD === 0) {
+                    // dash normal
                     const dashCDValue = this._dashCDBase || DASH_CD;
                     this.dashing = true; this.dashT = 0; this.dashCD = dashCDValue;
                     this.wasJumpingWhenDashed = this.jumping;
+                    this.dashInitialSpeed = dashSpeed;
 
-                    const speedMult = fx?.getDashSpeedMult() ?? 1;
-                    this.dashInitialSpeed = currentSpeed * DASH_SPD * speedMult;
-
-                    // AAA: Berserker — coste de HP al hacer dash
+                    // AAA: Berserker — coste de HP
                     if (fx?.has('AAA')) {
                         const cost = fx.getAAACost(this);
                         if (cost > 0) this.health.takeDamage(cost);
                     }
-                    const dirX = currentSpeed > 8 ? this.vx / currentSpeed : Math.cos(this.facing);
-                    const dirY = currentSpeed > 8 ? this.vy / currentSpeed : Math.sin(this.facing);
-                    this.dashVx = dirX * this.dashInitialSpeed;
-                    this.dashVy = dirY * this.dashInitialSpeed;
+
+                    this.dashVx = dashDirX * this.dashInitialSpeed;
+                    this.dashVy = dashDirY * this.dashInitialSpeed;
                     if (this.jumping) { this.jumpVx = this.dashVx; this.jumpVy = this.dashVy; }
+                    this.facing = Math.atan2(dashDirY, dashDirX);
 
                     // ABC: Brújula Activa — dar stacks si el dash va en dirección de la brújula
                     if (fx?.has('ABC')) {
@@ -174,8 +227,8 @@ export default class Player {
                             const dot = (dir, vx, vy) => (dir.dx ?? 0) * vx + (dir.dy ?? 0) * vy;
                             const pd = compass.primaryDir;
                             const sd = compass.secondaryDir;
-                            if (pd && dot(pd, dirX, dirY) > 0.7)      fx.onDashInCompassDir(this, this.scene.momentum, true);
-                            else if (sd && dot(sd, dirX, dirY) > 0.7) fx.onDashInCompassDir(this, this.scene.momentum, false);
+                            if (pd && dot(pd, dashDirX, dashDirY) > 0.7)      fx.onDashInCompassDir(this, this.scene.momentum, true);
+                            else if (sd && dot(sd, dashDirX, dashDirY) > 0.7) fx.onDashInCompassDir(this, this.scene.momentum, false);
                         }
                     }
 
@@ -196,6 +249,18 @@ export default class Player {
             } else if (this.dashing) {
                 const ease = 1 - Math.pow(this.dashT / DASH_DUR, 2);
                 this.vx = this.dashVx * ease; this.vy = this.dashVy * ease;
+            } else if (this._stickState && this._stickEnemy) {
+                // Si el enemigo murio, salir del stick
+                if (this._stickEnemy.hp <= 0) {
+                    this._stickState = false;
+                    this._stickTimer = 0;
+                    this._stickEnemy = null;
+                } else {
+                    // BBC stick: pegado al centro del enemigo, vel cero
+                    this.vx = 0; this.vy = 0;
+                    this.px = this._stickEnemy.x;
+                    this.py = this._stickEnemy.y - (this._stickEnemy.radius || 12) - 8;
+                }
             } else {
                 let af = 1;
                 if (moving && currentSpeed > 5) {
@@ -203,20 +268,34 @@ export default class Player {
                     af = 0.35 + 0.65 * Math.pow((dot + 1) / 2, 1.6);
                 }
 
-                // DAB: giro instantáneo al seguir la brújula
+                // DAB: giro instantáneo al virar hacia la brújula primaria (la lenta)
+                // Condición: el INPUT apunta a la brújula primaria, independiente de la vel. actual
                 const fx = this.scene.itemEffects;
-                if (fx?.has('DAB') && moving && this.isMovingInCompassDirection(momentum, currentSpeed)) {
-                    this.vx = this.moveDir.x * currentSpeed;
-                    this.vy = this.moveDir.y * currentSpeed;
+                if (fx?.has('DAB') && moving) {
+                    const compass = this.scene?.compass;
+                    const pd = compass?.primaryDir;
+                    if (pd) {
+                        let inputAngle = Math.atan2(this.moveDir.y, this.moveDir.x);
+                        let pdAngle    = Math.atan2(pd.dy, pd.dx);
+                        let diff = Math.abs(inputAngle - pdAngle);
+                        if (diff > Math.PI) diff = Math.PI * 2 - diff;
+                        if (diff * (180 / Math.PI) <= 22.5) {
+                            // Ignorar derrape: snap de velocidad a la dirección de input
+                            this.vx = this.moveDir.x * currentSpeed;
+                            this.vy = this.moveDir.y * currentSpeed;
+                            af = 1; // neutralizar derrape para el lerp posterior
+                        }
+                    }
                 }
 
-                // Control reduction (CCC malus)
+                // Control: derapeReduction mejora respuesta, controlReduction la empeora
+                const derapeBonus  = 1 + (this._derapeReduction || 0);
                 const controlMalus = 1 - (this._controlReduction || 0);
-                const turnK_mod = TURN_K[lv] * af * controlMalus;
+                const turnK_mod = TURN_K[lv] * af * controlMalus * derapeBonus;
 
                 // CCC: detectar derrapaje y emitir rastro de fuego
                 const fxCCC = this.scene.itemEffects;
-                if (fx?.has('CCC') && moving && currentSpeed > 150 && lv >= 2 && af < 0.5) {
+                if (fx?.has('CCC') && moving && currentSpeed > 20 && lv >= 2 && af < 0.85) {
                     this._skidTimer = (this._skidTimer || 0) + delta;
                     if (this._skidTimer >= 100) {
                         this._skidTimer = 0;
@@ -252,5 +331,7 @@ export default class Player {
         } else {
             this.trail.push({ x: this.px, y: this.py, lv, dash: this.dashing, jump: this.jumping, wallStick: this.wallJump.wallStick});
         }
+
+        this.trapped = false;
     }
 }

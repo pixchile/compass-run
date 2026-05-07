@@ -2,6 +2,8 @@
 // Efectos activos de items terminados.
 // Cada función recibe (scene, player, momentum, enemyManager, extra)
 
+import { WALL_JUMP, SLAM } from '../constants.js';
+
 export default class ItemEffects {
   constructor(scene) {
     this.scene = scene;
@@ -13,18 +15,27 @@ export default class ItemEffects {
     this.bbbTimer      = 0;
 
     // ── BBC: Rebote ──────────────────────────────────────────
-    this.bbcCooldown   = 0;
-    this.bbcReady      = false;
-    this.bbcBounces    = 0;
+    this.bbcBounces     = 0;   // cadena actual de rebotes
+    this.bbcActive      = false; // si estamos en cadena de rebote
+    this._bbcLastJumped = null; // enemigo del que se acaba de saltar (evitar re-stick)
 
     // ── DBB: Paciencia ───────────────────────────────────────
-    this.dbbIdleTimer  = 0;
-    this.dbbBonus      = 0;       // % acumulado (0–999)
-    this.dbbReady      = false;
+    this.dbbIdleTimer   = 0;
+    this.dbbBonus       = 0;       // % acumulado (0–999)
+    this.dbbReady       = false;
+    this.dbbCooldown    = 0;       // ms restantes antes de volver a acumular
+    this.dbbLastMult    = 1;       // último multiplicador consumido (para HUD)
+    this._dbbActiveMult = 1;       // multiplicador cacheado para el dash/slam actual
+
+    // ── Estadísticas de items ────────────────────────────────
+    this.statAADExplosions  = 0;   // veces que AAD explotó
+    this.statADDMitigated   = 0;   // daño real mitigado por ADD
+    this.statCADHealed      = 0;   // HP real curado por CAD
 
     // ── DDD: Fénix ───────────────────────────────────────────
-    this.dddCD         = 0;
-    this.dddLimit      = 100;     // límite actual de HP tras activación
+    this.dddCD       = 0;
+    this.dddDecaying = false;
+    this.dddPeakHp   = 100;
 
     // ── AAB: Gancho ─────────────────────────────────────────
     this.aabGrabbed    = null;    // referencia al enemigo agarrado
@@ -41,7 +52,7 @@ export default class ItemEffects {
   // ─── Update general (llamado cada frame) ────────────────────
   update(delta, player, momentum, enemyManager) {
     if (this.has('BBB')) this._updateBBB(delta, player, momentum);
-    if (this.has('BBC')) this._updateBBC(delta);
+    // BBC no requiere update frame-a-frame
     if (this.has('DBB')) this._updateDBB(delta, player, enemyManager);
     if (this.has('DDD')) this._updateDDD(delta, player);
     if (this.has('AAB')) this._updateAAB(delta, player);
@@ -85,48 +96,137 @@ export default class ItemEffects {
     if (momentum._maxSpeedOverride === 1000) momentum._maxSpeedOverride = null;
   }
 
-  // ─── BBC: Rebote ────────────────────────────────────────────
-  _updateBBC(delta) {
-    this.bbcCooldown = Math.max(0, this.bbcCooldown - delta);
-    if (this.bbcCooldown <= 0 && !this.bbcReady) this.bbcReady = true;
+  // ─── BBC: Rebote (Stick + Jump-off) ──────────────────────────
+  // Al saltar sobre un enemigo, el jugador se pega a el.
+  // Desde ahi, Space + direccion salta hacia otro enemigo.
+  // El danio se aplica al saltar, no al pegarse.
+
+  /**
+   * Jugador salto y colisiono con un enemigo — pegarse a el.
+   * Sin danio. Congela al enemigo. Inicia ventana de 1s para saltar.
+   */
+  onStickEnemy(player, enemy, now, momentumSystem) {
+    if (!this.has('BBC')) return false;
+
+    // No re-pegarse al enemigo del que se acaba de saltar
+    if (enemy === this._bbcLastJumped) return false;
+    this._bbcLastJumped = null;
+
+    // Snap al centro del enemigo, encima
+    player.px = enemy.x;
+    player.py = enemy.y - (enemy.radius || 12) - 8;
+    player.vx = 0; player.vy = 0;
+    player.jumping = false;
+    player.combat.hasSlammedThisJump = false;
+
+    player._stickState = true;
+    player._stickTimer = 1000;
+    player._stickEnemy = enemy;
+
+    // Congelar enemigo mientras el jugador esta pegado
+    enemy._frozen = true;
+    enemy._frozenVx = enemy.vx || 0;
+    enemy._frozenVy = enemy.vy || 0;
+
+    if (!this.bbcActive) {
+      this.bbcBounces = 1;
+      this.bbcActive = true;
+    } else {
+      this.bbcBounces++;
+    }
+
+    // Visual
+    if (this.scene.renderer?.addSlamEffect) {
+      this.scene.renderer.addSlamEffect(player.px, player.py, false);
+    }
+
+    return { sticked: true };
   }
 
-  // Devuelve true si se debe rebotar
-  onSlamHit(player, enemyManager, slamX, slamY) {
-    if (!this.has('BBC') || !this.bbcReady) return false;
-    const damage = 10 + this.bbcBounces * 10;
-    if (damage >= 300) { this.bbcBounces = 0; this.bbcReady = false; this.bbcCooldown = 3000; return false; }
+  /**
+   * Jugador presiono Space + direccion durante stick.
+   * Aplica danio al enemigo actual, lo descongela, lanza al jugador.
+   */
+  onJumpOffEnemy(player, enemy, dirX, dirY, momentumSystem) {
+    if (!this.has('BBC') || !enemy) return;
 
-    // Daño extra a enemigos en el punto de slam
-    const enemies = enemyManager.enemies;
-    let hit = false;
-    for (let i = enemies.length - 1; i >= 0; i--) {
-      const e = enemies[i];
-      if (Math.hypot(e.x - slamX, e.y - slamY) <= 60) {
-        if (e.receiveDamage) e.receiveDamage({ type: 'slam', baseDamage: damage, now: Date.now() });
-        hit = true;
-      }
+    // Recordar para no re-pegarse al mismo enemigo
+    this._bbcLastJumped = enemy;
+
+    // Danio al saltar: 5 base + 5 por cada rebote en cadena
+    const baseDmg = 5 + this.bbcBounces * 5;
+    const momentumMult = momentumSystem?.getDamageMultiplier?.() ?? 1;
+    const bonusMult    = 1 + (player.damageMultiplierBonus || 0);
+    const finalDamage  = baseDmg * momentumMult * bonusMult;
+
+    const hpBefore = enemy.hp;
+    const now = Date.now();
+    enemy.receiveDamage
+      ? enemy.receiveDamage({ type: 'stomp', baseDamage: finalDamage, now })
+      : (() => { enemy.hp = (enemy.hp || 1) - finalDamage; })();
+    const actualDamage = hpBefore - enemy.hp;
+    if (actualDamage > 0) {
+      this.scene.spawnDamageNumber?.(enemy.x, enemy.y, actualDamage, 'enemyDamage');
     }
-    if (hit) {
-      this.bbcBounces++;
-      // Rebotar al jugador (invertir vy)
-      player.vy = -Math.abs(player.vy || 300);
-      player.jumping = true;
-      player.jumpT   = 0;
-      player.jumpDur = player.jumpDur || 400;
-      player.jumpVx  = player.vx;
-      player.jumpVy  = player.vy;
-      return true;
+
+    // Descongelar enemigo
+    enemy._frozen = false;
+
+    // Lanzar jugador en la direccion elegida (misma distancia que wall jump segun nivel)
+    const lv = momentumSystem?.level ?? 1;
+    const jumpSpd = WALL_JUMP.SPEEDS[lv] || 400;
+    player.jumping = true;
+    player.jumpT   = 0;
+    player.jumpDur = 400;
+    player.jumpHMax = 0;
+    player.jumpLv  = 1;
+    player.jumpVx  = dirX * jumpSpd;
+    player.jumpVy  = dirY * jumpSpd;
+    player.vx = player.jumpVx;
+    player.vy = player.jumpVy;
+    player.combat.hasSlammedThisJump = false;
+    player.facing = Math.atan2(dirY, dirX);
+
+    // Visual
+    if (this.scene.renderer?.addSlamEffect) {
+      this.scene.renderer.addSlamEffect(enemy.x, enemy.y, false);
     }
-    // No impactó — resetear cadena
-    this.bbcBounces  = 0;
-    this.bbcReady    = false;
-    this.bbcCooldown = 3000;
-    return false;
+  }
+
+  /** Stick expiro sin saltar — descongelar enemigo, resetear cadena */
+  onStickExpired(enemy) {
+    if (enemy) enemy._frozen = false;
+    this._bbcLastJumped = null;
+    this.bbcBounces = 0;
+    this.bbcActive  = false;
+  }
+
+  /** Llamado cuando el jugador aterriza — resetear cadena si no esta pegado ni en muro */
+  onPlayerLanded() {
+    this._bbcLastJumped = null;
+    const player = this.scene?.player;
+    if (this.bbcActive && !player?._stickState && !player?.wallJump?.wallStick) {
+      this.bbcBounces = 0;
+      this.bbcActive  = false;
+    }
   }
 
   // ─── DBB: Paciencia ─────────────────────────────────────────
   _updateDBB(delta, player, enemyManager) {
+    // Resetear multiplicador cacheado cuando termina el dash/slam
+    if (!player.dashing && !player.combat?.activeSlam) {
+      this._dbbActiveMult = 1;
+    }
+
+    // Si está en CD (recibió daño o infligió recientemente), contar hacia abajo
+    if (this.dbbCooldown > 0) {
+      this.dbbCooldown = Math.max(0, this.dbbCooldown - delta);
+      this.dbbIdleTimer = 0;
+      this.dbbBonus     = 0;
+      this.dbbReady     = false;
+      return;
+    }
+
     const idle = (player._lastDamageTime || 0) < Date.now() - 5000 &&
                  (player._lastInflictTime || 0) < Date.now() - 5000;
     if (idle) {
@@ -140,43 +240,78 @@ export default class ItemEffects {
     }
   }
 
+  /** Llamado cuando el jugador recibe daño — activa CD de Paciencia */
+  onPlayerTookDamage() {
+    if (!this.has('DBB')) return;
+    this.dbbCooldown  = 5000;   // 5s de CD
+    this.dbbIdleTimer = 0;
+    this.dbbBonus     = 0;
+    this.dbbReady     = false;
+  }
+
   getDashDamageMultiplier(player) {
-    if (!this.has('DBB') || !this.dbbReady) return 1;
+    if (!this.has('DBB')) return 1;
+
+    // Si ya hay un multiplicador activo para este dash/slam, devolverlo
+    if (this._dbbActiveMult > 1) return this._dbbActiveMult;
+
+    if (!this.dbbReady) return 1;
+
     const mult = 1 + this.dbbBonus / 100;
-    this.dbbIdleTimer = 0; this.dbbBonus = 0; this.dbbReady = false; // consumir
+    this._dbbActiveMult = mult;   // cachear para todo el dash/slam
+    this.dbbLastMult    = mult;   // recordar para el HUD
+    this.dbbIdleTimer   = 0;
+    this.dbbBonus       = 0;
+    this.dbbReady       = false;
+    this.dbbCooldown    = 5000;
     return mult;
   }
 
   // ─── DDD: Fénix ─────────────────────────────────────────────
   _updateDDD(delta, player) {
     this.dddCD = Math.max(0, this.dddCD - delta);
-    // Reducir límite de 100 a 10 continuamente mientras Fénix esté equipado
-    this.dddLimit = Math.max(10, this.dddLimit - (90 / 3000) * delta);
+
+    // Si está en fase de descenso post-activación, bajar HP gradualmente hasta 10
+    if (this.dddDecaying && player.health.hp > 10) {
+      const rate = (this.dddPeakHp - 10) / 3000;   // de maxHp a 10 en 3000ms
+      player.health.hp = Math.max(10, player.health.hp - rate * delta);
+      if (player.health.hp <= 10) {
+        player.health.hp = 10;
+        this.dddDecaying = false;
+      }
+    }
   }
 
   onLethalDamage(player) {
     if (!this.has('DDD') || this.dddCD > 0) return false;
-    // Subir maxHp permanentemente
+
+    // +10 HP máximo permanente
     player.health.maxHp = (player.health.maxHp || 100) + 10;
-    // Revivir con el límite actual (que ya habrá bajado a ~10)
-    player.health.hp = this.dddLimit;
-    // Reiniciar límite para que vuelva a bajar
-    this.dddLimit = player.health.maxHp;
-    this.dddCD    = 60000;
+
+    // Revivir al máximo actual
+    player.health.hp    = player.health.maxHp;
+    this.dddPeakHp      = player.health.maxHp;
+
+    // Iniciar descenso gradual a 10 HP en 3s
+    this.dddDecaying    = true;
+
+    // CD arranca inmediatamente
+    this.dddCD = 60000;
+
     return true;
   }
 
   // ─── AAA: Berserker ─────────────────────────────────────────
   getAAAMultiplier(player) {
     if (!this.has('AAA')) return 1;
-    const missing = Math.max(0, 100 - (player.health.hp || 0));
-    const mult = 1 + Math.min(0.7, missing / 100 * 0.7);
-    return Math.max(1.3, mult); // mínimo 30%
+    const hp = player.health.hp || 0;
+    const missing = Math.max(0, 100 - hp);
+    return 1 + Math.min(1, missing / 75); // max bonus at 25 HP
   }
 
   getAAACost(player) {
     if (!this.has('AAA')) return 0;
-    return (player.health.hp || 0) >= 30 ? 3 : 0;
+    return (player.health.hp || 0) >= 25 ? 3 : 0;
   }
 
   // ─── ADD: Amortiguador ───────────────────────────────────────
@@ -189,29 +324,33 @@ export default class ItemEffects {
     if (!this.has('AAD') || Math.random() > 0.25) return;
     const x = enemy.x, y = enemy.y;
     const enemies = enemyManager.enemies;
+    let exploded = false;
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
       if (Math.hypot(e.x - x, e.y - y) <= 120) {
-        if (e.receiveDamage) e.receiveDamage({ type: 'explosion', baseDamage: 30, now: Date.now() });
+        if (e.receiveDamage) e.receiveDamage({ type: 'explosion', baseDamage: 30, now: this.scene?.time?.now ?? Date.now() });
+        exploded = true;
       }
     }
-    // Visual
+    if (exploded) this.statAADExplosions++;
     if (this.scene.renderer?.addSlamEffect) this.scene.renderer.addSlamEffect(x, y, false);
   }
 
   // ─── DDC: Sand King ──────────────────────────────────────────
-  applySandKingBonus(slamX, slamY, baseDamage, enemyManager) {
+  applySandKingBonus(slamX, slamY, baseDamage, enemyManager, now) {
     if (!this.has('DDC')) return;
+    const radius = SLAM.RADIUS * SLAM.SANDKING_RADIUS_MULT;
     const enemies = enemyManager.enemies;
     let count = 0;
     const hits = [];
     for (const e of enemies) {
-      if (Math.hypot(e.x - slamX, e.y - slamY) <= 100) { hits.push(e); count++; }
+      if (Math.hypot(e.x - slamX, e.y - slamY) <= radius) { hits.push(e); count++; }
     }
     const bonus = baseDamage + count * 3;
+    const sandNow = (now ?? this.scene?.time?.now ?? Date.now()) + 30;
     for (let i = hits.length - 1; i >= 0; i--) {
       const e = hits[i];
-      if (e.receiveDamage) e.receiveDamage({ type: 'slam3', baseDamage: bonus, now: Date.now() });
+      if (e.receiveDamage) e.receiveDamage({ type: 'slam3', baseDamage: bonus, now: sandNow });
     }
   }
 
@@ -225,7 +364,9 @@ export default class ItemEffects {
     if (this._cadHealedThisDash) return;
     this._cadHealedThisDash = true;
     const heal = momentum.level;
-    player.health.hp = Math.min(player.health.maxHp, (player.health.hp || 0) + heal);
+    const before = player.health.hp;
+    player.health.hp = Math.min(player.health.maxHp || 100, (player.health.hp || 0) + heal);
+    this.statCADHealed += player.health.hp - before;
   }
 
   // ─── ABC: Brújula Activa ─────────────────────────────────────
@@ -237,36 +378,40 @@ export default class ItemEffects {
 
   // ─── AAB: Gancho ─────────────────────────────────────────────
   _updateAAB(delta, player) {
+    if (this._aabReleaseBlock > 0) this._aabReleaseBlock -= delta;
     if (!this.aabGrabbed) return;
     this.aabTimer -= delta;
-    // Mover el enemigo agarrado junto al jugador
     this.aabGrabbed.x = player.px + Math.cos(player.facing) * 30;
     this.aabGrabbed.y = player.py + Math.sin(player.facing) * 30;
-    if (this.aabTimer <= 0) this._releaseGrab(player);
+    if (this.aabTimer <= 0) this._releaseGrab();
   }
 
   tryGrab(enemy, player) {
     if (!this.has('AAB') || this.aabGrabbed) return false;
+    if (enemy === this.aabLastReleased && this._aabReleaseBlock > 0) return false;
     this.aabGrabbed = enemy;
     this.aabTimer   = 4000;
     enemy.isGrabbed = true;
-    enemy.isPhantom = true; // no empuja al jugador mientras está agarrado
+    enemy.isPhantom = true;
     return true;
   }
 
-  onDashWhileGrabbing(player) {
+  onDashWhileGrabbing(player, dashDirX, dashDirY, dashSpeed) {
     if (!this.aabGrabbed) return false;
     const enemy = this.aabGrabbed;
-    this._releaseGrab(player);
-    // Eyectar al enemigo con velocidad del dash
-    const spd = Math.hypot(player.vx, player.vy) || 600;
-    enemy._projectileVx = Math.cos(player.facing) * spd;
-    enemy._projectileVy = Math.sin(player.facing) * spd;
-    enemy._projectileTimer = 800; // ms como proyectil
+    this.aabLastReleased = enemy;
+    this._aabReleaseBlock = 800;
+    this._releaseGrab();
+
+    enemy._projectileVx    = dashDirX * dashSpeed;
+    enemy._projectileVy    = dashDirY * dashSpeed;
+    enemy._projectileTimer = 800;
+    enemy.isGrabbed        = false;
+    enemy.isPhantom        = false;
     return true;
   }
 
-  _releaseGrab(player) {
+  _releaseGrab() {
     if (!this.aabGrabbed) return;
     this.aabGrabbed.isGrabbed = false;
     this.aabGrabbed.isPhantom = false;
@@ -291,13 +436,13 @@ export default class ItemEffects {
   // Crea una zona de daño temporal en currentMap.zones.
   onSkid(x, y) {
     if (!this.has('CCC')) return;
-    const R = 40;
+    const R = 25;
     const zones = this.scene.currentMap?.zones;
     if (!zones) return;
     zones.push({
       type: 'damage_zone',
-      damagePerSec: 20,
-      timeLeft: 5000,
+      damagePerSec: 65,
+      timeLeft: 15000,
       geometry: { bbox: { x: x - R, y: y - R, w: R * 2, h: R * 2 } },
       _isFire: true,
     });
@@ -309,9 +454,10 @@ export default class ItemEffects {
   // ─── Reset ───────────────────────────────────────────────────
   reset() {
     this.bbbCooldown = 0; this.bbbReady = false; this.bbbActive = false; this.bbbTimer = 0;
-    this.bbcCooldown = 0; this.bbcReady = false; this.bbcBounces = 0;
-    this.dbbIdleTimer = 0; this.dbbBonus = 0; this.dbbReady = false;
-    this.dddCD = 0; this.dddLimit = 100;
-    this.aabGrabbed = null; this.aabTimer = 0;
+    this.bbcBounces = 0; this.bbcActive = false; this._bbcLastJumped = null;
+    this.dbbIdleTimer = 0; this.dbbBonus = 0; this.dbbReady = false; this.dbbCooldown = 0; this.dbbLastMult = 1; this._dbbActiveMult = 1;
+    this.dddCD = 0; this.dddDecaying = false; this.dddPeakHp = 100;
+    this.aabGrabbed = null; this.aabTimer = 0; this.aabLastReleased = null; this._aabReleaseBlock = 0;
+    this.statAADExplosions = 0; this.statADDMitigated = 0; this.statCADHealed = 0;
   }
 }

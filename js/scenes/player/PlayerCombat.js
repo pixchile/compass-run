@@ -19,7 +19,15 @@ export default class PlayerCombat {
         const isHighSpeed = speed >= SLAM.HIGH_SPEED_THRESHOLD;
         const canPayHealth = this.player.health.hp > SLAM.SELF_DAMAGE;
         const applyKnockback = isHighSpeed && canPayHealth;
-        
+
+        // BBC: limpiar stick si se hace slam durante stick
+        if (this.player._stickState) {
+            this.player.scene?.itemEffects?.onStickExpired(this.player._stickEnemy);
+            this.player._stickState = false;
+            this.player._stickTimer = 0;
+            this.player._stickEnemy = null;
+        }
+
         if (applyKnockback) this.player.health.takeDamage(SLAM.SELF_DAMAGE);
 
         // AAA: costo extra de 3 HP en slam
@@ -29,7 +37,8 @@ export default class PlayerCombat {
             if (cost > 0) this.player.health.takeDamage(cost);
         }
 
-        if (this.player.scene.renderer) this.player.scene.renderer.addSlamEffect(this.player.px, this.player.py, applyKnockback);
+        const slamRadius = (fx?.has('DDC')) ? SLAM.RADIUS * SLAM.SANDKING_RADIUS_MULT : SLAM.RADIUS;
+        if (this.player.scene.renderer) this.player.scene.renderer.addSlamEffect(this.player.px, this.player.py, applyKnockback, slamRadius);
         
         this.activeSlam = {
             x: this.player.px, y: this.player.py,
@@ -60,27 +69,28 @@ export default class PlayerCombat {
 
         const fx = this.player.scene?.itemEffects;
         const aaaMult = (fx && (this.activeSlam || this.player.dashing)) ? fx.getAAAMultiplier(this.player) : 1;
+        const dbbMult = (fx && (this.activeSlam || this.player.dashing)) ? fx.getDashDamageMultiplier(this.player) : 1;
 
         if (this.activeSlam) {
             return {
                 type: this.activeSlam.isHighSpeed ? 'slam3' : 'slam',
-                baseDamage: this.activeSlam.speed * 0.1 * totalDamageMult * aaaMult,
+                baseDamage: this.activeSlam.speed * 0.1 * totalDamageMult * aaaMult * dbbMult,
                 radius: finalRadius * 1.5,
+                now: now
+            };
+        }
+
+        if (this.player.dashing) {
+            return {
+                type: this.player.wasJumpingWhenDashed ? 'aerialDash' : 'dash',
+                baseDamage: this.player.dashInitialSpeed * 0.1 * totalDamageMult * aaaMult * dbbMult,
+                radius: finalRadius,
                 now: now
             };
         }
 
         if (momentumLevel === 3) {
             return { type: 'momentum3', baseDamage: currentSpeed * 0.1 * totalDamageMult, radius: finalRadius, now: now };
-        }
-
-        if (this.player.dashing) {
-            return {
-                type: this.player.wasJumpingWhenDashed ? 'aerialDash' : 'dash',
-                baseDamage: this.player.dashInitialSpeed * 0.1 * totalDamageMult * aaaMult,
-                radius: finalRadius,
-                now: now
-            };
         }
 
         return null;

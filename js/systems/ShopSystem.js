@@ -41,6 +41,7 @@ export default class ShopSystem {
     if (this.freeSlots <= 0) return { ok: false, msg: 'Inventario lleno' };
     if (credits < COMPONENT_PRICE) return { ok: false, msg: 'Créditos insuficientes' };
     this.components.push(compId);
+    this._applyComponentStats(compId, +1);
     return { ok: true, cost: COMPONENT_PRICE };
   }
 
@@ -50,19 +51,31 @@ export default class ShopSystem {
     if (!this.shopStocks[shopId]?.includes(itemId)) return { ok: false, msg: 'No disponible en esta tienda' };
     if (this.freeSlots <= 0) return { ok: false, msg: 'Inventario lleno' };
 
+    // Bloquear duplicados si el toggle está OFF
+    const allowDupes = localStorage.getItem('cr_allow_duplicates') === 'true';
+    if (!allowDupes && this.hasItem(itemId)) return { ok: false, msg: 'Ya tienes este item' };
+
     const price = getItemPrice(itemId, this.components);
     if (credits < price) return { ok: false, msg: 'Créditos insuficientes' };
 
-    // Consumir componentes coincidentes del inventario
+    // Consumir componentes coincidentes del inventario y retirar sus stats
     const needed = [...item.components];
     const remaining = [...this.components];
     for (const c of needed) {
       const idx = remaining.indexOf(c);
-      if (idx !== -1) remaining.splice(idx, 1);
+      if (idx !== -1) {
+        remaining.splice(idx, 1);
+        this._applyComponentStats(c, -1);  // retirar stat del componente consumido
+      }
     }
     this.components = remaining;
 
-    this.equippedItems.push({ ...item });
+    // Retirar del stock de la tienda
+    const stockIdx = this.shopStocks[shopId].indexOf(itemId);
+    if (stockIdx !== -1) this.shopStocks[shopId].splice(stockIdx, 1);
+
+    // Guardar referencia a la tienda de origen para poder devolver al stock al vender
+    this.equippedItems.push({ ...item, _shopId: shopId });
     this._applyPassiveStats(item);
 
     return { ok: true, cost: price };
@@ -72,6 +85,7 @@ export default class ShopSystem {
     if (index < 0 || index >= this.components.length) return { ok: false };
     const compId = this.components[index];
     this.components.splice(index, 1);
+    this._applyComponentStats(compId, -1);
     return { ok: true, gain: Math.floor(COMPONENT_PRICE * SELL_RATE) };
   }
 
@@ -79,6 +93,13 @@ export default class ShopSystem {
     if (index < 0 || index >= this.equippedItems.length) return { ok: false };
     const item = this.equippedItems.splice(index, 1)[0];
     this._removePassiveStats(item);
+
+    // Devolver al stock de la tienda de origen si sigue existiendo
+    const originShop = item._shopId;
+    if (originShop && this.shopStocks[originShop] && !this.shopStocks[originShop].includes(item.id)) {
+      this.shopStocks[originShop].push(item.id);
+    }
+
     const gain = Math.floor(ITEM_BASE_PRICE * SELL_RATE);
     return { ok: true, gain };
   }
@@ -92,6 +113,20 @@ export default class ShopSystem {
   }
 
   // ─── Stats pasivas ───────────────────────────────────────────
+  // Aplica stats de un componente individual (sign: +1 al comprar, -1 al vender)
+  _applyComponentStats(compId, sign) {
+    if (!this.scene?.player) return;
+    const comp = COMPONENTS[compId];
+    if (!comp?.stats) return;
+    const s = comp.stats;
+    const p = this.scene.player;
+    if (s.dashCDReduction) p._dashCDBase = (p._dashCDBase || 2500) - sign * s.dashCDReduction;
+    if (s.hpRegen)         p.health.regenRate = Math.max(0, (p.health.regenRate || 0.2) + sign * s.hpRegen / 60);
+    if (s.stackRateBonus && this.scene.momentum)
+      this.scene.momentum._stackRateBonus = Math.max(0, (this.scene.momentum._stackRateBonus || 0) + sign * s.stackRateBonus);
+    if (s.derapeReduction) p._derapeReduction = Math.max(0, (p._derapeReduction || 0) + sign * s.derapeReduction);
+  }
+
   _applyPassiveStats(item) {
     if (!this.scene?.player) return;
     const p = this.scene.player;

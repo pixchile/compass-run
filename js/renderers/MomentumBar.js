@@ -1,4 +1,4 @@
-import { W, H, SMAX, L2, L3, C } from '../constants.js';
+import { W, H, SMAX, C } from '../constants.js';
 
 export default class MomentumBar {
   constructor(scene) {
@@ -32,9 +32,9 @@ export default class MomentumBar {
       graphics.fillRect(bx, by, fw, bh * 0.38);
     }
     
-    // Marcadores de nivel en la barra
-    const s1x = bx + (L2 / SMAX) * bw;
-    const s2x = bx + (L3 / SMAX) * bw;
+    // Marcadores de nivel — usan thresholds reales que varían con amplitude
+    const s1x = bx + (momentum.l2Min / SMAX) * bw;
+    const s2x = bx + (momentum.l2Max / SMAX) * bw;
     
     if (lv > 1) {
       const sepX = lv === 2 ? s1x : s2x;

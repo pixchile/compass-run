@@ -67,8 +67,8 @@
                     </div>
 
                     <div class="field">
-                        <label>🎨 Color (Hexadecimal)</label>
-                        <input type="text" id="color" value="0xFF6666" placeholder="Ej: 0xFF6666">
+                        <label>🎨 Color</label>
+                        <input type="color" id="color" value="#ff6666">
                     </div>
                     <div class="field">
                         <label>👑 ¿Es Boss?</label>
@@ -130,8 +130,6 @@
                                 <option value="flee">Huir del jugador</option>
                                 <option value="erratic">Errático</option>
                                 <option value="orbit">Orbitar</option>
-                                <option value="axisX">Sólo eje X</option>
-                                <option value="axisY">Sólo eje Y</option>
                                 <option value="dashOnly">Sólo Embestida</option>
                             </select>
                         </div>
@@ -144,18 +142,6 @@
                     <div class="field" id="erraticTimeField" style="display:none;">
                         <label>🔄 Cambiar dirección cada (ms)</label>
                         <input type="number" id="erraticTime" value="2000">
-                    </div>
-
-                    <h4>Límites de Distancia</h4>
-                    <div class="grid-2">
-                        <div class="field">
-                            <label>Mínima al jugador</label>
-                            <input type="number" id="distanceMin" value="0">
-                        </div>
-                        <div class="field">
-                            <label>Máxima al jugador</label>
-                            <input type="number" id="distanceMax" value="0">
-                        </div>
                     </div>
 
                     <h4>Escalado Dinámico de Velocidad</h4>
@@ -221,6 +207,14 @@
                                 <option value="noJump">Impide Saltar</option>
                             </select>
                         </div>
+                        <div class="field">
+                            <label>Daño al Jugador (multiplicador)</label>
+                            <input type="number" id="attackDamage" value="1.0" step="0.1" min="0">
+                        </div>
+                        <div class="field">
+                            <label>Cooldown de Ataque (ms)</label>
+                            <input type="number" id="attackCooldown" value="250" step="10" min="0">
+                        </div>
                     </div>
 
                     <h4>Habilidades Defensivas</h4>
@@ -281,6 +275,14 @@
                         </select>
                     </div>
 
+                    <div class="field">
+                        <label>👁️ ¿Ve a través de muros?</label>
+                        <select id="seeThroughWalls">
+                            <option value="false">No (Muros bloquean visión)</option>
+                            <option value="true">Sí (Detecta al jugador siempre)</option>
+                        </select>
+                    </div>
+
                     <h4>Patrones de Generación (Spawns)</h4>
                     <div class="grid-2">
                         <div class="field">
@@ -317,6 +319,7 @@
                     <span style="color:#888;">Cargando...</span>
                 </div>
                 <div class="preview-actions">
+                    <button id="saveToProjectBtn" class="action-btn" style="background:#2d5a27;color:#fff;">📁 Save to Project</button>
                     <button id="downloadBtn" class="action-btn">💾 Descargar .js</button>
                     <button id="copyBtn" class="action-btn copy">📋 Copiar código</button>
                 </div>

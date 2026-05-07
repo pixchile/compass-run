@@ -1,4 +1,4 @@
-import { W, H, ARENA, HP_MAX, C } from '../constants.js';
+import { ARENA, HP_MAX, C } from '../constants.js';
 
 export default class HealthBar {
   constructor(scene) {
@@ -12,15 +12,9 @@ export default class HealthBar {
   }
   
   render(graphics, player, time) {
-    const hpPct = Math.max(0, player.hp / HP_MAX);
+    const maxHp = player.health?.maxHp ?? HP_MAX;
+    const hpPct = Math.max(0, player.hp / maxHp);
     const hpCol = hpPct > 0.5 ? C.hpHigh : hpPct > 0.25 ? C.hpMid : C.hpLow;
-    
-    // Flash rojo cuando recibe daño (pantalla completa)
-    if (player.hpHitFlash > 0) {
-      const flashA = (player.hpHitFlash / 280) * 0.22;
-      graphics.fillStyle(0xff2200, flashA);
-      graphics.fillRect(0, 0, W, H);
-    }
     
     // Fondo de la barra
     graphics.fillStyle(0x0d111e, 1);
