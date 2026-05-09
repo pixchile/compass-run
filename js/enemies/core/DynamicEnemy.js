@@ -91,10 +91,17 @@ export default class DynamicEnemy extends Enemy {
             this.speed = this.baseSpeed * (1 + (missingHpPct * maxBoost));
         }
 
+        // --- GBA Acrobatic: undetectable player — enemies ignore ---
+        const trackingStyles = ['seek', 'flee', 'orbit', 'circle', 'axisX', 'axisY'];
+
         // --- LINE OF SIGHT: enemigos que no ven a traves de muros pierden rastro ---
         const seeThrough = this.customConfig?.ambitious?.seeThroughWalls;
         let effectiveStyle = this.movementStyle;
-        if (!seeThrough && lines && lines.length > 0) {
+        if (player._undetectable) {
+            if (trackingStyles.includes(effectiveStyle)) {
+                effectiveStyle = 'erratic';
+            }
+        } else if (!seeThrough && lines && lines.length > 0) {
             const dist = Math.hypot(player.px - this.x, player.py - this.y);
             if (dist < 500) {
                 if (!this.state._losTimer) this.state._losTimer = 0;
@@ -104,7 +111,6 @@ export default class DynamicEnemy extends Enemy {
                     this.state._losBlocked = !this.scene?.hasLineOfSight?.(this.x, this.y, player.px, player.py, lines);
                 }
                 if (this.state._losBlocked) {
-                    const trackingStyles = ['seek', 'flee', 'orbit', 'circle', 'axisX', 'axisY'];
                     if (trackingStyles.includes(effectiveStyle)) {
                         effectiveStyle = 'erratic';
                     }

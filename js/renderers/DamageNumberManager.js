@@ -11,6 +11,8 @@ const COLORS = {
     slamDamage:   '#ffaa22',
     voidDamage:   '#ff0000',
     fireDamage:   '#ff8844',
+    creditGain:   '#44ffcc',
+    creditCost:   '#ff44cc',
 };
 
 export default class DamageNumberManager {
@@ -34,7 +36,7 @@ export default class DamageNumberManager {
     }
 
     spawn(worldX, worldY, value, colorKey, camera) {
-        if (value <= 0 && colorKey !== 'heal') return;
+        if (value <= 0 && colorKey !== 'heal' && colorKey !== 'creditCost') return;
         const idx = this.freeIndices.pop();
         if (idx === undefined) return;
 

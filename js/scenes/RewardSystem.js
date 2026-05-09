@@ -7,6 +7,7 @@ export default class RewardSystem {
     this._tickTimer  = 0;
     this._creditAccum = 0;
     this._secTimer   = 0;
+    this._creditPerSecBonus = 0;
     this.momentum    = null;   // referencia externa
   }
 
@@ -31,7 +32,7 @@ export default class RewardSystem {
     this._secTimer += delta;
     while (this._secTimer >= 1000) {
       this._secTimer   -= 1000;
-      this.credits     += REWARDS.CREDIT_BASE_PER_SEC + this._creditAccum;
+      this.credits     += REWARDS.CREDIT_BASE_PER_SEC + this._creditAccum + (this._creditPerSecBonus || 0);
       this._creditAccum = 0;
     }
   }
@@ -42,6 +43,7 @@ export default class RewardSystem {
     this._tickTimer   = 0;
     this._creditAccum = 0;
     this._secTimer    = 0;
+    this._creditPerSecBonus = 0;
   }
 
   get displayCredits() { return Math.floor(this.credits); }

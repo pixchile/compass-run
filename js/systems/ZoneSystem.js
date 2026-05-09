@@ -141,7 +141,8 @@ export default class ZoneSystem {
                 // CCC: zonas de fuego dañan enemigos
                 if (z._isFire && enemies) {
                     const dps  = z.damagePerSec ?? 20;
-                    const dmg  = dps * (delta / 1000);
+                    const compassBonus = this._scene?.player?.damageMultiplierBonus || 0;
+                    const dmg  = dps * (delta / 1000) * (1 + compassBonus);
                     for (let j = enemies.length - 1; j >= 0; j--) {
                         const e = enemies[j];
                         if (this._isInsideZone(e.x, e.y, z)) {

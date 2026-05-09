@@ -5,11 +5,20 @@ import {
   DROP_CHANCE, rollShopStock, getItemPrice
 } from './ItemSystem.js';
 
+// ── Service costs (easy to tweak) ────────────────────────────────────
+export const REROLL_COST        = 300;
+export const KEEPGOING_BASE     = 300;
+export const KEEPGOING_INCR     = 100;
+export const KEEPGOING_HP       = 10;
+export const KEEPGOING_TIME_SEC = 30;
+
 export default class ShopSystem {
   constructor() {
     this.components   = [];   // ['A','B','A',...] — max 6 slots totales entre comps e items
     this.equippedItems = [];  // [{ id:'AAA', ... }]
     this.shopStocks   = {};   // { shopId: ['AAA','BBC',...] }
+    this._shopHistory  = {};   // { shopId: ['AAA','BBC',...] } — items ever seen in this shop
+    this._keepGoingUses = 0;   // increments each use, resets on game restart
     this.scene        = null;
   }
 
@@ -27,7 +36,15 @@ export default class ShopSystem {
   // ─── Generación de stock de tiendas ─────────────────────────
   initShops(shopIds) {
     for (const id of shopIds) {
-      this.shopStocks[id] = rollShopStock();
+      const stock = rollShopStock();
+      this.shopStocks[id] = stock;
+      // Seed history with the initial stock so Re-Roll excludes them
+      if (!this._shopHistory[id]) this._shopHistory[id] = [];
+      for (const itemId of stock) {
+        if (!this._shopHistory[id].includes(itemId)) {
+          this._shopHistory[id].push(itemId);
+        }
+      }
     }
   }
 
@@ -39,10 +56,12 @@ export default class ShopSystem {
   buyComponent(compId, credits) {
     if (!COMPONENTS[compId]) return { ok: false, msg: 'Componente inválido' };
     if (this.freeSlots <= 0) return { ok: false, msg: 'Inventario lleno' };
-    if (credits < COMPONENT_PRICE) return { ok: false, msg: 'Créditos insuficientes' };
+    const auspiceDisc = this.scene?.itemEffects?.getAuspiceDiscount() || 0;
+    const finalPrice = Math.floor(COMPONENT_PRICE * (1 - auspiceDisc));
+    if (credits < finalPrice) return { ok: false, msg: 'Créditos insuficientes' };
     this.components.push(compId);
     this._applyComponentStats(compId, +1);
-    return { ok: true, cost: COMPONENT_PRICE };
+    return { ok: true, cost: finalPrice };
   }
 
   buyItem(itemId, shopId, credits) {
@@ -55,7 +74,9 @@ export default class ShopSystem {
     const allowDupes = localStorage.getItem('cr_allow_duplicates') === 'true';
     if (!allowDupes && this.hasItem(itemId)) return { ok: false, msg: 'Ya tienes este item' };
 
-    const price = getItemPrice(itemId, this.components);
+    const basePrice = getItemPrice(itemId, this.components);
+    const auspiceDisc = this.scene?.itemEffects?.getAuspiceDiscount() || 0;
+    const price = Math.floor(basePrice * (1 - auspiceDisc));
     if (credits < price) return { ok: false, msg: 'Créditos insuficientes' };
 
     // Consumir componentes coincidentes del inventario y retirar sus stats
@@ -125,6 +146,9 @@ export default class ShopSystem {
     if (s.stackRateBonus && this.scene.momentum)
       this.scene.momentum._stackRateBonus = Math.max(0, (this.scene.momentum._stackRateBonus || 0) + sign * s.stackRateBonus);
     if (s.derapeReduction) p._derapeReduction = Math.max(0, (p._derapeReduction || 0) + sign * s.derapeReduction);
+    if (s.creditPerSec && this.scene?.rewardSystem) {
+      this.scene.rewardSystem._creditPerSecBonus = Math.max(0, (this.scene.rewardSystem._creditPerSecBonus || 0) + sign * s.creditPerSec);
+    }
   }
 
   _applyPassiveStats(item) {
@@ -137,6 +161,9 @@ export default class ShopSystem {
     if (s.stackRateReduction && this.scene.momentum) this.scene.momentum._stackRateMalus = ((this.scene.momentum._stackRateMalus) || 0) + s.stackRateReduction;
     if (s.derapeReduction)   p._derapeReduction = (p._derapeReduction || 0) + s.derapeReduction;
     if (s.controlReduction)  p._controlReduction = (p._controlReduction || 0) + s.controlReduction;
+    if (s.creditPerSec && this.scene?.rewardSystem) {
+      this.scene.rewardSystem._creditPerSecBonus = (this.scene.rewardSystem._creditPerSecBonus || 0) + s.creditPerSec;
+    }
   }
 
   _removePassiveStats(item) {
@@ -149,6 +176,58 @@ export default class ShopSystem {
     if (s.stackRateReduction && this.scene.momentum)this.scene.momentum._stackRateMalus  = Math.max(0, (this.scene.momentum._stackRateMalus  || 0) - s.stackRateReduction);
     if (s.derapeReduction)   p._derapeReduction  = Math.max(0, (p._derapeReduction  || 0) - s.derapeReduction);
     if (s.controlReduction)  p._controlReduction = Math.max(0, (p._controlReduction || 0) - s.controlReduction);
+    if (s.creditPerSec && this.scene?.rewardSystem) {
+      this.scene.rewardSystem._creditPerSecBonus = Math.max(0, (this.scene.rewardSystem._creditPerSecBonus || 0) - s.creditPerSec);
+    }
+  }
+
+  // ─── Servicios de tienda ─────────────────────────────────────
+
+  /** Re-Roll: Replace shop stock with 1 random item never seen in this shop. */
+  rerollShop(shopId, credits) {
+    if (credits < REROLL_COST) return { ok: false, msg: 'Créditos insuficientes' };
+    if (!this.shopStocks[shopId]) return { ok: false, msg: 'Tienda no encontrada' };
+
+    // Collect items never seen in this shop
+    const seen = this._shopHistory[shopId] || [];
+    const allItemIds = Object.keys(ITEMS);
+    const candidates = allItemIds.filter(id => !seen.includes(id));
+
+    if (candidates.length === 0) return { ok: false, msg: 'Ya viste todos los items en esta tienda' };
+
+    const picked = candidates[Math.floor(Math.random() * candidates.length)];
+
+    // Replace stock with just this one item
+    this.shopStocks[shopId] = [picked];
+    if (!this._shopHistory[shopId]) this._shopHistory[shopId] = [];
+    this._shopHistory[shopId].push(picked);
+
+    return { ok: true, cost: REROLL_COST, item: ITEMS[picked] };
+  }
+
+  /** Keep Going: Restore HP and add time to the timer. Cost increases each use. */
+  getKeepGoingCost() {
+    return KEEPGOING_BASE + this._keepGoingUses * KEEPGOING_INCR;
+  }
+
+  keepGoing(credits) {
+    const cost = this.getKeepGoingCost();
+    if (credits < cost) return { ok: false, msg: 'Créditos insuficientes' };
+
+    this._keepGoingUses++;
+
+    // Restore HP
+    const player = this.scene?.player;
+    if (player?.health) {
+      player.health.hp = Math.min(player.health.maxHp, player.health.hp + KEEPGOING_HP);
+    }
+
+    // Add time
+    if (this.scene) {
+      this.scene.timeRemaining += KEEPGOING_TIME_SEC;
+    }
+
+    return { ok: true, cost, hpRestored: KEEPGOING_HP, timeAdded: KEEPGOING_TIME_SEC };
   }
 
   // ─── Reset ───────────────────────────────────────────────────
@@ -156,5 +235,7 @@ export default class ShopSystem {
     this.components    = [];
     this.equippedItems = [];
     this.shopStocks    = {};
+    this._shopHistory   = {};
+    this._keepGoingUses = 0;
   }
 }

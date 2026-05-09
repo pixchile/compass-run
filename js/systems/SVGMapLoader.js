@@ -30,11 +30,12 @@ export default class SVGMapLoader {
     return this._VALID_PREFIXES.some(p => name.startsWith(p));
   }
 
-  /** Collect cumulative transform from element and all ancestors. */
-  getCumulativeTransform(element) {
+  /** Collect cumulative transform from element up to (but excluding) stopElement. */
+  getCumulativeTransform(element, stopElement = null) {
     const transforms = [];
     let current = element;
     while (current && current.getAttribute) {
+      if (current === stopElement) break;
       const t = current.getAttribute('transform');
       if (t) transforms.unshift(t);
       if (current.tagName && current.tagName.toLowerCase() === 'svg') break;
@@ -72,7 +73,7 @@ export default class SVGMapLoader {
     geo.vertices = vertices;
   }
 
-  /** Gets the layer identifier, walking up ancestors. Single traversal with fallback. */
+  /** Gets the layer identifier and the element that bears it, walking up ancestors. */
   getLayerId(element) {
     const INKSCAPE_NS = 'http://www.inkscape.org/namespaces/inkscape';
 
@@ -85,26 +86,27 @@ export default class SVGMapLoader {
     };
 
     let fallback = '';
+    let fallbackEl = null;
     let current = element;
     while (current && current.getAttribute) {
       const label = getLabel(current);
       if (label) {
-        if (this._validPrefix(label)) return label;
-        if (!fallback) fallback = label;
+        if (this._validPrefix(label)) return { id: label, element: current };
+        if (!fallback) { fallback = label; fallbackEl = current; }
       }
 
       const id = current.getAttribute('id');
       if (id) {
         const idLower = id.toLowerCase();
-        if (this._validPrefix(idLower)) return idLower;
-        if (!fallback) fallback = idLower;
+        if (this._validPrefix(idLower)) return { id: idLower, element: current };
+        if (!fallback) { fallback = idLower; fallbackEl = current; }
       }
 
       if (current.tagName && current.tagName.toLowerCase() === 'svg') break;
       current = current.parentElement;
     }
 
-    return fallback;
+    return fallback ? { id: fallback, element: fallbackEl } : { id: '', element: null };
   }
 
   parseSVG(svgText, mapName) {
@@ -131,28 +133,35 @@ export default class SVGMapLoader {
     const shapes = doc.querySelectorAll('rect, circle, polygon, path, polyline, line');
 
     shapes.forEach(shape => {
-      const layerId = this.getLayerId(shape);
-      if (!layerId) return;
+      const layer = this.getLayerId(shape);
+      if (!layer.id) return;
 
       let type = 'wall';
-      if (layerId.startsWith('wall'))           type = 'wall';
-      else if (layerId.startsWith('pit'))       type = 'shop';
-      else if (layerId.startsWith('shop'))      type = 'shop';
-      else if (layerId.startsWith('trap'))      type = 'trap';
-      else if (layerId.startsWith('damage'))    type = 'damage_zone';
-      else if (layerId.startsWith('void'))      type = 'void';
-      else if (layerId.startsWith('trigger'))   type = 'trigger';
-      else if (layerId.startsWith('slow'))      type = 'slow_zone';
+      if (layer.id.startsWith('wall'))           type = 'wall';
+      else if (layer.id.startsWith('pit'))       type = 'shop';
+      else if (layer.id.startsWith('shop'))      type = 'shop';
+      else if (layer.id.startsWith('trap'))      type = 'trap';
+      else if (layer.id.startsWith('damage'))    type = 'damage_zone';
+      else if (layer.id.startsWith('void'))      type = 'void';
+      else if (layer.id.startsWith('trigger'))   type = 'trigger';
+      else if (layer.id.startsWith('slow'))      type = 'slow_zone';
 
-      const geometry = this.extractGeometry(shape);
+      // If the shape itself has a transform, the layer-bearing element's transform
+      // is Inkscape editing noise (e.g. accidental rotate). Exclude it.
+      // If the shape has no transform, the layer element's transform is primary positioning.
+      const shapeHasOwnTransform = shape.hasAttribute('transform');
+      const layerEl = shapeHasOwnTransform ? layer.element : null;
+      const geometry = this.extractGeometry(shape, layerEl);
       if (!geometry) return;
 
-      const tags = layerId.split('_');
+      const tags = layer.id.split('_');
       const color = this.extractColor(shape);
       const entity = { type, tags, geometry, color };
       this.extractThresholds(entity);
       this.categorizeEntity(entity, mapData);
     });
+
+    this._validateZones(mapData);
 
     return mapData;
   }
@@ -264,11 +273,11 @@ export default class SVGMapLoader {
     return '#ffffff';
   }
 
-  extractGeometry(shape) {
+  extractGeometry(shape, layerElement = null) {
     const tagName = shape.tagName.toLowerCase();
     let thickness = shape.getAttribute('stroke-width') || shape.style.strokeWidth || 2;
     thickness = parseFloat(thickness);
-    const transform = this.getCumulativeTransform(shape);
+    const transform = this.getCumulativeTransform(shape, layerElement);
 
     if (tagName === 'rect') {
       return {
@@ -365,6 +374,63 @@ export default class SVGMapLoader {
       }
 
       mapData.zones.push(entity);
+    }
+  }
+
+  _validateZones(mapData) {
+    const zones = mapData.zones;
+    if (zones.length === 0) return;
+
+    const before = zones.length;
+
+    // Filter out degenerate zones (bbox too small to be intentional)
+    for (let i = zones.length - 1; i >= 0; i--) {
+      const geo = zones[i].geometry;
+      const bb = geo?.bbox;
+      if (bb && (isNaN(bb.w) || isNaN(bb.h) || bb.w < 2 || bb.h < 2)) {
+        console.warn(`SVGMapLoader: removed degenerate zone "${zones[i].tags?.join('_')}" (bbox ${bb.w.toFixed(1)}x${bb.h.toFixed(1)})`);
+        zones.splice(i, 1);
+      }
+    }
+
+    // Detect stacked zones (multiple zones of same type with nearly identical bbox).
+    // Classic symptom of Inkscape stripping transforms: all copies collapse to origin.
+    const stacked = new Map();
+    for (let i = 0; i < zones.length; i++) {
+      const bb = zones[i].geometry?.bbox;
+      if (!bb) continue;
+      const key = `${zones[i].type}|${bb.x.toFixed(0)}|${bb.y.toFixed(0)}|${bb.w.toFixed(0)}|${bb.h.toFixed(0)}`;
+      if (!stacked.has(key)) {
+        stacked.set(key, []);
+      }
+      stacked.get(key).push(i);
+    }
+
+    for (const [key, indices] of stacked) {
+      if (indices.length > 1) {
+        const first = zones[indices[0]];
+        console.warn(
+          `SVGMapLoader: ${indices.length} "${first.type}" zones stacked at same bbox (${first.geometry.bbox.x.toFixed(0)},${first.geometry.bbox.y.toFixed(0)}). ` +
+          `Keeping only first — likely Inkscape stripped transforms on the others. Zone tags: ${
+            indices.map(i => zones[i].tags?.join('_')).join(', ')
+          }`
+        );
+        for (let i = indices.length - 1; i >= 1; i--) {
+          zones.splice(indices[i], 1);
+        }
+      }
+    }
+
+    // Warn if any zone bbox origin is near (0,0) — smells like a dropped transform
+    for (const zone of zones) {
+      const bb = zone.geometry?.bbox;
+      if (bb && bb.x < 5 && bb.y < 5) {
+        console.warn(`SVGMapLoader: zone "${zone.tags?.join('_')}" bbox near origin (${bb.x.toFixed(1)},${bb.y.toFixed(1)}) — transform may be missing`);
+      }
+    }
+
+    if (zones.length !== before) {
+      console.log(`SVGMapLoader: zone validation removed ${before - zones.length} zone(s), ${zones.length} remaining`);
     }
   }
 }

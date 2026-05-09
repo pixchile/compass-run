@@ -113,6 +113,9 @@ export default class StageEditor extends Phaser.Scene {
           <button class="se-btn se-btn-save" id="se-save">💾 Guardar Stage</button>
           <button class="se-btn se-btn-load" id="se-load-stage">📂 Cargar Stage</button>
           <button class="se-btn se-btn-delete" id="se-delete-stage" style="background:#552222;color:#ff8888;">🗑 Borrar Stage</button>
+          <button class="se-btn se-btn-export" id="se-export">📤 Exportar</button>
+          <button class="se-btn se-btn-import" id="se-import">📥 Importar</button>
+          <input type="file" id="se-import-file" accept=".json" style="display:none">
           <button class="se-btn se-btn-exit" id="se-exit">✕ Salir</button>
         </div>
       </div>
@@ -172,6 +175,10 @@ export default class StageEditor extends Phaser.Scene {
       .se-btn-exit { border-color:#ff4444; color:#ff4444; }
       .se-btn-exit:hover { background:rgba(255,68,68,.08); }
       .se-btn-spawner { border-color:#ffaa22; color:#ffaa22; }
+      .se-btn-export { border-color:#44ff88; color:#44ff88; }
+      .se-btn-export:hover { background:rgba(68,255,136,.08); }
+      .se-btn-import { border-color:#ffaa22; color:#ffaa22; }
+      .se-btn-import:hover { background:rgba(255,170,34,.08); }
 
       /* Lista de tipos de enemigo */
       #se-type-list { display:flex; flex-direction:column; gap:4px; margin-top:6px; }
@@ -452,6 +459,9 @@ export default class StageEditor extends Phaser.Scene {
     document.getElementById('se-save')?.addEventListener('click', () => this._save());
     document.getElementById('se-load-stage')?.addEventListener('click', () => this._loadStage());
     document.getElementById('se-delete-stage')?.addEventListener('click', () => this._deleteStage());
+    document.getElementById('se-export')?.addEventListener('click', () => this._exportStage());
+    document.getElementById('se-import')?.addEventListener('click', () => document.getElementById('se-import-file').click());
+    document.getElementById('se-import-file')?.addEventListener('change', (ev) => this._importStage(ev));
     document.getElementById('se-exit')?.addEventListener('click', () => this.scene.start('MainMenu'));
 
     // Línea de tiempo — click y drag para mover el cursor
@@ -788,6 +798,62 @@ export default class StageEditor extends Phaser.Scene {
     all.splice(idx, 1);
     localStorage.setItem('cr_stages', JSON.stringify(all));
     this._toast(`Stage "${name}" borrado`, 'ok');
+  }
+
+  _exportStage() {
+    const stage = {
+      name:         this.stageName,
+      svgName:      this.svgName || null,
+      svgContent:   this.svgContent || null,
+      version:      4,
+      timeLimit:    this.timeLimit,
+      enemies:      this.enemies,
+      spawners:     this.spawners,
+      density: {
+        maxBase:    this.maxBase,
+        maxPerMin:  this.maxPerMin,
+        minBase:    this.minBase,
+        minPerMin:  this.minPerMin,
+        fillTypes:  this.fillTypes,
+      }
+    };
+    const blob = new Blob([JSON.stringify(stage, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${this.stageName}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    this._toast(`Stage "${this.stageName}" exportado`, 'ok');
+  }
+
+  _importStage(ev) {
+    const file = ev.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const stage = JSON.parse(e.target.result);
+        if (!stage.name || !stage.svgContent) {
+          this._toast('Archivo inválido: falta name o svgContent', 'err');
+          return;
+        }
+        const all = this._getAllStages();
+        const idx = all.findIndex(s => s.name === stage.name);
+        if (idx !== -1) {
+          if (!confirm(`El stage "${stage.name}" ya existe. ¿Sobrescribir?`)) return;
+          all[idx] = stage;
+        } else {
+          all.push(stage);
+        }
+        localStorage.setItem('cr_stages', JSON.stringify(all));
+        this._toast(`Stage "${stage.name}" importado`, 'ok');
+      } catch {
+        this._toast('Error al leer el archivo JSON', 'err');
+      }
+    };
+    reader.readAsText(file);
+    ev.target.value = '';
   }
 
   _loadStage() {

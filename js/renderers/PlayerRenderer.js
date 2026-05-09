@@ -71,26 +71,44 @@ export default class PlayerRenderer {
     const r = 12 * pScale;
     const a = player.facing;
     const fc = player.isStunned ? 0xff4422 : (player.dashing ? 0xffffff : col);
-    
+
     // OPTIMIZACIÓN: Solo 2 llamadas trigonométricas en lugar de 6.
     const cosA = Math.cos(a);
     const sinA = Math.sin(a);
-    
+
     // Identidad de suma/resta de ángulos: cos(A ± B) y sin(A ± B)
     const cosPlus  = cosA * COS_2_2 - sinA * SIN_2_2;
     const sinPlus  = sinA * COS_2_2 + cosA * SIN_2_2;
     const cosMinus = cosA * COS_2_2 + sinA * SIN_2_2;
     const sinMinus = sinA * COS_2_2 - cosA * SIN_2_2;
-    
-    graphics.fillStyle(fc, 1);
-    graphics.fillTriangle(
-      player.px + cosA * r * 1.3, drawY + sinA * r * 1.3,
-      player.px + cosPlus * r,    drawY + sinPlus * r,
-      player.px + cosMinus * r,   drawY + sinMinus * r
-    );
-    
-    // Ojo/punto central
-    graphics.fillStyle(0xffffff, 0.8);
-    graphics.fillCircle(player.px, drawY, 3.5);
+
+    // GBA Acrobatic: undetectable visual — black body with white outline
+    if (player._undetectable) {
+      graphics.fillStyle(0x000000, 1);
+      graphics.fillTriangle(
+        player.px + cosA * r * 1.3, drawY + sinA * r * 1.3,
+        player.px + cosPlus * r,    drawY + sinPlus * r,
+        player.px + cosMinus * r,   drawY + sinMinus * r
+      );
+      graphics.lineStyle(2, 0xffffff, 0.9);
+      graphics.strokeTriangle(
+        player.px + cosA * r * 1.3, drawY + sinA * r * 1.3,
+        player.px + cosPlus * r,    drawY + sinPlus * r,
+        player.px + cosMinus * r,   drawY + sinMinus * r
+      );
+      graphics.fillStyle(0xffffff, 0.9);
+      graphics.fillCircle(player.px, drawY, 3);
+    } else {
+      graphics.fillStyle(fc, 1);
+      graphics.fillTriangle(
+        player.px + cosA * r * 1.3, drawY + sinA * r * 1.3,
+        player.px + cosPlus * r,    drawY + sinPlus * r,
+        player.px + cosMinus * r,   drawY + sinMinus * r
+      );
+
+      // Ojo/punto central
+      graphics.fillStyle(0xffffff, 0.8);
+      graphics.fillCircle(player.px, drawY, 3.5);
+    }
   }
 }

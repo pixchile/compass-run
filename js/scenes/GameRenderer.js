@@ -191,6 +191,8 @@ export default class GameRenderer {
     this.drawSlamEffects();
     this.drawBounceHighlights(player, this.gameScene.enemyManager.getEnemies(), time);
     this.drawSandKingIndicator(player);
+    this.gameScene.itemEffects?.renderVampireOrbs(g);
+    this.gameScene.itemEffects?.renderEventHorizons(g);
 
     // Brújula nueva: pasar compassSystem
     this.compass.render(g, player, compassSystem, this.camera);

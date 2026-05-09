@@ -24,13 +24,14 @@ export default class CombatSystem {
   processPlayerInteractions(player, delta, now, momentumSystem) {
     const fx = this.manager.scene?.itemEffects;
 
-    if (player.dashing && !this.wasDashing) {
+    const dashJustStarted = player.dashing && !this.wasDashing;
+    if (dashJustStarted) {
       this.damagedThisDash.clear();
-      if (fx) fx._cadHealedThisDash = false;
+      if (fx) { fx.lockGGGForAttack(); }
     }
 
     // BBC: si el jugador aterrizó (jumping pasó de true a false) sin rebotar → resetear cadena
-    const wasJumping = this.wasDashingJumping ?? false; // reutilizamos slot
+    const wasJumping = this.wasDashingJumping ?? false;
     const isJumping  = player.jumping;
     if (wasJumping && !isJumping && fx) fx.onPlayerLanded();
     this.wasDashingJumping = isJumping;
@@ -38,6 +39,11 @@ export default class CombatSystem {
     this.wasDashing = player.dashing;
 
     const attackPayload = player.getCurrentAttackPayload(momentumSystem.level);
+
+    // AAG: One-Two — record base damage on dash start
+    if (dashJustStarted && attackPayload) {
+      fx?.onDashStarted(attackPayload.baseDamage);
+    }
     const enemies = this.manager.enemies;
     const auraEmitters = enemies.filter(e => e.invulnerableAura && e.hp > 0);
 
@@ -51,12 +57,8 @@ export default class CombatSystem {
         fx?.onEnemyDied(enemy, this.manager);
         // BBB: matar en Modo Demonio reinicia duración
         fx?.onEnemyKilledInDemon();
-        // CAD: vampiro también cura al matar con dash
-        if (player.dashing) fx?.onDashHit(player, momentumSystem);
         this.manager.killEnemy(i, enemy, attackPayload?.type || 'any');
       } else if (attackPayload && player.dashing && inAttackRange) {
-        // CAD: vampiro — recuperar HP al golpear con dash
-        fx?.onDashHit(player, momentumSystem);
         // AAB: intentar agarrar al primer enemigo golpeado
         fx?.tryGrab(enemy, player);
       }
@@ -88,9 +90,10 @@ export default class CombatSystem {
         return false;
     }
 
-    // BBC: Stick — jugador salta sobre un enemigo y se pega
+    // BBC: Stick — jugador salta sobre un enemigo y se pega (30px grace)
     const fx2 = this.manager.scene?.itemEffects;
-    if (fx2?.has('BBC') && player.jumping && isColliding && !player._stickState) {
+    const bbcDist = distToPlayer < (enemy.radius || 12) + playerRadius + 30;
+    if (fx2?.has('BBC') && player.jumping && bbcDist && !player._stickState) {
       const result = fx2.onStickEnemy(player, enemy, now, momentumSystem);
       if (result) return false; // stick exitoso, sin danio
     }
@@ -110,24 +113,32 @@ export default class CombatSystem {
   }
 
   _damageEnemy(enemy, type, damage, radius, now) {
-    if (damage > 0) this.scene?.compass?.recordHitDamage(damage);
+    // AAG: One-Two — bonus damage on first enemy hit during bonus dash
+    const aagBonus = (type === 'dash' || type === 'aerialDash')
+      ? (this.scene?.itemEffects?.consumeAAGBonus() || 0) : 0;
+    const totalDamage = damage + aagBonus;
+
+    if (totalDamage > 0) this.scene?.compass?.recordHitDamage(totalDamage);
     const hpBefore = enemy.hp;
     let died;
     if (typeof enemy.receiveDamage === 'function') {
-        died = enemy.receiveDamage({ type, baseDamage: damage, radius, now });
+        died = enemy.receiveDamage({ type, baseDamage: totalDamage, radius, now });
     } else {
-        enemy.hp = (enemy.hp || 1) - damage;
+        enemy.hp = (enemy.hp || 1) - totalDamage;
         died = enemy.hp <= 0;
     }
     const actualDamage = hpBefore - enemy.hp;
     if (actualDamage > 0) {
         const colorKey = (type === 'slam' || type === 'slam3') ? 'slamDamage' : 'enemyDamage';
         this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, actualDamage, colorKey);
+        const p = this.scene?.player;
+        if (p) this.scene?.itemEffects?.applyGGGCreditEffect(p.px, p.py);
     }
     return died;
   }
 
   _applyDamageToPlayer(enemy, player, now) {
+      if (player._undetectable) return;
       if (!enemy.state) enemy.state = {};
       const cooldown = enemy.customConfig?.ambitious?.attack?.cooldown ?? 100;
       if (now - (enemy.state.lastAttackTime || 0) < cooldown) return;
@@ -163,6 +174,7 @@ export default class CombatSystem {
     const { x, y, isHighSpeed, applyKnockback } = slamData;
     const fx = this.manager.scene?.itemEffects;
     const player = this.manager.scene?.player;
+    fx?.lockGGGForAttack();
     const isMomentum3 = (momentum?.level === 3);
 
     const hasSandKing = fx?.has('DDC');
@@ -232,6 +244,7 @@ export default class CombatSystem {
   }
 
   checkSolidCollision(player, playerRadius = 12) {
+    if (player._undetectable) return false;
     let collided = false;
     for (const enemy of this.manager.enemies) {
       if (enemy.isPhantom) continue;

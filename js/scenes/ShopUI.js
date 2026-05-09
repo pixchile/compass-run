@@ -1,6 +1,7 @@
 // js/scenes/ShopUI.js
 
 import { COMPONENTS, ITEMS, COMPONENT_PRICE, getItemPrice } from '../systems/ItemSystem.js';
+import { REROLL_COST, KEEPGOING_HP, KEEPGOING_TIME_SEC } from '../systems/ShopSystem.js';
 import { W, H } from '../constants.js';
 
 const PAD   = 32;
@@ -199,6 +200,38 @@ export default class ShopUI {
         });
         y += ROW_H - 10;
       });
+
+      // ── Servicios ──
+      y += 14;
+      this._addSectionLabel('─── Servicios ───', cx, y);
+      y += 22;
+
+      // Re-Roll
+      this._addRow({
+        label:  'Re-Roll',
+        sub:    `Reemplaza el stock con 1 item nuevo no visto en esta tienda`,
+        desc:   'Cambia todo el inventario de la tienda por 1 solo item que nunca haya aparecido aquí antes.',
+        price:  REROLL_COST,
+        color:  '#ff8844',
+        isBig:  false,
+        y,
+        onBuy:  () => this._reroll(),
+      });
+      y += ROW_H - 10;
+
+      // Keep Going
+      const kgCost = shop.getKeepGoingCost();
+      this._addRow({
+        label:  'Keep Going',
+        sub:    `+${KEEPGOING_HP} HP  ·  +${KEEPGOING_TIME_SEC}s  ·  ${kgCost} cr (sube +100 c/u)`,
+        desc:   `Restaura ${KEEPGOING_HP} HP y añade ${KEEPGOING_TIME_SEC}s al temporizador. El precio aumenta 100 cr con cada uso.`,
+        price:  kgCost,
+        color:  '#44dd88',
+        isBig:  false,
+        y,
+        onBuy:  () => this._keepGoing(),
+      });
+      y += ROW_H - 10;
 
       this._contentHeight = y - startY;
 
@@ -428,6 +461,32 @@ export default class ShopUI {
       this.scene.rewardSystem.credits += result.gain;
       this._toast(`+${result.gain} cr`);
       this._refresh();
+    }
+  }
+
+  _reroll() {
+    const shop = this.scene.shopSystem;
+    const cr   = this.scene.rewardSystem.credits;
+    const result = shop.rerollShop(this.shopId, cr);
+    if (result.ok) {
+      this.scene.rewardSystem.credits -= result.cost;
+      this._toast(`Re-Roll: ${result.item.name} [${result.item.id}]`);
+      this._refresh();
+    } else {
+      this._toast(result.msg, true);
+    }
+  }
+
+  _keepGoing() {
+    const shop = this.scene.shopSystem;
+    const cr   = this.scene.rewardSystem.credits;
+    const result = shop.keepGoing(cr);
+    if (result.ok) {
+      this.scene.rewardSystem.credits -= result.cost;
+      this._toast(`+${result.hpRestored} HP  ·  +${result.timeAdded}s  (${result.cost} cr)`);
+      this._refresh();
+    } else {
+      this._toast(result.msg, true);
     }
   }
 

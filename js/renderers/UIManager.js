@@ -162,11 +162,12 @@ export default class UIManager {
           break;
         }
         case 'DDD': {
+          const extraHp = player.health.maxHp - 100;
           if (fx.dddCD > 0) {
             overlayAlpha = 0.6;
-            labelText = `${Math.ceil(fx.dddCD / 1000)}`;
+            labelText = extraHp > 0 ? `+${extraHp} ${Math.ceil(fx.dddCD / 1000)}s` : `${Math.ceil(fx.dddCD / 1000)}s`;
           } else {
-            labelText = '✓';
+            labelText = extraHp > 0 ? `+${extraHp} ✓` : '✓';
           }
           break;
         }
@@ -198,7 +199,15 @@ export default class UIManager {
           break;
         }
         case 'CAD': {
-          labelText = fx.statCADHealed > 0 ? `+${fx.statCADHealed.toFixed(1)}` : '';
+          labelText = '';
+          break;
+        }
+        case 'CCG': {
+          labelText = `${fx.builderCharges}`;
+          break;
+        }
+        case 'CBG': {
+          labelText = '';
           break;
         }
         default: {
@@ -452,8 +461,6 @@ export default class UIManager {
             lines.push(`  Explosiones: ${fx.statAADExplosions}`);
           if (item.id === 'ADD' && fx.statADDMitigated > 0)
             lines.push(`  Daño mitigado: ${fx.statADDMitigated.toFixed(1)}`);
-          if (item.id === 'CAD' && fx.statCADHealed > 0)
-            lines.push(`  HP curado: ${fx.statCADHealed.toFixed(1)}`);
           if (item.id === 'DBB') {
             if (fx.dbbCooldown > 0)
               lines.push(`  CD: ${(fx.dbbCooldown / 1000).toFixed(1)}s`);

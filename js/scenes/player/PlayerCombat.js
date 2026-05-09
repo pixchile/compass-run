@@ -14,10 +14,13 @@ export default class PlayerCombat {
         this.slamCooldown = Math.max(0, this.slamCooldown - delta);
     }
 
-    performSlam(speed) {
+    performSlam(speed, skipCooldown = false) {
         this.preSlamSpeed = speed;
         const isHighSpeed = speed >= SLAM.HIGH_SPEED_THRESHOLD;
-        const canPayHealth = this.player.health.hp > SLAM.SELF_DAMAGE;
+        const slamSelfDmg = this.player.scene?.itemEffects?.has('ADD')
+            ? Math.floor(SLAM.SELF_DAMAGE * 0.6)
+            : SLAM.SELF_DAMAGE;
+        const canPayHealth = this.player.health.hp > slamSelfDmg;
         const applyKnockback = isHighSpeed && canPayHealth;
 
         // BBC: limpiar stick si se hace slam durante stick
@@ -28,7 +31,7 @@ export default class PlayerCombat {
             this.player._stickEnemy = null;
         }
 
-        if (applyKnockback) this.player.health.takeDamage(SLAM.SELF_DAMAGE);
+        if (applyKnockback) this.player.health.takeDamage(slamSelfDmg);
 
         // AAA: costo extra de 3 HP en slam
         const fx = this.player.scene?.itemEffects;
@@ -50,7 +53,7 @@ export default class PlayerCombat {
         this.player.vx = 0; this.player.vy = 0;
         this.player.jumping = false;
         this.hasSlammedThisJump = true;
-        this.slamCooldown = SLAM.COOLDOWN;
+        if (!skipCooldown) this.slamCooldown = SLAM.COOLDOWN;
     }
 
     getCurrentAttackPayload(momentumLevel) {
@@ -62,35 +65,38 @@ export default class PlayerCombat {
         const radiusMultiplier = 1 + (this.player.attackRadiusMultiplier || 0);
         const finalRadius = baseRadius * radiusMultiplier;
 
-        // Daño base según nivel, más el bonificador permanente
+        // Daño base según nivel, más bonificadores aditivos (compass, AAA, DBB)
         const baseDamageMult = ATTACK_DAMAGE_MULTIPLIERS[momentumLevel] || ATTACK_DAMAGE_MULTIPLIERS[1];
-        const bonusMult = this.player.damageMultiplierBonus || 0;
-        const totalDamageMult = baseDamageMult + bonusMult;
+        const compassBonus = this.player.damageMultiplierBonus || 0;
 
         const fx = this.player.scene?.itemEffects;
-        const aaaMult = (fx && (this.activeSlam || this.player.dashing)) ? fx.getAAAMultiplier(this.player) : 1;
-        const dbbMult = (fx && (this.activeSlam || this.player.dashing)) ? fx.getDashDamageMultiplier(this.player) : 1;
+        const isAttacking = this.activeSlam || this.player.dashing;
+        const aaaMult = (fx && isAttacking) ? fx.getAAAMultiplier(this.player) : 1;
+        const dbbBonus = (fx && isAttacking) ? (fx.getDashDamageMultiplier(this.player) - 1) : 0;
+        const totalDamageMult = (baseDamageMult + compassBonus + dbbBonus) * aaaMult;
+        const gggMult = (fx && isAttacking) ? (fx.getGGGMultiplier() || 1) : 1;
 
         if (this.activeSlam) {
             return {
                 type: this.activeSlam.isHighSpeed ? 'slam3' : 'slam',
-                baseDamage: this.activeSlam.speed * 0.1 * totalDamageMult * aaaMult * dbbMult,
+                baseDamage: this.activeSlam.speed * 0.1 * totalDamageMult * gggMult,
                 radius: finalRadius * 1.5,
                 now: now
             };
         }
 
         if (this.player.dashing) {
+            const dabMult = (fx?.has('DAB')) ? 1 + (this.player._dabBreaks || 0) * 0.1 : 1;
             return {
                 type: this.player.wasJumpingWhenDashed ? 'aerialDash' : 'dash',
-                baseDamage: this.player.dashInitialSpeed * 0.1 * totalDamageMult * aaaMult * dbbMult,
+                baseDamage: this.player.dashInitialSpeed * 0.1 * totalDamageMult * gggMult * dabMult,
                 radius: finalRadius,
                 now: now
             };
         }
 
         if (momentumLevel === 3) {
-            return { type: 'momentum3', baseDamage: currentSpeed * 0.1 * totalDamageMult, radius: finalRadius, now: now };
+            return { type: 'momentum3', baseDamage: currentSpeed * 0.1 * (baseDamageMult + compassBonus), radius: finalRadius, now: now };
         }
 
         return null;

@@ -79,6 +79,7 @@ export default class MainMenu extends Phaser.Scene {
     const options = [
       { label: '▶  JUGAR',             color: '#44ff88', action: () => this._buildStageSelect() },
       { label: '⚙  EDITOR DE STAGES',  color: '#4488ff', action: () => this.scene.start('StageEditor') },
+      { label: '📥  IMPORTAR STAGE',    color: '#ff8844', action: () => this._importStage() },
     ];
 
     options.forEach((opt, i) => {
@@ -164,6 +165,47 @@ export default class MainMenu extends Phaser.Scene {
       btn.setStyle({ fill: selected ? '#ffffff' : '#44ff88' });
       btn.setScale(selected ? 1.06 : 1.0);
     });
+  }
+
+  _importStage() {
+    let input = document.getElementById('cr-import-file');
+    if (!input) {
+      input = document.createElement('input');
+      input.id = 'cr-import-file';
+      input.type = 'file';
+      input.accept = '.json';
+      input.style.display = 'none';
+      input.addEventListener('change', (ev) => {
+        const file = ev.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const stage = JSON.parse(e.target.result);
+            if (!stage.name || !stage.svgContent) {
+              alert('Invalid file: missing name or svgContent');
+              return;
+            }
+            const saved = JSON.parse(localStorage.getItem('cr_stages') || '[]');
+            const idx = saved.findIndex(s => s.name === stage.name);
+            if (idx !== -1) {
+              if (!confirm(`Stage "${stage.name}" already exists. Overwrite?`)) return;
+              saved[idx] = stage;
+            } else {
+              saved.push(stage);
+            }
+            localStorage.setItem('cr_stages', JSON.stringify(saved));
+            alert(`Stage "${stage.name}" imported successfully!`);
+          } catch {
+            alert('Error reading JSON file');
+          }
+        };
+        reader.readAsText(file);
+        ev.target.value = '';
+      });
+      document.body.appendChild(input);
+    }
+    input.click();
   }
 
   _launchStage(stage) {

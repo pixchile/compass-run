@@ -76,8 +76,7 @@ export class WallJumpSystem {
         const ny = Math.sin(this.wallNormalAngle);
 
         if (moveDirActual.x === 0 && moveDirActual.y === 0) {
-            this._release();
-            return { success: true, vx: 0, vy: 0 };
+            return false;
         }
 
         const dot = moveDirActual.x * nx + moveDirActual.y * ny;

@@ -65,14 +65,14 @@ export const ATTACK_DAMAGE_MULTIPLIERS = {
 };
 
 export const SLAM = {
-    MIN_SPEED: 600,
-    HIGH_SPEED_THRESHOLD: 500,
-    DAMAGE: 20,
+    MIN_SPEED: 500,
+    HIGH_SPEED_THRESHOLD: 700,
+    DAMAGE: 60,
     RADIUS: 100,
     SANDKING_RADIUS_MULT: 2.2,
     SELF_DAMAGE: 10,
     KNOCKBACK_DIST: 100,
-    WALL_COLLISION_DAMAGE: 100,
+    WALL_COLLISION_DAMAGE: 200,
     COOLDOWN: 5000,
     EFFECT_DURATION: 200,
 };
@@ -120,7 +120,7 @@ export const COMPASS_SPEEDUP_RATE   = 0.10;   // 10% más rápido por minuto
 export const COMPASS_SPEEDUP_INTERVAL = 60000; // cada 60s
 export const COMPASS_SECONDARY_MULT = 2.0;    // secundaria cambia el doble de rápido
 
-// Ganancia: cada 100ms (10 ticks/segundo), unificado tierra/aire
+// Ganancia: cada 100ms (10 ticks/segundo)
 export const COMPASS_TICK_RATE = 100;
 
 // Umbral para secundaria (producto punto con cos(22.5°))
@@ -162,12 +162,12 @@ export const BUFF_COLORS = {
 // Valores por tick (primaria = 1x, secundaria = 2x)
 export const BUFF_VALUES = {
   heal:      { primary: 0.2, secondary: 0.4 },
-  credit:    { primary: 0.6,  secondary: 1.2 },
+  credit:    { primary: 0.5,  secondary: 1.0 },
   momentum:  { primary: 0.5,  secondary: 1 },
-  maxSpeed:  { primary: 0.15, secondary: 0.3 },
-  amplitude: { primary: 0.025, secondary: 0.5 },
-  timer:     { primary: 0.25,  secondary: 0.5  },
-  dashCd:    { primary: 0.2,  secondary: 0.4  },
+  maxSpeed:  { primary: 0.10, secondary: 0.20 },
+  amplitude: { primary: 0.02, secondary: 0.4 },
+  timer:     { primary: 0.2,  secondary: 0.4  },
+  dashCd:    { primary: 0.1,  secondary: 0.2  },
   hitboxAmplitude: { primary: 0.0005, secondary: 0.001 },
-  damageMult:      { primary: 0.0009, secondary: 0.0018 },
+  damageMult:      { primary: 0.001, secondary: 0.002 },
 };

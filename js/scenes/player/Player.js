@@ -29,6 +29,9 @@ export default class Player {
         this._stickEnemy = null;        // enemy reference while stuck
         this.attackRadiusMultiplier = 0;
         this.damageMultiplierBonus = 0;
+        this._addRebound = false;  // ADD: Amortiguador — rebote tras dash contra muro
+        this._dabBreaks = 0;      // DAB: Maestría — quiebres durante el dash
+        this._vampireSpeed = false; // CAD: Vampiro — +40% vel. cerca de orbe
         
         this.moveDir = { x: 0, y: 0 };
         this.trail = []; 
@@ -135,6 +138,7 @@ export default class Player {
             this.jumpT += delta;
             if (this.jumpT >= this.jumpDur) {
                 this.jumping = false; this.combat.activeSlam = null;
+                this._addRebound = false;
                 this.landFx = this.jumpLv >= 3 ? 420 : this.jumpLv >= 2 ? 210 : 0;
             }
         }
@@ -152,8 +156,9 @@ export default class Player {
                     this.jumpVx = this.vx; this.jumpVy = this.vy;
                     this.combat.hasSlammedThisJump = false; 
                 }
-            } else if (this.jumping && !this.combat.hasSlammedThisJump && this.combat.slamCooldown <= 0) {
-                if (currentSpeed >= SLAM.MIN_SPEED) this.combat.performSlam(currentSpeed);
+            } else if (this.jumping && !this.combat.hasSlammedThisJump && (this.combat.slamCooldown <= 0 || this._addRebound)) {
+                if (currentSpeed >= SLAM.MIN_SPEED) this.combat.performSlam(currentSpeed, this._addRebound);
+                this._addRebound = false;
             } else if (this.dashing && !this.jumping) {
                 this.jumping = true; this.jumpT = 0; this.jumpDur = JUMP_DUR[lv]; this.jumpHMax = JUMP_HMAX[lv]; this.jumpLv = lv;
                 this.jumpVx = this.vx; this.jumpVy = this.vy;
@@ -187,10 +192,18 @@ export default class Player {
             }
         }
 
-        if (this.input.isShiftJustPressed() && !this.dashing && !this.isStunned && !this.wallJump.wallStick) {
-            // No permitir dash aéreo si mantiene Espacio presionado
-            if (!this.holdingSpace) {
+        if (this.input.isShiftJustPressed() && !this.dashing && !this.isStunned) {
+            if (this.wallJump.wallStick) {
+                this.wallJump._release();
+            } else if (!this.holdingSpace) {
                 const fx = this.scene?.itemEffects;
+
+                // CCG Builder: Shift while stationary → place wall
+                const kb = this.input.kb;
+                const isStationary = !kb.W.isDown && !kb.A.isDown && !kb.S.isDown && !kb.D.isDown;
+                if (isStationary && fx?.tryPlaceBuilderWall(this)) {
+                    // wall placed, skip dash
+                } else {
 
                 // Calcular dirección y velocidad del dash (independiente de si hay agarre)
                 const dashDirX  = currentSpeed > 8 ? this.vx / currentSpeed : Math.cos(this.facing);
@@ -202,12 +215,14 @@ export default class Player {
                 if (fx?.aabGrabbed && fx.onDashWhileGrabbing(this, dashDirX, dashDirY, dashSpeed)) {
                     // lanzamiento ejecutado
 
-                } else if (!fx?.aabGrabbed && this.dashCD === 0) {
-                    // dash normal
+                } else if (!fx?.aabGrabbed && (this.jumping || this.dashCD === 0)) {
+                    // dash: aéreo sin CD, terrestre requiere CD
                     const dashCDValue = this._dashCDBase || DASH_CD;
-                    this.dashing = true; this.dashT = 0; this.dashCD = dashCDValue;
+                    this.dashing = true; this.dashT = 0;
+                    if (!this.jumping) this.dashCD = dashCDValue;
                     this.wasJumpingWhenDashed = this.jumping;
                     this.dashInitialSpeed = dashSpeed;
+                    this._dabBreaks = 0;
 
                     // AAA: Berserker — coste de HP
                     if (fx?.has('AAA')) {
@@ -235,6 +250,7 @@ export default class Player {
                     // BBB: dash aéreo activa Modo Demonio
                     if (this.jumping) fx?.onAerialDash(this, this.scene.momentum);
                 }
+                } // end else (builder skip)
             }
         }
 
@@ -242,11 +258,26 @@ export default class Player {
         if (!this.isStunned && !this.wallJump.wallStick) {
             if (this.jumping) {
                 const steer = moving ? 0.04 : 0;
-                const maxSpd = this._demonMode ? 1000 : momentum.getEffectiveMaxSpeed(this.jumpLv);
+                let maxSpd = this._demonMode ? 1000 : momentum.getEffectiveMaxSpeed(this.jumpLv);
+                if (this._vampireSpeed) maxSpd *= 1.4;
                 this.vx = this.jumpVx + (moving ? this.moveDir.x * maxSpd * steer : 0);
                 this.vy = this.jumpVy + (moving ? this.moveDir.y * maxSpd * steer : 0);
                 if (moving) this.facing = Math.atan2(this.moveDir.y, this.moveDir.x);
             } else if (this.dashing) {
+                // DAB: Maestría — cambio de dirección instantáneo durante el dash
+                const fx = this.scene.itemEffects;
+                if (fx?.has('DAB') && moving) {
+                    const spd = Math.hypot(this.dashVx, this.dashVy);
+                    const curDirX = this.dashVx / spd;
+                    const curDirY = this.dashVy / spd;
+                    const dot = this.moveDir.x * curDirX + this.moveDir.y * curDirY;
+                    if (dot < 0.9) { // ~25° de diferencia
+                        this.dashVx = this.moveDir.x * spd;
+                        this.dashVy = this.moveDir.y * spd;
+                        this._dabBreaks++;
+                        this.facing = Math.atan2(this.moveDir.y, this.moveDir.x);
+                    }
+                }
                 const ease = 1 - Math.pow(this.dashT / DASH_DUR, 2);
                 this.vx = this.dashVx * ease; this.vy = this.dashVy * ease;
             } else if (this._stickState && this._stickEnemy) {
@@ -268,25 +299,7 @@ export default class Player {
                     af = 0.35 + 0.65 * Math.pow((dot + 1) / 2, 1.6);
                 }
 
-                // DAB: giro instantáneo al virar hacia la brújula primaria (la lenta)
-                // Condición: el INPUT apunta a la brújula primaria, independiente de la vel. actual
                 const fx = this.scene.itemEffects;
-                if (fx?.has('DAB') && moving) {
-                    const compass = this.scene?.compass;
-                    const pd = compass?.primaryDir;
-                    if (pd) {
-                        let inputAngle = Math.atan2(this.moveDir.y, this.moveDir.x);
-                        let pdAngle    = Math.atan2(pd.dy, pd.dx);
-                        let diff = Math.abs(inputAngle - pdAngle);
-                        if (diff > Math.PI) diff = Math.PI * 2 - diff;
-                        if (diff * (180 / Math.PI) <= 22.5) {
-                            // Ignorar derrape: snap de velocidad a la dirección de input
-                            this.vx = this.moveDir.x * currentSpeed;
-                            this.vy = this.moveDir.y * currentSpeed;
-                            af = 1; // neutralizar derrape para el lerp posterior
-                        }
-                    }
-                }
 
                 // Control: derapeReduction mejora respuesta, controlReduction la empeora
                 const derapeBonus  = 1 + (this._derapeReduction || 0);
@@ -311,7 +324,8 @@ export default class Player {
                 const finalMult = slowMult;
 
                 if (moving) {
-                    const effSpd = this._demonMode ? 1000 : momentum.getEffectiveMaxSpeed(lv);
+                    let effSpd = this._demonMode ? 1000 : momentum.getEffectiveMaxSpeed(lv);
+                    if (this._vampireSpeed) effSpd *= 1.4;
                     this.vx += (this.moveDir.x * effSpd * finalMult - this.vx) * tk;
                     this.vy += (this.moveDir.y * effSpd * finalMult - this.vy) * tk;
                     this.facing = Math.atan2(this.moveDir.y, this.moveDir.x);

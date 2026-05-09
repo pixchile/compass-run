@@ -1,463 +1,315 @@
 // js/systems/ItemEffects.js
-// Efectos activos de items terminados.
-// Cada función recibe (scene, player, momentum, enemyManager, extra)
+// Thin registry that delegates to individual effect classes in effects/
 
-import { WALL_JUMP, SLAM } from '../constants.js';
+import AAAEffect from './effects/AAA_Berserker.js';
+import AABEffect from './effects/AAB_Grapple.js';
+import AADEffect from './effects/AAD_Explosive.js';
+import ABCEffect from './effects/ABC_ActiveCompass.js';
+import ACCEffect from './effects/ACC_Propulsor.js';
+import ADDEffect from './effects/ADD_ShockAbsorber.js';
+import BBBEffect from './effects/BBB_DemonMode.js';
+import BBCEffect from './effects/BBC_Rebound.js';
+import BCDEffect from './effects/BCD_Equilibrium.js';
+import CADEffect from './effects/CAD_Vampire.js';
+import CBGEffect from './effects/CBG_EventHorizon.js';
+import CCGEffect from './effects/CCG_Builder.js';
+import CCBEffect from './effects/CCB_Accelerator.js';
+import CCCEffect from './effects/CCC_Incendiary.js';
+import DBBEffect from './effects/DBB_Patience.js';
+import DDCEffect from './effects/DDC_SandKing.js';
+import DDDEffect from './effects/DDD_Fenix.js';
+import GGGEffect from './effects/GGG_Flipcoin.js';
+import GGCEffect from './effects/GGC_Auspice.js';
+import GGDEffect from './effects/GGD_Clockmaker.js';
+import GBAEffect from './effects/GBA_Acrobatic.js';
+import AAGEffect from './effects/AAG_OneTwo.js';
 
 export default class ItemEffects {
   constructor(scene) {
     this.scene = scene;
 
-    // ── BBB: Modo Demonio ────────────────────────────────────
-    this.bbbCooldown   = 0;       // ms hasta próxima disponibilidad
-    this.bbbReady      = false;   // próximo dash aéreo activa demonio
-    this.bbbActive     = false;
-    this.bbbTimer      = 0;
-
-    // ── BBC: Rebote ──────────────────────────────────────────
-    this.bbcBounces     = 0;   // cadena actual de rebotes
-    this.bbcActive      = false; // si estamos en cadena de rebote
-    this._bbcLastJumped = null; // enemigo del que se acaba de saltar (evitar re-stick)
-
-    // ── DBB: Paciencia ───────────────────────────────────────
-    this.dbbIdleTimer   = 0;
-    this.dbbBonus       = 0;       // % acumulado (0–999)
-    this.dbbReady       = false;
-    this.dbbCooldown    = 0;       // ms restantes antes de volver a acumular
-    this.dbbLastMult    = 1;       // último multiplicador consumido (para HUD)
-    this._dbbActiveMult = 1;       // multiplicador cacheado para el dash/slam actual
-
-    // ── Estadísticas de items ────────────────────────────────
-    this.statAADExplosions  = 0;   // veces que AAD explotó
-    this.statADDMitigated   = 0;   // daño real mitigado por ADD
-    this.statCADHealed      = 0;   // HP real curado por CAD
-
-    // ── DDD: Fénix ───────────────────────────────────────────
-    this.dddCD       = 0;
-    this.dddDecaying = false;
-    this.dddPeakHp   = 100;
-
-    // ── AAB: Gancho ─────────────────────────────────────────
-    this.aabGrabbed    = null;    // referencia al enemigo agarrado
-    this.aabTimer      = 0;
-
-    // ── DAB: Maestría ───────────────────────────────────────
-    // Sin estado, se aplica en physics
+    this._aaa = new AAAEffect(scene);
+    this._aab = new AABEffect(scene);
+    this._aad = new AADEffect(scene);
+    this._abc = new ABCEffect(scene);
+    this._acc = new ACCEffect(scene);
+    this._add = new ADDEffect(scene);
+    this._bbb = new BBBEffect(scene);
+    this._bbc = new BBCEffect(scene);
+    this._bcd = new BCDEffect(scene);
+    this._cad = new CADEffect(scene);
+    this._cbg = new CBGEffect(scene);
+    this._ccg = new CCGEffect(scene);
+    this._ccb = new CCBEffect(scene);
+    this._ccc = new CCCEffect(scene);
+    this._dbb = new DBBEffect(scene);
+    this._ddc = new DDCEffect(scene);
+    this._ddd = new DDDEffect(scene);
+    this._ggg = new GGGEffect(scene);
+    this._ggc = new GGCEffect(scene);
+    this._ggd = new GGDEffect(scene);
+    this._gba = new GBAEffect(scene);
+    this._aag = new AAGEffect(scene);
   }
+
+  // ── Property proxies (external code reads these directly) ──────
+
+  // BBB
+  get bbbActive()   { return this._bbb.active; }
+  get bbbTimer()    { return this._bbb.timer; }
+  get bbbCooldown() { return this._bbb.cooldown; }
+
+  // BBC
+  get bbcActive()  { return this._bbc.active; }
+  get bbcBounces() { return this._bbc.bounces; }
+
+  // DBB
+  get dbbLastMult()  { return this._dbb.lastMult; }
+  get dbbCooldown()  { return this._dbb.cooldown; }
+  get dbbReady()     { return this._dbb.ready; }
+  get dbbBonus()     { return this._dbb.bonus; }
+  get dbbIdleTimer() { return this._dbb.idleTimer; }
+
+  // DDD
+  get dddCD() { return this._ddd.cd; }
+
+  // AAB
+  get aabGrabbed() { return this._aab.grabbed; }
+
+  // Stats (read + written externally)
+  get statAADExplosions()  { return this._aad.explosions; }
+  set statAADExplosions(v) { this._aad.explosions = v; }
+  get statADDMitigated()   { return this._add.mitigated; }
+  set statADDMitigated(v)  { this._add.mitigated = v; }
+
+  // ── Core ────────────────────────────────────────────────────────
 
   has(id) {
     return this.scene.shopSystem?.hasEffect(id) || false;
   }
 
-  // ─── Update general (llamado cada frame) ────────────────────
   update(delta, player, momentum, enemyManager) {
-    if (this.has('BBB')) this._updateBBB(delta, player, momentum);
-    // BBC no requiere update frame-a-frame
-    if (this.has('DBB')) this._updateDBB(delta, player, enemyManager);
-    if (this.has('DDD')) this._updateDDD(delta, player);
-    if (this.has('AAB')) this._updateAAB(delta, player);
-    if (this.has('CCB') && this.scene.rewardSystem) {
-      // Velocidad límite = créditos actuales (cap 3000)
-      const credits = this.scene.rewardSystem.credits;
-      const cap = Math.min(3000, credits);
-      momentum._maxSpeedOverride = cap;
-    }
+    if (this.has('BBB')) this._bbb.update(delta, player, momentum);
+    if (this.has('DBB')) this._dbb.update(delta, player);
+    if (this.has('DDD')) this._ddd.update(delta, player);
+    if (this.has('AAB')) this._aab.update(delta);
+    if (this.has('GGG')) this._ggg.update(delta);
+    if (this.has('CAD')) this._cad.update(delta, player);
+    if (this.has('CCB')) this._ccb.update(momentum);
+    if (this.has('GGC')) this._ggc.update();
+    if (this.has('GGD')) this._ggd.update(delta);
+    if (this.has('GBA')) this._gba.update(delta, player);
+    if (this.has('CBG')) this._cbg.update(delta);
   }
 
-  // ─── BBB: Modo Demonio ───────────────────────────────────────
-  _updateBBB(delta, player, momentum) {
-    this.bbbCooldown = Math.max(0, this.bbbCooldown - delta);
-    if (this.bbbCooldown <= 0 && !this.bbbReady && !this.bbbActive) {
-      this.bbbReady = true;
-    }
-    if (this.bbbActive) {
-      this.bbbTimer -= delta;
-      if (this.bbbTimer <= 0) this._deactivateDemon(player, momentum);
-    }
-  }
+  // ── BBB: Demon Mode ──────────────────────────────────────────────
 
   onAerialDash(player, momentum) {
-    if (!this.has('BBB') || !this.bbbReady) return;
-    this.bbbReady  = false;
-    this.bbbActive = true;
-    this.bbbTimer  = 2000;
-    this.bbbCooldown = 30000;
-    momentum._maxSpeedOverride = Math.max(momentum._maxSpeedOverride || 0, 1000);
-    player._demonMode = true;
+    if (this.has('BBB')) this._bbb.onAerialDash(player, momentum);
+    if (this.has('GBA')) this._gba.onAerialDash(player);
   }
 
   onEnemyKilledInDemon() {
-    if (this.bbbActive) this.bbbTimer = 2000; // reiniciar duración
+    if (this.has('BBB')) this._bbb.onEnemyKilledInDemon();
   }
 
-  _deactivateDemon(player, momentum) {
-    this.bbbActive = false;
-    player._demonMode = false;
-    if (momentum._maxSpeedOverride === 1000) momentum._maxSpeedOverride = null;
-  }
+  // ── BBC: Rebound ─────────────────────────────────────────────────
 
-  // ─── BBC: Rebote (Stick + Jump-off) ──────────────────────────
-  // Al saltar sobre un enemigo, el jugador se pega a el.
-  // Desde ahi, Space + direccion salta hacia otro enemigo.
-  // El danio se aplica al saltar, no al pegarse.
-
-  /**
-   * Jugador salto y colisiono con un enemigo — pegarse a el.
-   * Sin danio. Congela al enemigo. Inicia ventana de 1s para saltar.
-   */
   onStickEnemy(player, enemy, now, momentumSystem) {
     if (!this.has('BBC')) return false;
-
-    // No re-pegarse al enemigo del que se acaba de saltar
-    if (enemy === this._bbcLastJumped) return false;
-    this._bbcLastJumped = null;
-
-    // Snap al centro del enemigo, encima
-    player.px = enemy.x;
-    player.py = enemy.y - (enemy.radius || 12) - 8;
-    player.vx = 0; player.vy = 0;
-    player.jumping = false;
-    player.combat.hasSlammedThisJump = false;
-
-    player._stickState = true;
-    player._stickTimer = 1000;
-    player._stickEnemy = enemy;
-
-    // Congelar enemigo mientras el jugador esta pegado
-    enemy._frozen = true;
-    enemy._frozenVx = enemy.vx || 0;
-    enemy._frozenVy = enemy.vy || 0;
-
-    if (!this.bbcActive) {
-      this.bbcBounces = 1;
-      this.bbcActive = true;
-    } else {
-      this.bbcBounces++;
-    }
-
-    // Visual
-    if (this.scene.renderer?.addSlamEffect) {
-      this.scene.renderer.addSlamEffect(player.px, player.py, false);
-    }
-
-    return { sticked: true };
+    return this._bbc.onStickEnemy(player, enemy, now, momentumSystem);
   }
 
-  /**
-   * Jugador presiono Space + direccion durante stick.
-   * Aplica danio al enemigo actual, lo descongela, lanza al jugador.
-   */
   onJumpOffEnemy(player, enemy, dirX, dirY, momentumSystem) {
-    if (!this.has('BBC') || !enemy) return;
-
-    // Recordar para no re-pegarse al mismo enemigo
-    this._bbcLastJumped = enemy;
-
-    // Danio al saltar: 5 base + 5 por cada rebote en cadena
-    const baseDmg = 5 + this.bbcBounces * 5;
-    const momentumMult = momentumSystem?.getDamageMultiplier?.() ?? 1;
-    const bonusMult    = 1 + (player.damageMultiplierBonus || 0);
-    const finalDamage  = baseDmg * momentumMult * bonusMult;
-
-    const hpBefore = enemy.hp;
-    const now = Date.now();
-    enemy.receiveDamage
-      ? enemy.receiveDamage({ type: 'stomp', baseDamage: finalDamage, now })
-      : (() => { enemy.hp = (enemy.hp || 1) - finalDamage; })();
-    const actualDamage = hpBefore - enemy.hp;
-    if (actualDamage > 0) {
-      this.scene.spawnDamageNumber?.(enemy.x, enemy.y, actualDamage, 'enemyDamage');
-    }
-
-    // Descongelar enemigo
-    enemy._frozen = false;
-
-    // Lanzar jugador en la direccion elegida (misma distancia que wall jump segun nivel)
-    const lv = momentumSystem?.level ?? 1;
-    const jumpSpd = WALL_JUMP.SPEEDS[lv] || 400;
-    player.jumping = true;
-    player.jumpT   = 0;
-    player.jumpDur = 400;
-    player.jumpHMax = 0;
-    player.jumpLv  = 1;
-    player.jumpVx  = dirX * jumpSpd;
-    player.jumpVy  = dirY * jumpSpd;
-    player.vx = player.jumpVx;
-    player.vy = player.jumpVy;
-    player.combat.hasSlammedThisJump = false;
-    player.facing = Math.atan2(dirY, dirX);
-
-    // Visual
-    if (this.scene.renderer?.addSlamEffect) {
-      this.scene.renderer.addSlamEffect(enemy.x, enemy.y, false);
-    }
+    if (this.has('BBC')) this._bbc.onJumpOffEnemy(player, enemy, dirX, dirY, momentumSystem);
   }
 
-  /** Stick expiro sin saltar — descongelar enemigo, resetear cadena */
   onStickExpired(enemy) {
-    if (enemy) enemy._frozen = false;
-    this._bbcLastJumped = null;
-    this.bbcBounces = 0;
-    this.bbcActive  = false;
+    if (this.has('BBC')) this._bbc.onStickExpired(enemy);
   }
 
-  /** Llamado cuando el jugador aterriza — resetear cadena si no esta pegado ni en muro */
   onPlayerLanded() {
-    this._bbcLastJumped = null;
-    const player = this.scene?.player;
-    if (this.bbcActive && !player?._stickState && !player?.wallJump?.wallStick) {
-      this.bbcBounces = 0;
-      this.bbcActive  = false;
-    }
+    if (this.has('BBC')) this._bbc.onPlayerLanded();
   }
 
-  // ─── DBB: Paciencia ─────────────────────────────────────────
-  _updateDBB(delta, player, enemyManager) {
-    // Resetear multiplicador cacheado cuando termina el dash/slam
-    if (!player.dashing && !player.combat?.activeSlam) {
-      this._dbbActiveMult = 1;
-    }
+  // ── DBB: Patience ────────────────────────────────────────────────
 
-    // Si está en CD (recibió daño o infligió recientemente), contar hacia abajo
-    if (this.dbbCooldown > 0) {
-      this.dbbCooldown = Math.max(0, this.dbbCooldown - delta);
-      this.dbbIdleTimer = 0;
-      this.dbbBonus     = 0;
-      this.dbbReady     = false;
-      return;
-    }
-
-    const idle = (player._lastDamageTime || 0) < Date.now() - 5000 &&
-                 (player._lastInflictTime || 0) < Date.now() - 5000;
-    if (idle) {
-      this.dbbIdleTimer += delta;
-      this.dbbBonus = Math.min(999, this.dbbIdleTimer / 1000 * 100);
-      this.dbbReady = true;
-    } else {
-      this.dbbIdleTimer = 0;
-      this.dbbBonus     = 0;
-      this.dbbReady     = false;
-    }
-  }
-
-  /** Llamado cuando el jugador recibe daño — activa CD de Paciencia */
   onPlayerTookDamage() {
-    if (!this.has('DBB')) return;
-    this.dbbCooldown  = 5000;   // 5s de CD
-    this.dbbIdleTimer = 0;
-    this.dbbBonus     = 0;
-    this.dbbReady     = false;
+    if (this.has('DBB')) this._dbb.onPlayerTookDamage();
   }
 
   getDashDamageMultiplier(player) {
     if (!this.has('DBB')) return 1;
-
-    // Si ya hay un multiplicador activo para este dash/slam, devolverlo
-    if (this._dbbActiveMult > 1) return this._dbbActiveMult;
-
-    if (!this.dbbReady) return 1;
-
-    const mult = 1 + this.dbbBonus / 100;
-    this._dbbActiveMult = mult;   // cachear para todo el dash/slam
-    this.dbbLastMult    = mult;   // recordar para el HUD
-    this.dbbIdleTimer   = 0;
-    this.dbbBonus       = 0;
-    this.dbbReady       = false;
-    this.dbbCooldown    = 5000;
-    return mult;
+    return this._dbb.getDashDamageMultiplier(player);
   }
 
-  // ─── DDD: Fénix ─────────────────────────────────────────────
-  _updateDDD(delta, player) {
-    this.dddCD = Math.max(0, this.dddCD - delta);
-
-    // Si está en fase de descenso post-activación, bajar HP gradualmente hasta 10
-    if (this.dddDecaying && player.health.hp > 10) {
-      const rate = (this.dddPeakHp - 10) / 3000;   // de maxHp a 10 en 3000ms
-      player.health.hp = Math.max(10, player.health.hp - rate * delta);
-      if (player.health.hp <= 10) {
-        player.health.hp = 10;
-        this.dddDecaying = false;
-      }
-    }
-  }
+  // ── DDD: Fenix ───────────────────────────────────────────────────
 
   onLethalDamage(player) {
-    if (!this.has('DDD') || this.dddCD > 0) return false;
-
-    // +10 HP máximo permanente
-    player.health.maxHp = (player.health.maxHp || 100) + 10;
-
-    // Revivir al máximo actual
-    player.health.hp    = player.health.maxHp;
-    this.dddPeakHp      = player.health.maxHp;
-
-    // Iniciar descenso gradual a 10 HP en 3s
-    this.dddDecaying    = true;
-
-    // CD arranca inmediatamente
-    this.dddCD = 60000;
-
-    return true;
+    if (!this.has('DDD')) return false;
+    return this._ddd.onLethalDamage(player);
   }
 
-  // ─── AAA: Berserker ─────────────────────────────────────────
+  // ── AAA: Berserker ───────────────────────────────────────────────
+
   getAAAMultiplier(player) {
     if (!this.has('AAA')) return 1;
-    const hp = player.health.hp || 0;
-    const missing = Math.max(0, 100 - hp);
-    return 1 + Math.min(1, missing / 75); // max bonus at 25 HP
+    return this._aaa.getMultiplier(player);
   }
 
   getAAACost(player) {
     if (!this.has('AAA')) return 0;
-    return (player.health.hp || 0) >= 25 ? 3 : 0;
+    return this._aaa.getCost(player);
   }
 
-  // ─── ADD: Amortiguador ───────────────────────────────────────
+  // ── ADD: Shock Absorber ──────────────────────────────────────────
+
   getADDDamageReduction() {
-    return this.has('ADD') ? 10 : 0;
+    return this.has('ADD') ? this._add.getDamageReduction() : 0;
   }
 
-  // ─── AAD: Explosivo ──────────────────────────────────────────
+  // ── AAD: Explosive ────────────────────────────────────────────────
+
   onEnemyDied(enemy, enemyManager) {
-    if (!this.has('AAD') || Math.random() > 0.25) return;
-    const x = enemy.x, y = enemy.y;
-    const enemies = enemyManager.enemies;
-    let exploded = false;
-    for (let i = enemies.length - 1; i >= 0; i--) {
-      const e = enemies[i];
-      if (Math.hypot(e.x - x, e.y - y) <= 120) {
-        if (e.receiveDamage) e.receiveDamage({ type: 'explosion', baseDamage: 30, now: this.scene?.time?.now ?? Date.now() });
-        exploded = true;
-      }
+    if (this.has('AAD')) this._aad.onEnemyDied(enemy, enemyManager);
+    if (this.has('CBG')) {
+      this._cbg.spawnHole(enemy.x, enemy.y);
+      this._cbg.onEnemyKilledInHole(enemy);
     }
-    if (exploded) this.statAADExplosions++;
-    if (this.scene.renderer?.addSlamEffect) this.scene.renderer.addSlamEffect(x, y, false);
   }
 
-  // ─── DDC: Sand King ──────────────────────────────────────────
+  // ── DDC: Sand King ───────────────────────────────────────────────
+
   applySandKingBonus(slamX, slamY, baseDamage, enemyManager, now) {
-    if (!this.has('DDC')) return;
-    const radius = SLAM.RADIUS * SLAM.SANDKING_RADIUS_MULT;
-    const enemies = enemyManager.enemies;
-    let count = 0;
-    const hits = [];
-    for (const e of enemies) {
-      if (Math.hypot(e.x - slamX, e.y - slamY) <= radius) { hits.push(e); count++; }
-    }
-    const bonus = baseDamage + count * 3;
-    const sandNow = (now ?? this.scene?.time?.now ?? Date.now()) + 30;
-    for (let i = hits.length - 1; i >= 0; i--) {
-      const e = hits[i];
-      if (e.receiveDamage) e.receiveDamage({ type: 'slam3', baseDamage: bonus, now: sandNow });
-    }
+    if (this.has('DDC')) this._ddc.applySandKingBonus(slamX, slamY, baseDamage, enemyManager, now);
   }
 
-  // ─── ACC: Propulsor ──────────────────────────────────────────
-  getDashSpeedMult()     { return this.has('ACC') ? 2.0 : 1.0; }
-  getDashDistanceMult()  { return this.has('ACC') ? 2.0 : 1.0; }
+  // ── ACC: Propulsor ───────────────────────────────────────────────
 
-  // ─── CAD: Vampiro ────────────────────────────────────────────
-  onDashHit(player, momentum) {
-    if (!this.has('CAD')) return;
-    if (this._cadHealedThisDash) return;
-    this._cadHealedThisDash = true;
-    const heal = momentum.level;
-    const before = player.health.hp;
-    player.health.hp = Math.min(player.health.maxHp || 100, (player.health.hp || 0) + heal);
-    this.statCADHealed += player.health.hp - before;
+  getDashSpeedMult()     { return this.has('ACC') ? this._acc.getDashSpeedMult() : 1.0; }
+  getDashDistanceMult()  { return this.has('ACC') ? this._acc.getDashDistanceMult() : 1.0; }
+
+  // ── CAD: Vampire ─────────────────────────────────────────────────
+
+  spawnVampireOrb(x, y) {
+    if (this.has('CAD')) this._cad.spawnOrb(x, y);
   }
 
-  // ─── ABC: Brújula Activa ─────────────────────────────────────
+  renderVampireOrbs(g) {
+    if (this.has('CAD')) this._cad.render(g);
+  }
+
+  renderEventHorizons(g) {
+    if (this.has('CBG')) this._cbg.render(g);
+  }
+
+  // ── ABC: Active Compass ──────────────────────────────────────────
+
   onDashInCompassDir(player, momentum, isPrimary) {
-    if (!this.has('ABC')) return;
-    const stacks = isPrimary ? 10 : 20;
-    momentum.addStacks(stacks);
+    if (this.has('ABC')) this._abc.onDashInCompassDir(player, momentum, isPrimary);
   }
 
-  // ─── AAB: Gancho ─────────────────────────────────────────────
-  _updateAAB(delta, player) {
-    if (this._aabReleaseBlock > 0) this._aabReleaseBlock -= delta;
-    if (!this.aabGrabbed) return;
-    this.aabTimer -= delta;
-    this.aabGrabbed.x = player.px + Math.cos(player.facing) * 30;
-    this.aabGrabbed.y = player.py + Math.sin(player.facing) * 30;
-    if (this.aabTimer <= 0) this._releaseGrab();
-  }
+  // ── AAB: Grapple ─────────────────────────────────────────────────
 
   tryGrab(enemy, player) {
-    if (!this.has('AAB') || this.aabGrabbed) return false;
-    if (enemy === this.aabLastReleased && this._aabReleaseBlock > 0) return false;
-    this.aabGrabbed = enemy;
-    this.aabTimer   = 4000;
-    enemy.isGrabbed = true;
-    enemy.isPhantom = true;
-    return true;
+    if (!this.has('AAB')) return false;
+    return this._aab.tryGrab(enemy, player);
   }
 
   onDashWhileGrabbing(player, dashDirX, dashDirY, dashSpeed) {
-    if (!this.aabGrabbed) return false;
-    const enemy = this.aabGrabbed;
-    this.aabLastReleased = enemy;
-    this._aabReleaseBlock = 800;
-    this._releaseGrab();
-
-    enemy._projectileVx    = dashDirX * dashSpeed;
-    enemy._projectileVy    = dashDirY * dashSpeed;
-    enemy._projectileTimer = 800;
-    enemy.isGrabbed        = false;
-    enemy.isPhantom        = false;
-    return true;
+    if (!this.has('AAB')) return false;
+    return this._aab.onDashWhileGrabbing(player, dashDirX, dashDirY, dashSpeed);
   }
 
-  _releaseGrab() {
-    if (!this.aabGrabbed) return;
-    this.aabGrabbed.isGrabbed = false;
-    this.aabGrabbed.isPhantom = false;
-    this.aabGrabbed = null;
-  }
+  // ── BCD: Equilibrium ─────────────────────────────────────────────
 
-  // ─── BCD: Equilibrio ─────────────────────────────────────────
   onDerape(momentum) {
-    if (!this.has('BCD')) return;
-    const lv = momentum.level;
-    if (lv === 3) {
-      // Drenar hasta nivel 2
-      while (momentum.level > 2 && momentum.stacks > 0) momentum.stacks--;
-    } else if (lv === 1) {
-      // Ganar hasta nivel 2
-      while (momentum.level < 2 && momentum.stacks < 90) momentum.stacks++;
-    }
+    if (this.has('BCD')) this._bcd.onDerape(momentum);
   }
 
-  // ─── CCC: Incendiario ────────────────────────────────────────
-  // Llamado desde Player cuando hay derrapaje con CCC equipado.
-  // Crea una zona de daño temporal en currentMap.zones.
+  // ── CCC: Incendiary ──────────────────────────────────────────────
+
   onSkid(x, y) {
-    if (!this.has('CCC')) return;
-    const R = 25;
-    const zones = this.scene.currentMap?.zones;
-    if (!zones) return;
-    zones.push({
-      type: 'damage_zone',
-      damagePerSec: 65,
-      timeLeft: 15000,
-      geometry: { bbox: { x: x - R, y: y - R, w: R * 2, h: R * 2 } },
-      _isFire: true,
-    });
+    if (this.has('CCC')) this._ccc.onSkid(x, y);
   }
 
-  // ─── CCB: velocidad = créditos (aplicado en update) ──────────
-  // ya está en update()
+  // ── GGG: Flipcoin ────────────────────────────────────────────────
 
-  // ─── Reset ───────────────────────────────────────────────────
+  lockGGGForAttack() {
+    if (this.has('GGG')) this._ggg.lockForAttack();
+  }
+
+  getGGGMultiplier() {
+    if (!this.has('GGG')) return null;
+    return this._ggg.getMultiplier();
+  }
+
+  applyGGGCreditEffect(px, py) {
+    if (this.has('GGG')) this._ggg.applyCreditEffect(px, py);
+  }
+
+  // ── AAG: One-Two ────────────────────────────────────────────────
+
+  onDashStarted(baseDamage) {
+    if (this.has('AAG')) this._aag.onDashStarted(baseDamage);
+  }
+
+  consumeAAGBonus() {
+    if (!this.has('AAG')) return 0;
+    return this._aag.consumeBonus();
+  }
+
+  // ── GGC: Auspice ────────────────────────────────────────────────
+
+  onEnemyKilled() {
+    if (this.has('GGC')) this._ggc.onEnemyKilled();
+    if (this.has('GGD')) this._ggd.onEnemyKilled();
+  }
+
+  getAuspiceDiscount() {
+    if (!this.has('GGC')) return 0;
+    return this._ggc.getDiscount();
+  }
+
+  // ── CCG: Builder ─────────────────────────────────────────────────
+
+  addBuilderCharge() {
+    if (this.has('CCG')) this._ccg.addCharge();
+  }
+
+  get builderCharges() {
+    return this._ccg.charges;
+  }
+
+  tryPlaceBuilderWall(player) {
+    if (!this.has('CCG')) return false;
+    return this._ccg.tryPlace(player);
+  }
+
+  // ── Reset ────────────────────────────────────────────────────────
+
   reset() {
-    this.bbbCooldown = 0; this.bbbReady = false; this.bbbActive = false; this.bbbTimer = 0;
-    this.bbcBounces = 0; this.bbcActive = false; this._bbcLastJumped = null;
-    this.dbbIdleTimer = 0; this.dbbBonus = 0; this.dbbReady = false; this.dbbCooldown = 0; this.dbbLastMult = 1; this._dbbActiveMult = 1;
-    this.dddCD = 0; this.dddDecaying = false; this.dddPeakHp = 100;
-    this.aabGrabbed = null; this.aabTimer = 0; this.aabLastReleased = null; this._aabReleaseBlock = 0;
-    this.statAADExplosions = 0; this.statADDMitigated = 0; this.statCADHealed = 0;
+    this._aaa.reset();
+    this._aab.reset();
+    this._aad.reset();
+    this._abc.reset();
+    this._acc.reset();
+    this._add.reset();
+    this._bbb.reset();
+    this._bbc.reset();
+    this._bcd.reset();
+    this._cad.reset();
+    this._cbg.reset();
+    this._ccb.reset();
+    this._ccg.reset();
+    this._ccc.reset();
+    this._dbb.reset();
+    this._ddc.reset();
+    this._ddd.reset();
+    this._ggg.reset();
+    this._ggc.reset();
+    this._ggd.reset();
+    this._gba.reset();
+    this._aag.reset();
   }
 }

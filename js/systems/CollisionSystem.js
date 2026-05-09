@@ -30,7 +30,8 @@ export default class CollisionSystem {
             if (!line || line._broken) continue;
 
             // Si el jugador está en salto y mantiene Espacio, atraviesa el muro
-            if (player.jumping && player.holdingSpace) {
+            // GBA: Undetectable — atravesar muros
+            if ((player.jumping && player.holdingSpace) || player._undetectable) {
                 continue;
             }
 
@@ -68,31 +69,82 @@ export default class CollisionSystem {
 
                 // Dash contra muro: posible destrucción
                 if (player.dashing) {
-                    // Si el muro tiene HP (es destructible)
+                    // CCG Builder: all walls become destructible, 2x damage
+                    const hasBuilder = itemEffects?.has('CCG');
+                    if (hasBuilder && (line.hp === undefined || line.hp === null)) {
+                        line.hp = WALL_DEFAULT_HP;
+                        line._origHp = WALL_DEFAULT_HP;
+                    }
                     if (line.hp !== undefined && line.hp !== null) {
-                        const damage = impactSpeed * DASH_WALL_DAMAGE_FACTOR;
+                        const damageMult = hasBuilder ? 2 : 1;
+                        const damage = impactSpeed * DASH_WALL_DAMAGE_FACTOR * damageMult;
                         line.hp -= damage;
                         if (line.hp <= 0) {
                             line._broken = true;
+                            if (hasBuilder) itemEffects.addBuilderCharge();
                             continue;
                         }
                     }
 
-                    // Penalizaciones normales por chocar en dash
                     if (!line._broken) {
-                        player.stunT = DASH_WALL_STUN_DUR;
-                        if (momentum) {
-                            momentum.halveStacks();
-                            itemEffects?.onDerape(momentum); // BCD: Equilibrio
+                        // ADD: Amortiguador — rebote aéreo en vez de stun
+                        if (itemEffects?.has('ADD')) {
+                            const rawDmg = Math.floor(HP_DMG_DASH_WALL * impactSpeed);
+                            const finalDmg = Math.floor(rawDmg * 0.6);
+                            const mitigated = rawDmg - finalDmg;
+                            if (mitigated > 0 && itemEffects) itemEffects.statADDMitigated += mitigated;
+                            if (player.health) player.health.takeDamage(finalDmg);
+
+                            if (momentum) {
+                                momentum.halveStacks();
+                                itemEffects?.onDerape(momentum);
+                            }
+
+                            // Reflejar velocidad contra la pared
+                            const dot = player.vx * finalNx + player.vy * finalNy;
+                            const reflectVx = player.vx - 2 * dot * finalNx;
+                            const reflectVy = player.vy - 2 * dot * finalNy;
+
+                            const lv = momentum?.level ?? 1;
+                            player.dashing = false;
+                            player.facing = Math.atan2(reflectVy, reflectVx);
+
+                            // "Deeping" elástico: empujar dentro del muro y pausar 100ms
+                            player.px -= finalNx * 10;
+                            player.py -= finalNy * 10;
+                            player.stunT = 100;
+
+                            player.jumping = true;
+                            player.jumpT = 0;
+                            player.jumpDur = 1000;
+                            player.jumpLv = lv;
+                            player.jumpHMax = 0;
+                            player.jumpVx = reflectVx;
+                            player.jumpVy = reflectVy;
+                            player.vx = 0;
+                            player.vy = 0;
+                            player.combat.hasSlammedThisJump = false;
+                            player._addRebound = true;
+
+                            if (itemEffects.scene?.renderer?.addSlamEffect) {
+                                itemEffects.scene.renderer.addSlamEffect(player.px, player.py, false, 40);
+                            }
+                        } else {
+                            // Penalizaciones normales por chocar en dash
+                            player.stunT = DASH_WALL_STUN_DUR;
+                            if (momentum) {
+                                momentum.halveStacks();
+                                itemEffects?.onDerape(momentum); // BCD: Equilibrio
+                            }
+                            const rawDmg = Math.floor(HP_DMG_DASH_WALL * impactSpeed);
+                            const reduction = itemEffects?.getADDDamageReduction() || 0;
+                            const finalDmg = Math.max(0, rawDmg - reduction);
+                            const mitigated = rawDmg - finalDmg;
+                            if (mitigated > 0 && itemEffects) itemEffects.statADDMitigated += mitigated;
+                            if (player.health) player.health.takeDamage(finalDmg);
+                            player.dashing = false;
+                            player.vx = 0; player.vy = 0;
                         }
-                        const rawDmg = Math.floor(HP_DMG_DASH_WALL * impactSpeed);
-                        const reduction = itemEffects?.getADDDamageReduction() || 0;
-                        const finalDmg = Math.max(0, rawDmg - reduction);
-                        const mitigated = rawDmg - finalDmg;
-                        if (mitigated > 0 && itemEffects) itemEffects.statADDMitigated += mitigated;
-                        if (player.health) player.health.takeDamage(finalDmg);
-                        player.dashing = false;
-                        player.vx = 0; player.vy = 0;
                     }
                     break;
                 }

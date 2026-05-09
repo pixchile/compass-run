@@ -69,8 +69,10 @@ export default class EnemyManager {
     if (typeof enemy.kill === 'function') enemy.kill(fatalSource);
     
     this.totalKills++;
+    this.scene?.itemEffects?.spawnVampireOrb(enemy.x, enemy.y);
+    this.scene?.itemEffects?.onEnemyKilled();
     if (this.scene?.momentum) {
-      this.scene.momentum.addMaxSpeed(0.1);
+      this.scene.momentum.addMaxSpeed(2);
     }
     if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
 

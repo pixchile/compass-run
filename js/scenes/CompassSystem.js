@@ -168,13 +168,15 @@ export default class CompassSystem {
       const t = (speed - COMPASS_SPEED_BUFF_BASE) / (COMPASS_SPEED_BUFF_MAX - COMPASS_SPEED_BUFF_BASE);
       const mult = 1 + Math.max(0, Math.min(1, t)) * (COMPASS_SPEED_BUFF_MULT_MAX - 1);
 
+      const clockMult = this.gameScene?.itemEffects?.has('GGD') ? 2 : 1;
+
       if (followPrimary) {
-        this._applyBuff(this.primaryBuff, false, player, now, mult);
-        this._primaryAccum += this._getBuffValue(this.primaryBuff, false) * mult;
+        this._applyBuff(this.primaryBuff, false, player, now, mult * clockMult);
+        this._primaryAccum += this._getBuffValue(this.primaryBuff, false) * mult * clockMult;
       }
       if (followSecondary) {
-        this._applyBuff(this.secondaryBuff, true, player, now, mult);
-        this._secondaryAccum += this._getBuffValue(this.secondaryBuff, true) * mult;
+        this._applyBuff(this.secondaryBuff, true, player, now, mult * clockMult);
+        this._secondaryAccum += this._getBuffValue(this.secondaryBuff, true) * mult * clockMult;
       }
     }
   }
