@@ -35,6 +35,8 @@ export default class Enemy {
 
         this.onDeathEffects = config.onDeath || [];
 
+        this._lastDamageSource = null;
+
         this.lastHurtTime = 0;
         this.state = {
             wanderAngle: Math.random() * Math.PI * 2,
@@ -64,6 +66,7 @@ export default class Enemy {
 
         this.hp -= finalDamage;
         if (attackPayload.now) this.lastHurtTime = attackPayload.now;
+        this._lastDamageSource = null;
 
         return this.hp <= 0;
     }

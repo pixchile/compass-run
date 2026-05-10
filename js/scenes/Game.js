@@ -9,6 +9,7 @@ import SVGMapLoader from '../systems/SVGMapLoader.js';
 import RewardSystem from './RewardSystem.js';
 import OrbManager from './OrbManager.js';
 import CollisionSystem from '../systems/CollisionSystem.js';
+import SpatialGrid from '../utils/SpatialGrid.js';
 import ZoneSystem from '../systems/ZoneSystem.js';
 import ShopSystem from '../systems/ShopSystem.js';
 import ShopUI from './ShopUI.js';
@@ -40,6 +41,10 @@ export default class Game extends Phaser.Scene {
         if (!this.currentMap) {
             this.currentMap = { arena: { x: 50, y: 50, w: 2000, h: 2000 }, lines: [], zones: [] };
         }
+
+        // Spatial grid para consultas de muros O(1)
+        this.wallGrid = new SpatialGrid(250);
+        this.wallGrid.build(this.currentMap.lines || []);
 
         // ─── Cargar datos de stage (enemigos, etc.) ──────────────────
         if (this.stageName) {
@@ -130,8 +135,9 @@ export default class Game extends Phaser.Scene {
     }
 
     hasLineOfSight(x1, y1, x2, y2, lines) {
-        if (!lines || lines.length === 0) return true;
-        for (const line of lines) {
+        const gridWalls = this.wallGrid?.queryLine(x1, y1, x2, y2);
+        const walls = (gridWalls && gridWalls.length > 0) ? gridWalls : (lines || []);
+        for (const line of walls) {
             if (line._broken) continue;
             if (this._segmentsIntersect(
                 x1, y1, x2, y2,
@@ -226,19 +232,21 @@ export default class Game extends Phaser.Scene {
         const frameDist = Math.hypot(this.player.px - this.player.prevX, this.player.py - this.player.prevY);
         const steps = frameDist > 16 ? 2 : 1;
 
+        const playerWallLines = this.wallGrid.query(this.player.px, this.player.py, 80);
+
         if (steps > 1) {
             const midX = (this.player.prevX + this.player.px) / 2;
             const midY = (this.player.prevY + this.player.py) / 2;
             const endX = this.player.px; const endY = this.player.py;
 
             this.player.px = midX; this.player.py = midY;
-            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines, this.itemEffects);
+            this.collisionSystem.checkLineCollisions(this.player, this.momentum, playerWallLines, this.itemEffects);
 
             this.player.prevX = this.player.px; this.player.prevY = this.player.py;
             this.player.px = endX; this.player.py = endY;
-            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines, this.itemEffects);
+            this.collisionSystem.checkLineCollisions(this.player, this.momentum, playerWallLines, this.itemEffects);
         } else {
-            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._visibleLines, this.itemEffects);
+            this.collisionSystem.checkLineCollisions(this.player, this.momentum, playerWallLines, this.itemEffects);
         }
 
         // Zonas (daño, void, tienda...)

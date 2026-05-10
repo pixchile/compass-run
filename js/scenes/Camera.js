@@ -13,7 +13,7 @@ export default class Camera {
     // Zoom
     this.zoom = 1.0;
     this.targetZoom = 1.0;
-    this.minZoom = 0.3;
+    this.minZoom = 0.05;
     this.maxZoom = 2.0;
     
     // Suavizado

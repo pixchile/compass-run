@@ -1,17 +1,17 @@
 // Enemigo generado con Enemy Creator (v2.0)
-// Nombre: bee
-// Fecha: 09-05-2026, 5:51:40 p. m.
+// Nombre: wasp
+// Fecha: 10-05-2026, 2:03:28 a. m.
 
 export default {
-    id: 'bee',
-    name: 'bee',
+    id: 'wasp',
+    name: 'wasp',
     config: {
-    id: "bee",
-    name: "bee",
+    id: "wasp",
+    name: "wasp",
     basic: {
-        hp: 100,
-        hpRegen: 2,
-        color: "0xFFBB00",
+        hp: 200,
+        hpRegen: 0,
+        color: "0xFFFF00",
         shape: "circle",
         radius: 15,
         isBoss: false,
@@ -26,12 +26,12 @@ export default {
     },
     movement: {
         mobile: true,
-        speed: 150,
-        activeSpeed: 180,
+        speed: 200,
+        activeSpeed: 250,
         scaling: {
             timeBase: true,
             timeMultiplier: 1.1,
-            hpBase: "proportional",
+            hpBase: "inverse",
             hpPercentage: 100
         },
         style: "seek",
@@ -39,8 +39,8 @@ export default {
         erraticTime: 2000,
         ignoreWalls: true,
         isPhantom: true,
-        reactionRadius: 250,
-        disengageRadius: 500,
+        reactionRadius: 300,
+        disengageRadius: 600,
         reactions: []
     },
     damageMultipliers: {
@@ -68,9 +68,9 @@ export default {
         seeThroughWalls: true,
         attack: {
             type: "contact",
-            effect: "none",
-            damage: 1,
-            cooldown: 250
+            effect: "push",
+            damage: 2,
+            cooldown: 1000
         },
         defense: {
             invulnerableAura: false,
@@ -80,8 +80,10 @@ export default {
             pattern: "normal",
             count: 3
         },
-        hates: [],
-        hateRadius: 0,
+        hates: [
+            "bee"
+        ],
+        hateRadius: 25,
         hateDamage: 5
     }
 }

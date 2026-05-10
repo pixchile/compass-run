@@ -51,6 +51,8 @@ export default class StageEditor extends Phaser.Scene {
     this.placingSpawner = false;
 	    this.selectedSpawner = null;
 	    this.editingPath = false;
+	    this._editingPathIndex = 0;
+    this._copiedSpawner = null;
 
     this.g = this.add.graphics();
 
@@ -249,6 +251,7 @@ export default class StageEditor extends Phaser.Scene {
         background:rgba(5,8,18,0.96); border:1px solid #192840; border-top:2px solid #ffaa22;
         padding:10px 14px; min-width:200px; max-width:260px; pointer-events:auto;
         display:none; z-index:510;
+        max-height:calc(100vh - 100px); overflow-y:auto;
       }
       #se-spawner-info .se-label { margin-bottom:8px; }
     `;
@@ -306,9 +309,19 @@ export default class StageEditor extends Phaser.Scene {
     });
   }
 
+  _getTimelineMax() {
+    let maxT = this.timeLimit || 60;
+    for (const e of this.enemies) {
+      if (e.spawnTime > maxT) maxT = e.spawnTime;
+    }
+    return Math.max(maxT + 30, 60);
+  }
+
   _refreshTimeline() {
     const markers = document.getElementById('se-timeline-markers');
     if (!markers) return;
+
+    const tMax = this._getTimelineMax();
 
     // Agrupar por tipo para colorear
     const typeColors = {};
@@ -317,7 +330,7 @@ export default class StageEditor extends Phaser.Scene {
     }
 
     markers.innerHTML = this.enemies.map((e, i) => {
-      const pct = this.timeLimit > 0 ? (e.spawnTime / this.timeLimit) * 100 : 0;
+      const pct = tMax > 0 ? (e.spawnTime / tMax) * 100 : 0;
       const color = typeColors[e.type] || '#888';
       return `<div class="se-tmarker" data-idx="${i}" style="left:${pct}%">
         <div class="se-tmarker-dot" style="background:${color}"></div>
@@ -340,7 +353,7 @@ export default class StageEditor extends Phaser.Scene {
     });
 
     // Cursor
-    const pct = this.timeLimit > 0 ? (this.currentTime / this.timeLimit) * 100 : 0;
+    const pct = tMax > 0 ? (this.currentTime / tMax) * 100 : 0;
     const cursor = document.getElementById('se-timeline-cursor');
     if (cursor) cursor.style.left = pct + '%';
 
@@ -367,7 +380,7 @@ export default class StageEditor extends Phaser.Scene {
       <div id="se-sel-time-row" class="se-row">
         <span class="se-dim">Tiempo</span>
         <input id="se-sel-time" class="se-input se-input-sm" type="number"
-          value="${e.spawnTime}" min="0" max="${this.timeLimit}" step="1">
+          value="${e.spawnTime}" min="0" step="1">
         <span class="se-dim">s</span>
       </div>
       <button class="se-btn se-btn-exit" id="se-sel-delete">🗑 Eliminar</button>
@@ -427,7 +440,6 @@ export default class StageEditor extends Phaser.Scene {
     // Límite de tiempo
     document.getElementById('se-timelimit')?.addEventListener('input', ev => {
       this.timeLimit = parseInt(ev.target.value) || 300;
-      this.currentTime = Math.min(this.currentTime, this.timeLimit);
       this._refreshTimeline();
     });
 
@@ -470,7 +482,7 @@ export default class StageEditor extends Phaser.Scene {
       const setTime = (ev) => {
         const rect = track.getBoundingClientRect();
         const pct  = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
-        this.currentTime = Math.round(pct * this.timeLimit);
+        this.currentTime = Math.round(pct * this._getTimelineMax());
         this._refreshTimeline();
       };
       let draggingTimeline = false;
@@ -506,9 +518,27 @@ export default class StageEditor extends Phaser.Scene {
       this._dragStartScreenY = ptr.y;
       this._dragStartCamX = this.camera.x;
       this._dragStartCamY = this.camera.y;
+
+      // Detectar si el click es sobre la entidad seleccionada (para drag)
+      this._draggingEntity = null;
+      const wpDown = this.camera.screenToWorld(ptr.x, ptr.y);
+
+      if (this.selectedSpawner !== null && !this.editingPath) {
+        const s = this.spawners[this.selectedSpawner];
+        if (s && Math.hypot(s.x - wpDown.x, s.y - wpDown.y) < 22) {
+          this._draggingEntity = 'spawner';
+        }
+      }
+
+      if (!this._draggingEntity && this.selectedEnemy !== null) {
+        const e = this.enemies[this.selectedEnemy];
+        if (e && Math.hypot(e.x - wpDown.x, e.y - wpDown.y) < 22) {
+          this._draggingEntity = 'enemy';
+        }
+      }
     });
 
-    // pointermove: pan camera while dragging
+    // pointermove: drag entity or pan camera
     this.input.on('pointermove', (ptr) => {
       if (!this._dragActive || !ptr.isDown) return;
 
@@ -519,10 +549,20 @@ export default class StageEditor extends Phaser.Scene {
         document.body.style.cursor = 'grabbing';
       }
       if (this._isDragging) {
-        this.camera.x = this._dragStartCamX - dx / this.camera.zoom;
-        this.camera.y = this._dragStartCamY - dy / this.camera.zoom;
-        this.camera.x = Math.max(ARENA.x, Math.min(ARENA.x + ARENA.w, this.camera.x));
-        this.camera.y = Math.max(ARENA.y, Math.min(ARENA.y + ARENA.h, this.camera.y));
+        if (this._draggingEntity === 'spawner') {
+          const wp = this.camera.screenToWorld(ptr.x, ptr.y);
+          const s = this.spawners[this.selectedSpawner];
+          if (s) { s.x = wp.x; s.y = wp.y; }
+        } else if (this._draggingEntity === 'enemy') {
+          const wp = this.camera.screenToWorld(ptr.x, ptr.y);
+          const e = this.enemies[this.selectedEnemy];
+          if (e) { e.x = wp.x; e.y = wp.y; }
+        } else {
+          this.camera.x = this._dragStartCamX - dx / this.camera.zoom;
+          this.camera.y = this._dragStartCamY - dy / this.camera.zoom;
+          this.camera.x = Math.max(ARENA.x, Math.min(ARENA.x + ARENA.w, this.camera.x));
+          this.camera.y = Math.max(ARENA.y, Math.min(ARENA.y + ARENA.h, this.camera.y));
+        }
       }
     });
 
@@ -530,11 +570,21 @@ export default class StageEditor extends Phaser.Scene {
     this.input.on('pointerup', (ptr) => {
       if (!this._dragActive) return;
       const wasDrag = this._isDragging;
+      const dragEntity = this._draggingEntity;
       this._dragActive = false;
       this._isDragging = false;
+      this._draggingEntity = null;
       this._updateCursor();
 
-      if (wasDrag) return;
+      if (wasDrag) {
+        if (dragEntity === 'spawner') {
+          this._refreshSpawnerInfo();
+        }
+        if (dragEntity === 'enemy') {
+          // update the timeline marker if needed (no extra refresh needed)
+        }
+        return;
+      }
 
       if (ptr.x < 210) return;
       if (ptr.y > this.scale.height - 90) return;
@@ -543,14 +593,20 @@ export default class StageEditor extends Phaser.Scene {
 
       if (this.editingPath && this.selectedSpawner !== null) {
         const sp = this.spawners[this.selectedSpawner];
-        if (!sp.path) sp.path = [];
-        sp.path.push({ x: wp.x, y: wp.y, wait: 0 });
+        if (sp.paths && sp.paths.length > 0) {
+          const activePath = sp.paths[this._editingPathIndex];
+          if (!activePath.path) activePath.path = [];
+          activePath.path.push({ x: wp.x, y: wp.y, wait: 0 });
+        } else {
+          if (!sp.path) sp.path = [];
+          sp.path.push({ x: wp.x, y: wp.y, wait: 0 });
+        }
         this._refreshSpawnerInfo();
         return;
       }
 
       if (this.placingSpawner) {
-        this.spawners.push({ x: wp.x, y: wp.y, types: [], interval: 0, path: [], pathMode: 'loop' });
+        this.spawners.push({ x: wp.x, y: wp.y, types: [], interval: 0, startTime: 0, expireTime: 0, path: [], pathMode: 'loop' });
         this._refreshTimeline();
         return;
       }
@@ -604,6 +660,30 @@ export default class StageEditor extends Phaser.Scene {
         this._refreshTimeline();
       }
     });
+
+    // Ctrl+C: copiar spawner seleccionado
+    this.input.keyboard.on('keydown-C', (event) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      if (this.selectedSpawner !== null) {
+        this._copiedSpawner = JSON.parse(JSON.stringify(this.spawners[this.selectedSpawner]));
+        this._toast('Spawner copiado (Ctrl+V para pegar)', 'inf');
+      }
+    });
+
+    // Ctrl+V: pegar spawner copiado en posicion del mouse
+    this.input.keyboard.on('keydown-V', (event) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      if (!this._copiedSpawner) return;
+      const wp = this.camera.screenToWorld(this._mouseX, this._mouseY);
+      const clone = JSON.parse(JSON.stringify(this._copiedSpawner));
+      clone.x = wp.x;
+      clone.y = wp.y;
+      this.spawners.push(clone);
+      this._selectSpawner(this.spawners.length - 1);
+      this._refreshTimeline();
+      this._toast('Spawner pegado', 'ok');
+    });
+
     this.input.keyboard.on('keydown-G', () => { this.showGrid = !this.showGrid; });
 
     // Zoom con rueda
@@ -636,6 +716,7 @@ export default class StageEditor extends Phaser.Scene {
   _deselectSpawner() {
     this.selectedSpawner = null;
     this.editingPath = false;
+    this._editingPathIndex = 0;
     this._hideSpawnerInfo();
     this._updateCursor();
   }
@@ -650,6 +731,14 @@ export default class StageEditor extends Phaser.Scene {
     if (!box) return;
     box.style.display = 'block';
 
+    const hasMultiPath = !!(s.paths && s.paths.length > 0);
+    const totalPaths = hasMultiPath ? s.paths.length : (s.path && s.path.length > 0 ? 1 : 0);
+
+    // Ensure _editingPathIndex is valid
+    if (hasMultiPath && this._editingPathIndex >= s.paths.length) {
+      this._editingPathIndex = 0;
+    }
+
     const typesList = enemyRegistry.getAllTypes();
     const typesHtml = typesList.map(t => {
       const active = (s.types || []).includes(t);
@@ -661,17 +750,83 @@ export default class StageEditor extends Phaser.Scene {
       </div>`;
     }).join('');
 
-    const pathCount = (s.path || []).length;
-    const waypointsHtml = (s.path || []).map((wp, i) =>
-      `<div class="se-row" style="margin:2px 0;font-size:10px;color:#8ab4cc">
-        <span>${i}</span><span>(${wp.x.toFixed(0)}, ${wp.y.toFixed(0)})</span>
-        <input id="se-wp-wait-${i}" class="se-input se-input-sm" type="number"
-          value="${wp.wait}" style="width:50px" min="0" max="30000" step="100">
-        <span style="color:#445566">ms</span>
-        <button class="se-btn se-btn-exit" style="width:auto;padding:2px 6px;font-size:9px;margin-left:4px"
-          id="se-wp-del-${i}">✕</button>
-      </div>`
-    ).join('');
+    // Build path UI based on multi-path vs legacy
+    let pathHtml = '';
+    let modeHtml = '';
+
+    if (hasMultiPath) {
+      // Multi-path: path selector + current path details
+      const pathOpts = s.paths.map((p, i) =>
+        `<option value="${i}" ${this._editingPathIndex === i ? 'selected' : ''}>Path ${i + 1} (${(p.path || []).length} wp)</option>`
+      ).join('');
+
+      const activePath = s.paths[this._editingPathIndex] || { path: [], mode: 'loop' };
+      const wpList = activePath.path || [];
+      const wpCount = wpList.length;
+
+      const waypointsHtml = wpList.map((wp, i) =>
+        `<div class="se-row" style="margin:1px 0;font-size:10px;color:#8ab4cc">
+          <span>${i}</span><span>(${wp.x.toFixed(0)}, ${wp.y.toFixed(0)})</span>
+          <input id="se-wp-wait-${i}" class="se-input se-input-sm" type="number"
+            value="${wp.wait}" style="width:50px" min="0" max="30000" step="100">
+          <span style="color:#445566">ms</span>
+          <button class="se-btn se-btn-exit" style="width:auto;padding:2px 6px;font-size:9px;margin-left:4px"
+            id="se-wp-del-${i}">✕</button>
+        </div>`
+      ).join('');
+
+      pathHtml = `
+        <div class="se-row" style="margin-top:4px;gap:4px">
+          <select id="se-path-select" class="se-input se-input-sm" style="flex:1">${pathOpts}</select>
+          <button class="se-btn se-btn-spawner" id="se-add-path" style="width:auto;padding:4px 8px;font-size:9px;margin:0">+</button>
+          <button class="se-btn se-btn-exit" id="se-remove-path" style="width:auto;padding:4px 8px;font-size:9px;margin:0" ${s.paths.length <= 1 ? 'disabled' : ''}>-</button>
+        </div>
+        <div id="se-spawner-path" style="margin-top:4px">${wpCount > 0
+          ? waypointsHtml + `<div class="se-dim" style="margin-top:4px">${wpCount} waypoints</div>`
+          : '<div class="se-dim">Sin waypoints</div>'}
+        </div>
+      `;
+
+      modeHtml = `
+        <select id="se-path-mode" class="se-input se-input-sm" style="width:auto;flex:1">
+          <option value="loop" ${(activePath.mode || 'loop') === 'loop' ? 'selected' : ''}>Loop</option>
+          <option value="pingpong" ${activePath.mode === 'pingpong' ? 'selected' : ''}>Pingpong</option>
+          <option value="once" ${activePath.mode === 'once' ? 'selected' : ''}>Once</option>
+          <option value="chase" ${activePath.mode === 'chase' ? 'selected' : ''}>Chase</option>
+          <option value="flee" ${activePath.mode === 'flee' ? 'selected' : ''}>Flee</option>
+        </select>
+      `;
+    } else {
+      // Legacy single path
+      const pathCount = (s.path || []).length;
+      const waypointsHtml = (s.path || []).map((wp, i) =>
+        `<div class="se-row" style="margin:2px 0;font-size:10px;color:#8ab4cc">
+          <span>${i}</span><span>(${wp.x.toFixed(0)}, ${wp.y.toFixed(0)})</span>
+          <input id="se-wp-wait-${i}" class="se-input se-input-sm" type="number"
+            value="${wp.wait}" style="width:50px" min="0" max="30000" step="100">
+          <span style="color:#445566">ms</span>
+          <button class="se-btn se-btn-exit" style="width:auto;padding:2px 6px;font-size:9px;margin-left:4px"
+            id="se-wp-del-${i}">✕</button>
+        </div>`
+      ).join('');
+
+      pathHtml = `
+        <div id="se-spawner-path">${s.path && s.path.length > 0
+          ? waypointsHtml + `<div class="se-dim" style="margin-top:4px">${pathCount} waypoints</div>`
+          : '<div class="se-dim">Sin ruta definida</div>'}
+        </div>
+      `;
+
+      modeHtml = `
+        <select id="se-path-mode" class="se-input se-input-sm" style="width:auto;flex:1">
+          <option value="loop" ${(s.pathMode || 'loop') === 'loop' ? 'selected' : ''}>Loop</option>
+          <option value="pingpong" ${s.pathMode === 'pingpong' ? 'selected' : ''}>Pingpong</option>
+          <option value="once" ${s.pathMode === 'once' ? 'selected' : ''}>Once</option>
+          <option value="chase" ${s.pathMode === 'chase' ? 'selected' : ''}>Chase</option>
+          <option value="flee" ${s.pathMode === 'flee' ? 'selected' : ''}>Flee</option>
+        </select>
+      `;
+    }
 
     box.innerHTML = `
       <div class="se-label">SPAWNER</div>
@@ -682,38 +837,96 @@ export default class StageEditor extends Phaser.Scene {
           value="${s.interval || 0}" min="0" max="60000" step="500">
         <span class="se-dim">ms</span>
       </div>
+      <div class="se-row" style="margin-top:4px">
+        <span class="se-dim">Inicia</span>
+        <input id="se-spawn-start" class="se-input se-input-sm" type="number"
+          value="${s.startTime || 0}" min="0" max="3600" step="5">
+        <span class="se-dim">s</span>
+        <span class="se-dim">Expira</span>
+        <input id="se-spawn-expire" class="se-input se-input-sm" type="number"
+          value="${s.expireTime || 0}" min="0" max="3600" step="5">
+        <span class="se-dim">s</span>
+      </div>
       <div class="se-label" style="margin-top:10px">TIPOS PERMITIDOS</div>
       <div id="se-spawner-types">${typesHtml}</div>
-      <div class="se-label" style="margin-top:10px">RUTA</div>
-      <div id="se-spawner-path">${s.path && s.path.length > 0
-        ? waypointsHtml + `<div class="se-dim" style="margin-top:4px">${pathCount} waypoints</div>`
-        : '<div class="se-dim">Sin ruta definida</div>'}
-      </div>
+      <div class="se-label" style="margin-top:10px">RUTA ${hasMultiPath ? `(${totalPaths} paths)` : ''}</div>
+      ${pathHtml}
       <div class="se-row" style="margin-top:6px;gap:4px">
-        <select id="se-path-mode" class="se-input se-input-sm" style="width:auto;flex:1">
-          <option value="loop" ${(s.pathMode || 'loop') === 'loop' ? 'selected' : ''}>Loop</option>
-          <option value="pingpong" ${s.pathMode === 'pingpong' ? 'selected' : ''}>Pingpong</option>
-          <option value="once" ${s.pathMode === 'once' ? 'selected' : ''}>Once</option>
-          <option value="chase" ${s.pathMode === 'chase' ? 'selected' : ''}>Chase</option>
-        </select>
+        ${modeHtml}
       </div>
-      <button class="se-btn se-btn-spawner" id="se-edit-path" style="margin-top:6px">${this.editingPath ? '■ Detener edición' : '✎ Editar Ruta'}</button>
+      <button class="se-btn se-btn-spawner" id="se-add-multi-path" style="margin-top:6px">+ Multipath</button>
+      <button class="se-btn se-btn-spawner" id="se-edit-path" style="margin-top:2px">${this.editingPath ? '■ Detener edición' : '✎ Editar Ruta'}</button>
       <button class="se-btn se-btn-exit" id="se-delete-spawner" style="margin-top:4px">🗑 Eliminar Spawner</button>
       <button class="se-btn" id="se-close-spawner" style="margin-top:4px">Cerrar</button>
     `;
 
-    // Event handlers
+    // ── Event handlers ──
+
     box.querySelector('#se-spawn-interval')?.addEventListener('input', ev => {
       s.interval = parseInt(ev.target.value) || 0;
     });
-    box.querySelector('#se-path-mode')?.addEventListener('change', ev => {
-      s.pathMode = ev.target.value;
+
+    box.querySelector('#se-spawn-start')?.addEventListener('input', ev => {
+      s.startTime = parseInt(ev.target.value) || 0;
     });
+
+    box.querySelector('#se-spawn-expire')?.addEventListener('input', ev => {
+      s.expireTime = parseInt(ev.target.value) || 0;
+    });
+
+    // Path selector (multi-path only)
+    box.querySelector('#se-path-select')?.addEventListener('change', ev => {
+      this._editingPathIndex = parseInt(ev.target.value) || 0;
+      this._refreshSpawnerInfo();
+    });
+
+    // Add path (multi-path only)
+    box.querySelector('#se-add-path')?.addEventListener('click', () => {
+      if (!s.paths) s.paths = [];
+      s.paths.push({ path: [], mode: 'loop' });
+      this._editingPathIndex = s.paths.length - 1;
+      this._refreshSpawnerInfo();
+    });
+
+    // Remove path (multi-path only)
+    box.querySelector('#se-remove-path')?.addEventListener('click', () => {
+      if (!s.paths || s.paths.length <= 1) return;
+      s.paths.splice(this._editingPathIndex, 1);
+      if (this._editingPathIndex >= s.paths.length) this._editingPathIndex = s.paths.length - 1;
+      this._refreshSpawnerInfo();
+    });
+
+    // Convert to multi-path
+    box.querySelector('#se-add-multi-path')?.addEventListener('click', () => {
+      if (!s.paths) {
+        // Migrate legacy path if exists
+        s.paths = [];
+        if (s.path && s.path.length > 0) {
+          s.paths.push({ path: [...s.path], mode: s.pathMode || 'loop' });
+        }
+        s.paths.push({ path: [], mode: 'loop' });
+        this._editingPathIndex = 0;
+        this._refreshSpawnerInfo();
+      }
+    });
+
+    // Path mode
+    box.querySelector('#se-path-mode')?.addEventListener('change', ev => {
+      if (hasMultiPath) {
+        const activePath = s.paths[this._editingPathIndex];
+        if (activePath) activePath.mode = ev.target.value;
+      } else {
+        s.pathMode = ev.target.value;
+      }
+    });
+
+    // Edit path toggle
     box.querySelector('#se-edit-path')?.addEventListener('click', () => {
       this.editingPath = !this.editingPath;
       this._updateCursor();
       this._refreshSpawnerInfo();
     });
+
     box.querySelector('#se-delete-spawner')?.addEventListener('click', () => {
       this.spawners.splice(this.selectedSpawner, 1);
       this._deselectSpawner();
@@ -732,16 +945,30 @@ export default class StageEditor extends Phaser.Scene {
       });
     });
 
-    // Waypoint wait input handlers
-    (s.path || []).forEach((wp, i) => {
-      box.querySelector(`#se-wp-wait-${i}`)?.addEventListener('input', ev => {
-        wp.wait = parseInt(ev.target.value) || 0;
+    // Waypoint wait / delete handlers
+    if (hasMultiPath) {
+      const activePath = s.paths[this._editingPathIndex];
+      const wpList = activePath ? (activePath.path || []) : [];
+      wpList.forEach((wp, i) => {
+        box.querySelector(`#se-wp-wait-${i}`)?.addEventListener('input', ev => {
+          wp.wait = parseInt(ev.target.value) || 0;
+        });
+        box.querySelector(`#se-wp-del-${i}`)?.addEventListener('click', () => {
+          wpList.splice(i, 1);
+          this._refreshSpawnerInfo();
+        });
       });
-      box.querySelector(`#se-wp-del-${i}`)?.addEventListener('click', () => {
-        s.path.splice(i, 1);
-        this._refreshSpawnerInfo();
+    } else {
+      (s.path || []).forEach((wp, i) => {
+        box.querySelector(`#se-wp-wait-${i}`)?.addEventListener('input', ev => {
+          wp.wait = parseInt(ev.target.value) || 0;
+        });
+        box.querySelector(`#se-wp-del-${i}`)?.addEventListener('click', () => {
+          s.path.splice(i, 1);
+          this._refreshSpawnerInfo();
+        });
       });
-    });
+    }
   }
 
   _hideSpawnerInfo() {
@@ -967,23 +1194,54 @@ export default class StageEditor extends Phaser.Scene {
       }
 
       // Path lines (solo modo edicion o si está seleccionado)
-      if (s.path && s.path.length > 1 && (sel || this.editingPath)) {
-        g.lineStyle(2, 0xffaa22, sel ? 0.8 : 0.4);
-        for (let pi = 0; pi < s.path.length - 1; pi++) {
-          g.lineBetween(s.path[pi].x, s.path[pi].y, s.path[pi + 1].x, s.path[pi + 1].y);
-        }
-        if (s.pathMode === 'loop') {
-          const first2 = s.path[0], last2 = s.path[s.path.length - 1];
-          g.lineStyle(1, 0xffaa22, 0.2);
-          g.lineBetween(last2.x, last2.y, first2.x, first2.y);
-        }
-      }
-      // Waypoint dots (solo seleccionado o editando)
-      if (s.path && (sel || this.editingPath)) {
-        for (let wi = 0; wi < s.path.length; wi++) {
-          const wp = s.path[wi];
-          g.fillStyle(0xffaa22, sel ? 0.9 : 0.5);
-          g.fillCircle(wp.x, wp.y, 5);
+      if (sel || this.editingPath) {
+        if (s.paths && s.paths.length > 0) {
+          // Multi-path rendering: each path gets a slightly different hue
+          for (let pi = 0; pi < s.paths.length; pi++) {
+            const pdata = s.paths[pi];
+            const wpList = pdata.path || [];
+            const isActive = pi === this._editingPathIndex;
+            // Vary color per path (orange → yellow → green tints)
+            const hues = [0xffaa22, 0xffcc44, 0x88cc44, 0x44aacc, 0xcc8844, 0xaa66cc];
+            const pathColor = isActive ? 0xffaa22 : (hues[pi % hues.length]);
+            const alpha = isActive ? 0.9 : 0.5;
+
+            if (wpList.length > 1) {
+              g.lineStyle(2, pathColor, alpha);
+              for (let wi = 0; wi < wpList.length - 1; wi++) {
+                g.lineBetween(wpList[wi].x, wpList[wi].y, wpList[wi + 1].x, wpList[wi + 1].y);
+              }
+              if ((pdata.mode || 'loop') === 'loop') {
+                const first2 = wpList[0], last2 = wpList[wpList.length - 1];
+                g.lineStyle(1, pathColor, alpha * 0.3);
+                g.lineBetween(last2.x, last2.y, first2.x, first2.y);
+              }
+            }
+            // Waypoint dots
+            for (let wi = 0; wi < wpList.length; wi++) {
+              const wp = wpList[wi];
+              g.fillStyle(pathColor, alpha);
+              g.fillCircle(wp.x, wp.y, isActive ? 5 : 4);
+            }
+          }
+        } else if (s.path && s.path.length >= 1) {
+          // Legacy single path
+          if (s.path.length > 1) {
+            g.lineStyle(2, 0xffaa22, sel ? 0.8 : 0.4);
+            for (let pi = 0; pi < s.path.length - 1; pi++) {
+              g.lineBetween(s.path[pi].x, s.path[pi].y, s.path[pi + 1].x, s.path[pi + 1].y);
+            }
+            if (s.pathMode === 'loop' || s.pathMode === 'flee') {
+              const first2 = s.path[0], last2 = s.path[s.path.length - 1];
+              g.lineStyle(1, 0xffaa22, 0.2);
+              g.lineBetween(last2.x, last2.y, first2.x, first2.y);
+            }
+          }
+          for (let wi = 0; wi < s.path.length; wi++) {
+            const wp = s.path[wi];
+            g.fillStyle(0xffaa22, sel ? 0.9 : 0.5);
+            g.fillCircle(wp.x, wp.y, 5);
+          }
         }
       }
 
@@ -994,9 +1252,11 @@ export default class StageEditor extends Phaser.Scene {
       g.lineBetween(s.x, s.y - 10, s.x, s.y + 10);
     }
 
-    // Enemigos — solo los del tiempo actual ±5s resaltados, el resto más tenues
+    // Enemigos — solo visibles si ya "invocados" (spawnTime <= currentTime)
+    // Los del tiempo actual ±5s van resaltados, los pasados más tenues
     for (let i = 0; i < this.enemies.length; i++) {
       const e     = this.enemies[i];
+      if (e.spawnTime > this.currentTime) continue;
       const near  = Math.abs(e.spawnTime - this.currentTime) <= 5;
       const sel   = this.selectedEnemy === i;
       const alpha = near || sel ? 1.0 : 0.3;

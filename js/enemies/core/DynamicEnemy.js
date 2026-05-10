@@ -1,5 +1,6 @@
 // js/enemies/core/DynamicEnemy.js
 import Enemy from '../../scenes/Enemy.js';
+import { ENEMY_REACTION_RADIUS } from '../../constants.js';
 
 export default class DynamicEnemy extends Enemy {
     constructor(x, y, scene, config) {
@@ -8,7 +9,7 @@ export default class DynamicEnemy extends Enemy {
         const mov = config.movement || {};
 
         this.isMobile = mov.mobile ?? true;
-        this.baseSpeed = mov.speed || 50;
+        this.baseSpeed = mov.speed ?? 200;
         this.speed = this.baseSpeed;
 
         this.speedScaling = mov.scaling || { hpBase: 'none', hpPercentage: 0 };
@@ -16,11 +17,27 @@ export default class DynamicEnemy extends Enemy {
         this.movementStyle = mov.style || 'seek';
         this.orbitRadius = mov.orbitRange || 120;
         this.erraticTime = mov.erraticTime || 2000;
+        this.reactionRadius = mov.reactionRadius ?? null;
+        this.disengageRadius = mov.disengageRadius ?? null;
+        this.activeSpeed = mov.activeSpeed ?? null;
+        this.state._awareOfPlayer = false;
+
+        // Reacciones a eventos
+        this.reactions = mov.reactions || [];
+        this._activeReaction = null;
+
+        // Odio hacia otros tipos de enemigos
+        const amb = config.ambitious || {};
+        this.hates = amb.hates || [];
+        this.hateRadius = amb.hateRadius || 0;
+        this.hateDamage = amb.hateDamage || 5;
+        this._hateTarget = null;
+        this._fleeActive = false;
+        this._onPath = false;
 
         this.ignoreWalls = mov.ignoreWalls ?? false;
         this.isPhantom = mov.isPhantom || false;
 
-        const amb = config.ambitious || {};
         this.isWall = amb.isWall || false;
         this.evade = amb.defense?.evade || false;
         this.invulnerableAura = amb.defense?.invulnerableAura || false;
@@ -38,7 +55,8 @@ export default class DynamicEnemy extends Enemy {
     }
 
     update(delta, player, lines) {
-        super.update(delta, player, lines); 
+        super.update(delta, player, lines);
+        this._lines = lines;
 
         if (!player || player.isDead) return;
 
@@ -78,46 +96,168 @@ export default class DynamicEnemy extends Enemy {
         if (this._frozen) return;
 
         // --- PATH FOLLOWING (sobrescribe AI si tiene ruta asignada) ---
-        if (this._path && this._path.length > 0) {
+        const hasMultiPath = this._paths && this._paths.length > 0;
+        const hasSinglePath = this._path && this._path.length > 0;
+        if (hasMultiPath || hasSinglePath) {
             if (this._followPath(delta, player)) return;
         }
 
-        // --- SISTEMA DE ESCALADO DINÁMICO DE VELOCIDAD ---
-        if (this.speedScaling.hpBase === 'proportional') {
+        // --- REACTION RADIUS: histeresis deteccion/desenganche ---
+        const trackingStyles = ['seek', 'flee', 'orbit', 'circle', 'axisX', 'axisY', 'dashOnly'];
+        const detectRadius = (this.reactionRadius == null || this.reactionRadius === 0)
+            ? ENEMY_REACTION_RADIUS
+            : this.reactionRadius;
+
+        let effectiveStyle = this.movementStyle;
+
+        if (detectRadius > 0) {
+            const distToPlayer = Math.hypot(player.px - this.x, player.py - this.y);
+            const seeThrough = this.customConfig?.ambitious?.seeThroughWalls;
+
+            if (!this.state._awareOfPlayer) {
+                if (distToPlayer <= detectRadius) {
+                    // Gate awareness on LOS: enemies that can't see through walls
+                    // must have clear line of sight to become aware
+                    if (seeThrough) {
+                        this.state._awareOfPlayer = true;
+                    } else {
+                        const hasWalls = (lines && lines.length > 0) || this.scene?.wallGrid;
+                        if (!hasWalls) {
+                            this.state._awareOfPlayer = true;
+                        } else {
+                            this.state._losTimer = (this.state._losTimer || 0) + delta;
+                            if (this.state._losTimer >= 300) {
+                                this.state._losTimer = 0;
+                                if (this.scene?.hasLineOfSight?.(this.x, this.y, player.px, player.py, lines)) {
+                                    this.state._awareOfPlayer = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                const disengageRadius = (this.disengageRadius != null && this.disengageRadius !== 0)
+                    ? this.disengageRadius
+                    : detectRadius * 2;
+                if (distToPlayer > disengageRadius) {
+                    this.state._awareOfPlayer = false;
+                    this.state._losTimer = 0;
+                } else if (!seeThrough) {
+                    // Periodically re-check LOS while aware; disengage if wall blocks sight
+                    this.state._losTimer = (this.state._losTimer || 0) + delta;
+                    if (this.state._losTimer >= 300) {
+                        this.state._losTimer = 0;
+                        if (!this.scene?.hasLineOfSight?.(this.x, this.y, player.px, player.py, lines)) {
+                            this.state._awareOfPlayer = false;
+                        }
+                    }
+                }
+            }
+
+            if (!this.state._awareOfPlayer && !this._onPath) {
+                effectiveStyle = 'wander';
+            }
+        }
+
+        // Velocidad: activa si detecta al jugador, si no usa base + scaling
+        if ((this.state._awareOfPlayer || this._hateTarget) && this.activeSpeed != null) {
+            this.speed = this.activeSpeed;
+        } else if (this.speedScaling.hpBase === 'proportional') {
             this.speed = this.baseSpeed * Math.max(0.2, (this.hp / this.maxHp));
         } else if (this.speedScaling.hpBase === 'inverse') {
             const missingHpPct = 1 - (this.hp / this.maxHp);
             const maxBoost = (this.speedScaling.hpPercentage || 50) / 100;
             this.speed = this.baseSpeed * (1 + (missingHpPct * maxBoost));
+        } else {
+            this.speed = this.baseSpeed;
         }
 
-        // --- GBA Acrobatic: undetectable player — enemies ignore ---
-        const trackingStyles = ['seek', 'flee', 'orbit', 'circle', 'axisX', 'axisY'];
+        // --- EVENT REACTIONS: reaccion a eventos cercanos ---
+        if (this.reactions.length > 0) {
+            const events = this.scene?.enemyManager?.recentEvents || [];
+            for (const event of events) {
+                if (event.enemyType === this.type) continue;
+                for (const reaction of this.reactions) {
+                    if (reaction.event !== event.type) continue;
+                    const edist = Math.hypot(event.x - this.x, event.y - this.y);
+                    if (edist <= (reaction.radius || 300)) {
+                        // Don't react to events through walls
+                        if (!(this.customConfig?.ambitious?.seeThroughWalls)) {
+                            const wls = this._lines;
+                            if (wls && wls.length > 0 &&
+                                !this.scene?.hasLineOfSight?.(this.x, this.y, event.x, event.y, wls)) {
+                                continue;
+                            }
+                        }
+                        this._activeReaction = {
+                            action: reaction.action,
+                            targetX: event.x,
+                            targetY: event.y,
+                            speed: reaction.speed || this.speed,
+                            endTime: Date.now() + (reaction.duration || 2000)
+                        };
+                        break;
+                    }
+                }
+                if (this._activeReaction) break;
+            }
+        }
 
-        // --- LINE OF SIGHT: enemigos que no ven a traves de muros pierden rastro ---
-        const seeThrough = this.customConfig?.ambitious?.seeThroughWalls;
-        let effectiveStyle = this.movementStyle;
+        if (this._activeReaction && Date.now() > this._activeReaction.endTime) {
+            this._activeReaction = null;
+        }
+
+        if (this._activeReaction) {
+            this.speed = this._activeReaction.speed;
+            effectiveStyle = this._activeReaction.action;
+        }
+
+        // --- HATE SYSTEM: enemigos que odian otros tipos ---
+        this._hateTarget = null;
+        if (!this._activeReaction && !this._fleeActive && this.hates.length > 0 && this.hateRadius > 0) {
+            const enemies = this.scene?.enemyManager?.enemies || [];
+            let nearestHated = null;
+            let nearestHateDist = this.hateRadius;
+
+            for (const other of enemies) {
+                if (other === this || other.hp <= 0) continue;
+                if (!this.hates.includes(other.type)) continue;
+                const d = Math.hypot(other.x - this.x, other.y - this.y);
+                if (d < nearestHateDist) { nearestHateDist = d; nearestHated = other; }
+            }
+
+            if (nearestHated) {
+                const distToPlayer = Math.hypot(player.px - this.x, player.py - this.y);
+                if (nearestHateDist < distToPlayer) {
+                    this._hateTarget = nearestHated;
+                    effectiveStyle = 'seek';
+                    if (nearestHateDist < this.radius + (nearestHated.radius || 16) + 5) {
+                        nearestHated.hp -= (this.hateDamage || 5) * (delta / 1000);
+                        nearestHated._lastDamageSource = 'hater';
+                    }
+                }
+            }
+        }
+
+        // --- FLEE FROM PATH: huir del jugador, volver al path cuando seguro ---
+        if (this._fleeActive) {
+            effectiveStyle = 'flee';
+            const fleeRadius = this._fleeRadius ?? 250;
+            if (Math.hypot(player.px - this.x, player.py - this.y) > fleeRadius * 2) {
+                this._fleeActive = false;
+                if (this._path) {
+                    const nearest = this._getNearestWaypoint(this._path);
+                    if (nearest) this._pathIndex = this._path.indexOf(nearest);
+                } else if (this._paths) {
+                    this._evaluatePaths();
+                }
+            }
+        }
+
+        // --- UNDETECTABLE PLAYER ---
         if (player._undetectable) {
             if (trackingStyles.includes(effectiveStyle)) {
                 effectiveStyle = 'erratic';
-            }
-        } else if (!seeThrough && lines && lines.length > 0) {
-            const dist = Math.hypot(player.px - this.x, player.py - this.y);
-            if (dist < 500) {
-                if (!this.state._losTimer) this.state._losTimer = 0;
-                this.state._losTimer += delta;
-                if (this.state._losTimer >= 300) {
-                    this.state._losTimer = 0;
-                    this.state._losBlocked = !this.scene?.hasLineOfSight?.(this.x, this.y, player.px, player.py, lines);
-                }
-                if (this.state._losBlocked) {
-                    if (trackingStyles.includes(effectiveStyle)) {
-                        effectiveStyle = 'erratic';
-                    }
-                }
-            } else {
-                this.state._losBlocked = false;
-                this.state._losTimer = 0;
             }
         }
 
@@ -125,6 +265,10 @@ export default class DynamicEnemy extends Enemy {
         let moveX = 0, moveY = 0;
 
         switch (effectiveStyle) {
+            case 'dashOnly':
+                const dashOnly = this._dashOnlyMovement(player, delta);
+                moveX = dashOnly.x; moveY = dashOnly.y;
+                break;
             case 'seek':
                 const seek = this._seekMovement(player, delta);
                 moveX = seek.x; moveY = seek.y;
@@ -143,6 +287,21 @@ export default class DynamicEnemy extends Enemy {
                 const circle = this._circleMovement(player, delta);
                 moveX = circle.x; moveY = circle.y;
                 break;
+            case 'swarm':
+                const swT = this._activeReaction || {};
+                const sw = this._swarmMovement(swT.targetX || player.px, swT.targetY || player.py, delta);
+                moveX = sw.x; moveY = sw.y;
+                break;
+            case 'retreat':
+                const rtT = this._activeReaction || { targetX: player.px, targetY: player.py };
+                const rt = this._retreatMovement(rtT.targetX, rtT.targetY, delta);
+                moveX = rt.x; moveY = rt.y;
+                break;
+            case 'investigate':
+                const invT = this._activeReaction || {};
+                const inv = this._investigateMovement(invT.targetX || player.px, invT.targetY || player.py, delta);
+                moveX = inv.x; moveY = inv.y;
+                break;
             default:
                 const defaultSeek = this._seekMovement(player, delta);
                 moveX = defaultSeek.x; moveY = defaultSeek.y;
@@ -153,13 +312,16 @@ export default class DynamicEnemy extends Enemy {
         this.y += moveY;
 
         // --- COLISIONES CON MUROS ---
-        if (!this.ignoreWalls && lines) {
-            this.handleWallCollisions(lines, player, delta);
+        if (!this.ignoreWalls) {
+            const wallLines = this.scene?.wallGrid?.query(this.x, this.y, this.radius + 30) || lines || [];
+            if (wallLines.length > 0) {
+                this.handleWallCollisions(wallLines, player, delta);
+            }
         }
 
-        // --- SISTEMA DESATASCAR ---
+        // --- SISTEMA DESATASCAR (solo si el enemigo está intentando moverse) ---
         const distMoved = Math.hypot(this.x - this.state.lastX, this.y - this.state.lastY);
-        if (distMoved < 0.5) { // Umbral ligeramente más sensible
+        if (this.speed > 0 && distMoved < 0.5) {
             this.state.stuckCounter++;
             if (this.state.stuckCounter > 30) {
                 this.x += (Math.random() - 0.5) * 15;
@@ -201,12 +363,13 @@ export default class DynamicEnemy extends Enemy {
                 this.y += (dy / dist) * overlap;
                 hitWall = true;
 
-                if (line.hp != null && player && delta) {
+                const isFollowingPath = this._onPath;
+                if (line.hp != null && player && delta && isFollowingPath) {
                     this._wallStuckFrames = (this._wallStuckFrames || 0) + delta;
                     if (this._wallStuckFrames > 500) {
                         const playerDist = Math.hypot(player.px - this.x, player.py - this.y);
                         if (playerDist <= 800) {
-                            line.hp -= 30 * (delta / 1000);
+                            line.hp -= 5 * (delta / 1000);
                             if (line.hp <= 0) line._broken = true;
                         }
                     }
@@ -218,90 +381,236 @@ export default class DynamicEnemy extends Enemy {
 
     // ─── PATH FOLLOWING ────────────────────────────────────────
 
+    _canSeeTarget(target) {
+        if (this.customConfig?.ambitious?.seeThroughWalls) return true;
+        const wl = this._lines;
+        if (!wl || wl.length === 0) return true;
+        const tx = target.px ?? target.x;
+        const ty = target.py ?? target.y;
+        return this.scene?.hasLineOfSight?.(this.x, this.y, tx, ty, wl) ?? true;
+    }
+
     _followPath(delta, player) {
+        if (this._paths && this._paths.length > 0) {
+            const result = this._followMultiPath(delta, player);
+            this._onPath = result;
+            return result;
+        }
+        const result = this._followSinglePath(delta, player);
+        this._onPath = result;
+        return result;
+    }
+
+    _followSinglePath(delta, player) {
         const path = this._path;
         const mode = this._pathMode || 'loop';
         const idx = this._pathIndex || 0;
 
-        // chase mode: si el jugador está cerca, soltar ruta y pelear
         if (mode === 'chase' && player && !player.isDead) {
             const chaseRadius = this._chaseRadius ?? 300;
             const dp = Math.hypot(player.px - this.x, player.py - this.y);
-            if (dp <= chaseRadius) return false;
+            if (dp <= chaseRadius && this._canSeeTarget(player)) return false;
+            // Also break path to chase hated enemies
+            if (this.hates.length > 0 && this.hateRadius > 0) {
+                const enemies = this.scene?.enemyManager?.enemies || [];
+                for (const other of enemies) {
+                    if (other === this || other.hp <= 0) continue;
+                    if (!this.hates.includes(other.type)) continue;
+                    if (Math.hypot(other.x - this.x, other.y - this.y) <= chaseRadius) return false;
+                }
+            }
+        }
+
+        if (mode === 'flee' && player && !player.isDead) {
+            const fleeRadius = this._fleeRadius ?? 250;
+            if (Math.hypot(player.px - this.x, player.py - this.y) <= fleeRadius) {
+                // Don't flee if walls block line of sight
+                const seeThrough = this.customConfig?.ambitious?.seeThroughWalls;
+                if (!seeThrough) {
+                    const wallLines = this._lines;
+                    if (wallLines && wallLines.length > 0 &&
+                        !this.scene?.hasLineOfSight?.(this.x, this.y, player.px, player.py, wallLines)) {
+                        return true;
+                    }
+                }
+                this._fleeActive = true;
+                return false;
+            }
         }
 
         const target = path[idx];
         if (!target) return true;
 
-        // Si estamos esperando en el waypoint
-        if (this._pathTimer > 0) {
-            this._pathTimer -= delta;
-            return true;
-        }
+        if (this._pathTimer > 0) { this._pathTimer -= delta; return true; }
 
         const dx = target.x - this.x;
         const dy = target.y - this.y;
         const dist = Math.hypot(dx, dy);
-        const threshold = 4;
 
-        if (dist < threshold) {
-            // Llegamos al waypoint
-            this.x = target.x;
-            this.y = target.y;
-
-            if (target.wait && target.wait > 0) {
-                this._pathTimer = target.wait;
-            }
-
-            // Avanzar al siguiente waypoint
-            if (mode === 'loop' || mode === 'chase') {
-                this._pathIndex = (idx + 1) % path.length;
-            } else if (mode === 'pingpong') {
-                if (this._pathReverse) {
-                    if (idx === 0) {
-                        this._pathReverse = false;
-                        this._pathIndex = 1;
-                    } else {
-                        this._pathIndex = idx - 1;
-                    }
-                } else {
-                    if (idx === path.length - 1) {
-                        this._pathReverse = true;
-                        this._pathIndex = idx - 1;
-                    } else {
-                        this._pathIndex = idx + 1;
-                    }
-                }
-            } else { // 'once'
-                if (idx < path.length - 1) {
-                    this._pathIndex = idx + 1;
-                } else {
-                    // Llegó al final — remover path y volver a AI normal
-                    this._path = null;
-                    this._pathMode = null;
-                    this._pathIndex = 0;
-                    this._pathTimer = 0;
-                }
-            }
+        if (dist < 4) {
+            this.x = target.x; this.y = target.y;
+            if (target.wait && target.wait > 0) this._pathTimer = target.wait;
+            this._advanceWaypoint(path, mode, idx, false);
         } else {
-            // Moverse hacia el waypoint
-            const speed = this.speed || this.baseSpeed || 50;
-            this.x += (dx / dist) * speed * (delta / 16);
-            this.y += (dy / dist) * speed * (delta / 16);
+            const speed = this.speed ?? this.baseSpeed ?? 200;
+            this.x += (dx / dist) * speed * (delta / 1000);
+            this.y += (dy / dist) * speed * (delta / 1000);
         }
         return true;
     }
 
+    // ─── MULTI-PATH ──────────────────────────────────────────
+
+    _followMultiPath(delta, player) {
+        if (this._activePathIndex == null) this._activePathIndex = 0;
+
+        const pathData = this._paths[this._activePathIndex];
+        if (!pathData) return false;
+        const path = pathData.path;
+        const mode = pathData.mode || 'loop';
+
+        if (mode === 'chase' && player && !player.isDead) {
+            const chaseRadius = this._chaseRadius ?? 300;
+            if (Math.hypot(player.px - this.x, player.py - this.y) <= chaseRadius && this._canSeeTarget(player)) return false;
+            if (this.hates.length > 0 && this.hateRadius > 0) {
+                const enemies = this.scene?.enemyManager?.enemies || [];
+                for (const other of enemies) {
+                    if (other === this || other.hp <= 0) continue;
+                    if (!this.hates.includes(other.type)) continue;
+                    if (Math.hypot(other.x - this.x, other.y - this.y) <= chaseRadius) return false;
+                }
+            }
+        }
+
+        if (mode === 'flee' && player && !player.isDead) {
+            const fleeRadius = this._fleeRadius ?? 250;
+            if (Math.hypot(player.px - this.x, player.py - this.y) <= fleeRadius) {
+                const seeThrough = this.customConfig?.ambitious?.seeThroughWalls;
+                if (!seeThrough) {
+                    const wallLines = this._lines;
+                    if (wallLines && wallLines.length > 0 &&
+                        !this.scene?.hasLineOfSight?.(this.x, this.y, player.px, player.py, wallLines)) {
+                        return true;
+                    }
+                }
+                this._fleeActive = true;
+                return false;
+            }
+        }
+
+        // Re-evaluar paths cada 2s
+        this._pathCheckTimer = (this._pathCheckTimer || 0) + delta;
+        if (this._pathCheckTimer > 2000) {
+            this._pathCheckTimer = 0;
+            this._evaluatePaths();
+        }
+
+        const idx = this._pathIndex || 0;
+        const target = path[idx];
+        if (!target) { this._evaluatePaths(); return true; }
+
+        if (this._pathTimer > 0) { this._pathTimer -= delta; return true; }
+
+        const dx = target.x - this.x;
+        const dy = target.y - this.y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist < 4) {
+            this.x = target.x; this.y = target.y;
+            if (target.wait && target.wait > 0) this._pathTimer = target.wait;
+            this._advanceWaypoint(path, mode, idx, true);
+
+            // Al llegar a un waypoint, verificar si el siguiente es alcanzable
+            const nextIdx = this._pathIndex;
+            const nextTarget = path[nextIdx];
+            if (nextTarget && !this._hasClearPathTo(nextTarget.x, nextTarget.y)) {
+                this._evaluatePaths();
+            }
+        } else {
+            const speed = this.speed ?? this.baseSpeed ?? 200;
+            this.x += (dx / dist) * speed * (delta / 1000);
+            this.y += (dy / dist) * speed * (delta / 1000);
+        }
+        return true;
+    }
+
+    _evaluatePaths() {
+        for (let i = 0; i < this._paths.length; i++) {
+            const wp = this._getNearestWaypoint(this._paths[i].path);
+            if (wp && this._hasClearPathTo(wp.x, wp.y)) {
+                this._activePathIndex = i;
+                this._pathIndex = this._paths[i].path.indexOf(wp);
+                this._pathTimer = 0;
+                this._pathCheckTimer = 0;
+                return;
+            }
+        }
+        // Todos los paths bloqueados — reintentar primario en el proximo ciclo
+        this._activePathIndex = 0;
+    }
+
+    _hasClearPathTo(tx, ty) {
+        const lines = this._lines;
+        if (!lines || lines.length === 0) return true;
+        return this.scene?.hasLineOfSight?.(this.x, this.y, tx, ty, lines) ?? true;
+    }
+
+    _getNearestWaypoint(path) {
+        let nearest = null, nearestDist = Infinity;
+        for (const wp of path) {
+            const d = Math.hypot(wp.x - this.x, wp.y - this.y);
+            if (d < nearestDist) { nearestDist = d; nearest = wp; }
+        }
+        return nearest;
+    }
+
+    _advanceWaypoint(path, mode, idx, isMulti) {
+        if (mode === 'loop' || mode === 'chase' || mode === 'flee') {
+            this._pathIndex = (idx + 1) % path.length;
+        } else if (mode === 'pingpong') {
+            if (this._pathReverse) {
+                if (idx === 0) { this._pathReverse = false; this._pathIndex = 1; }
+                else { this._pathIndex = idx - 1; }
+            } else {
+                if (idx === path.length - 1) { this._pathReverse = true; this._pathIndex = idx - 1; }
+                else { this._pathIndex = idx + 1; }
+            }
+        } else { // 'once'
+            if (idx < path.length - 1) {
+                this._pathIndex = idx + 1;
+            } else {
+                if (isMulti) {
+                    this._paths = null;
+                } else {
+                    this._path = null; this._pathMode = null;
+                }
+                this._pathIndex = 0; this._pathTimer = 0;
+            }
+        }
+    }
+
     // Movimiento Helpers
     _seekMovement(player, delta) {
-        const dx = player.px - this.x;
-        const dy = player.py - this.y;
+        const target = this._hateTarget || player;
+        const tx = target.px ?? target.x;
+        const ty = target.py ?? target.y;
+        const dx = tx - this.x;
+        const dy = ty - this.y;
         const dist = Math.hypot(dx, dy);
-        if (dist > 0.01) return { x: (dx / dist) * this.speed * (delta / 16), y: (dy / dist) * this.speed * (delta / 16) };
+        if (dist > 0.01) return { x: (dx / dist) * this.speed * (delta / 1000), y: (dy / dist) * this.speed * (delta / 1000) };
         return { x: 0, y: 0 };
     }
 
     _fleeMovement(player, delta) {
+        // Never flee from a player we can't see through walls
+        if (!(this.customConfig?.ambitious?.seeThroughWalls)) {
+            const wl = this._lines;
+            if (wl && wl.length > 0 &&
+                !this.scene?.hasLineOfSight?.(this.x, this.y, player.px, player.py, wl)) {
+                return this._wanderMovement(delta);
+            }
+        }
+
         const dx = this.x - player.px;
         const dy = this.y - player.py;
         const dist = Math.hypot(dx, dy);
@@ -310,8 +619,8 @@ export default class DynamicEnemy extends Enemy {
         if (dist > 0.01 && dist < fearRange) {
             const fearMultiplier = Math.min(2, fearRange / Math.max(1, dist));
             return {
-                x: (dx / dist) * this.speed * (delta / 16) * fearMultiplier,
-                y: (dy / dist) * this.speed * (delta / 16) * fearMultiplier
+                x: (dx / dist) * this.speed * (delta / 1000) * fearMultiplier,
+                y: (dy / dist) * this.speed * (delta / 1000) * fearMultiplier
             };
         }
         return this._wanderMovement(delta);
@@ -325,9 +634,67 @@ export default class DynamicEnemy extends Enemy {
         }
 
         return {
-            x: Math.cos(this.state.wanderAngle) * this.speed * (delta / 16),
-            y: Math.sin(this.state.wanderAngle) * this.speed * (delta / 16)
+            x: Math.cos(this.state.wanderAngle) * this.speed * (delta / 1000),
+            y: Math.sin(this.state.wanderAngle) * this.speed * (delta / 1000)
         };
+    }
+
+    _dashOnlyMovement(player, delta) {
+        // Init dash state if needed
+        if (!this._dash) {
+            this._dash = { phase: 'cooldown', timer: 500 + Math.random() * 1000 };
+        }
+        const ds = this._dash;
+        ds.timer -= delta;
+
+        const dashSpeed = (this.activeSpeed || this.speed) * 2.5;
+        const windupTime = 400;
+        const dashTime = 350;
+        const cooldownMin = 600;
+        const cooldownMax = 1500;
+
+        if (ds.phase === 'cooldown') {
+            if (ds.timer <= 0) {
+                ds.phase = 'windup';
+                ds.timer = windupTime;
+            }
+            return { x: 0, y: 0 };
+        }
+
+        if (ds.phase === 'windup') {
+            if (ds.timer <= 0) {
+                ds.phase = 'dash';
+                ds.timer = dashTime;
+                // Lock target at windup end
+                ds.targetX = player.px;
+                ds.targetY = player.py;
+                const dx2 = ds.targetX - this.x;
+                const dy2 = ds.targetY - this.y;
+                const dist2 = Math.hypot(dx2, dy2);
+                if (dist2 > 0.01) {
+                    ds.dirX = dx2 / dist2;
+                    ds.dirY = dy2 / dist2;
+                } else {
+                    ds.dirX = 0;
+                    ds.dirY = -1;
+                }
+            }
+            return { x: 0, y: 0 };
+        }
+
+        if (ds.phase === 'dash') {
+            if (ds.timer <= 0) {
+                ds.phase = 'cooldown';
+                ds.timer = cooldownMin + Math.random() * (cooldownMax - cooldownMin);
+                return { x: 0, y: 0 };
+            }
+            return {
+                x: ds.dirX * dashSpeed * (delta / 1000),
+                y: ds.dirY * dashSpeed * (delta / 1000)
+            };
+        }
+
+        return { x: 0, y: 0 };
     }
 
     _circleMovement(player, delta) {
@@ -338,14 +705,48 @@ export default class DynamicEnemy extends Enemy {
         const dy = targetY - this.y;
         const dist = Math.hypot(dx, dy);
 
-        if (dist > 0.01) return { x: (dx / dist) * this.speed * (delta / 16), y: (dy / dist) * this.speed * (delta / 16) };
+        if (dist > 0.01) return { x: (dx / dist) * this.speed * (delta / 1000), y: (dy / dist) * this.speed * (delta / 1000) };
         return { x: 0, y: 0 };
+    }
+
+    // --- Nuevos estilos de movimiento para reacciones ---
+
+    _swarmMovement(tx, ty, delta) {
+        const dx = tx - this.x;
+        const dy = ty - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 5) return this._wanderMovement(delta);
+        return { x: (dx / dist) * this.speed * (delta / 1000), y: (dy / dist) * this.speed * (delta / 1000) };
+    }
+
+    _retreatMovement(tx, ty, delta) {
+        const dx = this.x - tx;
+        const dy = this.y - ty;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1) {
+            const a = Math.random() * Math.PI * 2;
+            return { x: Math.cos(a) * this.speed * (delta / 1000), y: Math.sin(a) * this.speed * (delta / 1000) };
+        }
+        if (dist < 400) {
+            return { x: (dx / dist) * this.speed * (delta / 1000), y: (dy / dist) * this.speed * (delta / 1000) };
+        }
+        return this._wanderMovement(delta);
+    }
+
+    _investigateMovement(tx, ty, delta) {
+        const dx = tx - this.x;
+        const dy = ty - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 15) return this._wanderMovement(delta);
+        return { x: (dx / dist) * this.speed * (delta / 1000), y: (dy / dist) * this.speed * (delta / 1000) };
     }
 
     kill(fatalSource = 'any') {
         if (this.onDeathEffects) {
+            const noRewards = fatalSource === 'void' || fatalSource === 'hater';
             for (const effect of this.onDeathEffects) {
                 if (effect.condition && effect.condition !== 'any' && effect.condition !== fatalSource) continue;
+                if (noRewards && (effect.type === 'extraCredits' || effect.type === 'extraCredit' || effect.type === 'momentumStack' || effect.type === 'dropOrb' || effect.type === 'healPlayer' || effect.type === 'buffPlayer')) continue;
                 const chance = effect.chance !== undefined ? effect.chance : 100;
                 if (Math.random() * 100 > chance) continue;
                 this.applyDeathEffect(effect);

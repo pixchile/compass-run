@@ -35,6 +35,10 @@ export default class EnemySpawner {
 
       if (typeConfig) {
         const trigger = typeConfig.basic?.spawnTrigger || {};
+        // 'immediate' o sin trigger: usa el spawnTime del editor (o 0 si no tiene)
+        if (trigger.type === 'immediate' || trigger.type === 'none' || !trigger.type) {
+          finalSpawnTime = e.spawnTime ?? 0;
+        }
         if (e.spawnTime === undefined && trigger.type === 'time') {
           finalSpawnTime = parseFloat(trigger.value) || 0;
         }
@@ -62,8 +66,8 @@ export default class EnemySpawner {
 
     this._processTimeSpawns(elapsedSeconds, hardcap, player, currentEnemiesCount);
     this._processTriggerSpawns(player);
-    this._processIntervalSpawns(delta, hardcap, player, currentEnemiesCount);
-    this._processDensitySpawns(delta, elapsedMin, hardcap, currentEnemiesCount);
+    this._processIntervalSpawns(delta, elapsedSeconds, hardcap, player, currentEnemiesCount);
+    this._processDensitySpawns(delta, elapsedSeconds, elapsedMin, hardcap, currentEnemiesCount);
   }
 
   _processTimeSpawns(elapsedSeconds, hardcap, player, currentEnemiesCount) {
@@ -100,11 +104,16 @@ export default class EnemySpawner {
     }
   }
 
-  _processIntervalSpawns(delta, hardcap, player, currentEnemiesCount) {
+  _processIntervalSpawns(delta, elapsedSeconds, hardcap, player, currentEnemiesCount) {
     for (let i = 0; i < this.spawners.length; i++) {
       const s = this.spawners[i];
       if (!s.interval || s.interval <= 0) continue;
       if (currentEnemiesCount >= hardcap) continue;
+
+      // Not started yet?
+      if (s.startTime && s.startTime > 0 && elapsedSeconds < s.startTime) continue;
+      // Expired?
+      if (s.expireTime && s.expireTime > 0 && elapsedSeconds >= s.expireTime) continue;
 
       this._spawnerTimers[i] = (this._spawnerTimers[i] || 0) + delta;
       if (this._spawnerTimers[i] < s.interval) continue;
@@ -128,7 +137,7 @@ export default class EnemySpawner {
     }
   }
 
-  _processDensitySpawns(delta, elapsedMin, hardcap, currentEnemiesCount) {
+  _processDensitySpawns(delta, elapsedSeconds, elapsedMin, hardcap, currentEnemiesCount) {
     if (!this.density || !this.spawners.length) return;
 
     const minNow = Math.floor((this.density.minBase || 0) + (this.density.minPerMin || 0) * elapsedMin);
@@ -136,7 +145,12 @@ export default class EnemySpawner {
 
     if (currentEnemiesCount >= minNow || currentEnemiesCount >= hardcap || this._fillCooldown > 0) return;
 
-    const fillerSpawners = this.spawners.filter(s => !s.interval || s.interval <= 0);
+    const fillerSpawners = this.spawners.filter(s => {
+      if (s.interval && s.interval > 0) return false;
+      if (s.startTime && s.startTime > 0 && elapsedSeconds < s.startTime) return false;
+      if (s.expireTime && s.expireTime > 0 && elapsedSeconds >= s.expireTime) return false;
+      return true;
+    });
     if (!fillerSpawners.length) return;
 
     const spawner = fillerSpawners[Math.floor(Math.random() * fillerSpawners.length)];
@@ -172,12 +186,23 @@ export default class EnemySpawner {
   }
 
   _assignPath(enemy, spawner) {
+    // Multi-path (nuevo formato)
+    if (spawner.paths && spawner.paths.length > 0) {
+      enemy._paths = spawner.paths;
+      enemy._activePathIndex = 0;
+      enemy._pathIndex = 0;
+      enemy._pathTimer = 0;
+      enemy._pathCheckTimer = 0;
+      return;
+    }
+    // Single path (formato legacy)
     if (spawner.path && spawner.path.length > 0) {
       enemy._path = spawner.path;
       enemy._pathMode = spawner.pathMode || 'loop';
       enemy._pathIndex = 0;
       enemy._pathTimer = 0;
       enemy._chaseRadius = spawner.chaseRadius;
+      enemy._fleeRadius = spawner.fleeRadius;
       if (spawner.path[0].wait) {
         enemy.x = spawner.path[0].x;
         enemy.y = spawner.path[0].y;

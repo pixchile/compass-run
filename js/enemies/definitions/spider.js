@@ -1,19 +1,19 @@
 // Enemigo generado con Enemy Creator (v2.0)
-// Nombre: CustomEnemy
-// Fecha: 06-05-2026, 7:01:11 p. m.
+// Nombre: spider
+// Fecha: 10-05-2026, 1:31:06 p. m.
 
 export default {
-    id: 'custom_enemy',
-    name: 'CustomEnemy',
+    id: 'spider',
+    name: 'spider',
     config: {
-    id: "custom_enemy",
-    name: "CustomEnemy",
+    id: "spider",
+    name: "spider",
     basic: {
         hp: 100,
         hpRegen: 0,
-        color: "0xFF6666",
+        color: "0xFF00EA",
         shape: "circle",
-        radius: 16,
+        radius: 20,
         isBoss: false,
         selfDestruct: {
             type: "none",
@@ -26,40 +26,51 @@ export default {
     },
     movement: {
         mobile: true,
-        speed: 250,
+        speed: 0,
+        activeSpeed: 300,
         scaling: {
-            timeBase: false,
-            timeMultiplier: 1,
+            timeBase: true,
+            timeMultiplier: 1.2,
             hpBase: "none",
             hpPercentage: 0
         },
         style: "seek",
         orbitRange: 120,
         erraticTime: 2000,
-        distanceMin: 0,
-        distanceMax: 0,
         ignoreWalls: false,
-        isPhantom: false
+        isPhantom: false,
+        reactionRadius: 75,
+        disengageRadius: 200,
+        reactions: []
     },
     damageMultipliers: {
-        dash: 1,
-        aerialDash: 4,
-        momentum3: 1,
-        slam: 1,
-        slam3: 2,
+        dash: 0.1,
+        aerialDash: 0.1,
+        momentum3: 0,
+        slam: 4,
+        slam3: 8,
         void: 100,
-        wallCrash: 0,
+        wallCrash: 1,
         explosion: 1
     },
-    onDeath: [],
+    onDeath: [
+        {
+            type: "extraCredits",
+            chance: 100,
+            condition: "any",
+            params: {
+                amount: 80
+            }
+        }
+    ],
     ambitious: {
         isWall: false,
         seeThroughWalls: false,
         attack: {
             type: "contact",
             effect: "none",
-            damage: 1,
-            cooldown: 250
+            damage: 10,
+            cooldown: 1000
         },
         defense: {
             invulnerableAura: false,
@@ -68,7 +79,10 @@ export default {
         spawn: {
             pattern: "normal",
             count: 3
-        }
+        },
+        hates: [],
+        hateRadius: 0,
+        hateDamage: 0
     }
 }
 };

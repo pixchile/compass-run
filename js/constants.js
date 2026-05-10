@@ -3,7 +3,7 @@ export const ARENA = { x: 55, y: 58, w: 4000, h: 4000 };
 export const TRAIL_MAX = 16;
 export const L2 = 40, L3 = 50, SMAX = 90;
 
-export const MAX_SPD = [0, 300,  400,  440];
+export const MAX_SPD = [0, 250,  350,  350];
 export const TURN_K  = [0, 0.24, 0.12, 0.06];
 export const STOP_K  = [0, 0.24, 0.12, 0.06];
 
@@ -13,8 +13,8 @@ export const JUMP_HMAX   = [0,   28,   54,   84];
 export const JUMP_DIST_K = [0,  0.72, 0.92, 1.12];
 
 // Dash
-export const DASH_DUR = 400;
-export const DASH_CD  = 2500;
+export const DASH_DUR = 500;
+export const DASH_CD  = 2000;
 export const DASH_SPD = 2.0;
 
 // Health
@@ -27,10 +27,11 @@ export const HP_REGEN_RATE      = 0.2;
 
 
 // Muros destructibles
-export const WALL_DEFAULT_HP = 100;
+export const WALL_DEFAULT_HP = 300;
 export const DASH_WALL_DAMAGE_FACTOR = 0.1; // 10% de la velocidad de impacto
 export const ENEMY_WALL_DAMAGE_RATE = 30;  // HP/segundo que un enemigo atascado inflige al muro
 export const ENEMY_WALL_BREAK_RANGE = 800; // distancia máxima jugador para que enemigo rompa muros
+export const ENEMY_REACTION_RADIUS = 400; // radio deteccion jugador (histeresis: ×2 para desenganche)
 
 export const C = {
   L1: 0x4488ff, L2: 0xffaa22, L3: 0xff3322,
@@ -40,7 +41,7 @@ export const C = {
 
 // Wall Jump Configuration
 export const WALL_JUMP = {
-  STICK_DURATION: 3000,
+  STICK_DURATION: 2000,
   GRACE_WINDOW: 100,
   PENALTY_MIN_FACTOR: 0.8,
   COMPASS_BONUS: 1.5,
@@ -60,13 +61,13 @@ export const ATTACK_RADIOS = {
 
 export const ATTACK_DAMAGE_MULTIPLIERS = {
     1: 1.0,
-    2: 1.5,
-    3: 1.5
+    2: 1.2,
+    3: 1.3
 };
 
 export const SLAM = {
     MIN_SPEED: 500,
-    HIGH_SPEED_THRESHOLD: 700,
+    HIGH_SPEED_THRESHOLD: 800,
     DAMAGE: 60,
     RADIUS: 100,
     SANDKING_RADIUS_MULT: 2.2,
@@ -86,7 +87,7 @@ export const REWARDS = {
 
   CREDIT_BASE_PER_SEC:     1,
   CREDIT_TICK_RATE:      100,
-  CREDIT_SPEED_FACTOR: 0.0002,
+  CREDIT_SPEED_FACTOR: 0.00015,
 
 };
 

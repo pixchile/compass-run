@@ -1,19 +1,19 @@
 // Enemigo generado con Enemy Creator (v2.0)
-// Nombre: bee
-// Fecha: 09-05-2026, 5:51:40 p. m.
+// Nombre: cricket
+// Fecha: 09-05-2026, 6:03:44 p. m.
 
 export default {
-    id: 'bee',
-    name: 'bee',
+    id: 'cricket',
+    name: 'cricket',
     config: {
-    id: "bee",
-    name: "bee",
+    id: "cricket",
+    name: "cricket",
     basic: {
-        hp: 100,
-        hpRegen: 2,
-        color: "0xFFBB00",
-        shape: "circle",
-        radius: 15,
+        hp: 500,
+        hpRegen: 0,
+        color: "0xB30000",
+        shape: "rectangle",
+        radius: 20,
         isBoss: false,
         selfDestruct: {
             type: "none",
@@ -27,18 +27,18 @@ export default {
     movement: {
         mobile: true,
         speed: 150,
-        activeSpeed: 180,
+        activeSpeed: 200,
         scaling: {
             timeBase: true,
             timeMultiplier: 1.1,
-            hpBase: "proportional",
+            hpBase: "none",
             hpPercentage: 100
         },
-        style: "seek",
+        style: "dashOnly",
         orbitRange: 120,
         erraticTime: 2000,
-        ignoreWalls: true,
-        isPhantom: true,
+        ignoreWalls: false,
+        isPhantom: false,
         reactionRadius: 250,
         disengageRadius: 500,
         reactions: []
@@ -47,8 +47,8 @@ export default {
         dash: 1,
         aerialDash: 2,
         momentum3: 1,
-        slam: 1,
-        slam3: 2,
+        slam: 4,
+        slam3: 4,
         void: 0,
         wallCrash: 1,
         explosion: 2
@@ -59,18 +59,18 @@ export default {
             chance: 100,
             condition: "any",
             params: {
-                amount: 3
+                amount: 50
             }
         }
     ],
     ambitious: {
         isWall: false,
-        seeThroughWalls: true,
+        seeThroughWalls: false,
         attack: {
-            type: "contact",
+            type: "dash",
             effect: "none",
             damage: 1,
-            cooldown: 250
+            cooldown: 3
         },
         defense: {
             invulnerableAura: false,

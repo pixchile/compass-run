@@ -16,6 +16,16 @@ export default class EnemyManager {
 
     this.spawner = new EnemySpawner(this, scene);
     this.combatSystem = new CombatSystem(this, scene);
+    this.recentEvents = [];
+  }
+
+  addEvent(type, x, y, enemyType, data = {}) {
+    this.recentEvents.push({ type, x, y, enemyType, time: Date.now(), ...data });
+  }
+
+  _cleanEvents() {
+    const cutoff = Date.now() - 5000;
+    this.recentEvents = this.recentEvents.filter(e => e.time > cutoff);
   }
 
   setRewardHandlers(rewardSystem, orbManager) {
@@ -29,6 +39,7 @@ export default class EnemyManager {
   setSpawnList(enemies)       { this.spawner.setSpawnList(enemies); }
 
   update(delta, currentTime, player, lines) {
+    this._cleanEvents();
     this.spawner.update(delta, currentTime, player);
 
     for (let i = this.enemies.length - 1; i >= 0; i--) {
@@ -36,9 +47,9 @@ export default class EnemyManager {
         if (typeof enemy.update === 'function') {
             enemy.update(delta, player, lines);
         }
-        
+
         if (enemy.hp <= 0) {
-            this.killEnemy(i, enemy, 'passive');
+            this.killEnemy(i, enemy, enemy._lastDamageSource || 'passive');
         }
     }
   }
@@ -67,23 +78,28 @@ export default class EnemyManager {
 
   killEnemy(index, enemy, fatalSource) {
     if (typeof enemy.kill === 'function') enemy.kill(fatalSource);
-    
-    this.totalKills++;
-    this.scene?.itemEffects?.spawnVampireOrb(enemy.x, enemy.y);
-    this.scene?.itemEffects?.onEnemyKilled();
-    if (this.scene?.momentum) {
-      this.scene.momentum.addMaxSpeed(2);
-    }
-    if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
 
-    // Drop de componente (chance global baja)
-    if (this.scene?.shopSystem) {
-      const drop = this.scene.shopSystem.tryDrop(enemy.x, enemy.y);
-      if (drop && this.scene.itemDropManager) {
-        this.scene.itemDropManager.spawnDrop(drop);
+    const noRewards = fatalSource === 'void' || fatalSource === 'hater';
+
+    this.addEvent('enemyKilled', enemy.x, enemy.y, enemy.type, { killedBy: fatalSource });
+
+    if (!noRewards) {
+      this.totalKills++;
+      this.scene?.itemEffects?.spawnVampireOrb(enemy.x, enemy.y);
+      this.scene?.itemEffects?.onEnemyKilled();
+      if (this.scene?.momentum) {
+        this.scene.momentum.addMaxSpeed(1);
+      }
+      if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
+
+      // Drop de componente (chance global baja)
+      if (this.scene?.shopSystem) {
+        const drop = this.scene.shopSystem.tryDrop(enemy.x, enemy.y);
+        if (drop && this.scene.itemDropManager) {
+          this.scene.itemDropManager.spawnDrop(drop);
+        }
       }
     }
-    // Los orbs y stacks al matar se manejan en DynamicEnemy.kill() → applyDeathEffect()
 
     this.enemies.splice(index, 1);
   }
@@ -102,8 +118,8 @@ export default class EnemyManager {
     this.spawner.clear();
     this.combatSystem.clear();
   }
-  
-  getEnemies() { 
-    return this.enemies; 
+
+  getEnemies() {
+    return this.enemies;
   }
 }

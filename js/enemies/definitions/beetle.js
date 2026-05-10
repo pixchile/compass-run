@@ -1,17 +1,17 @@
 // Enemigo generado con Enemy Creator (v2.0)
-// Nombre: bee
-// Fecha: 09-05-2026, 5:51:40 p. m.
+// Nombre: beetle
+// Fecha: 09-05-2026, 9:45:53 p. m.
 
 export default {
-    id: 'bee',
-    name: 'bee',
+    id: 'beetle',
+    name: 'beetle',
     config: {
-    id: "bee",
-    name: "bee",
+    id: "beetle",
+    name: "beetle",
     basic: {
-        hp: 100,
-        hpRegen: 2,
-        color: "0xFFBB00",
+        hp: 200,
+        hpRegen: 0,
+        color: "0x4F38FF",
         shape: "circle",
         radius: 15,
         isBoss: false,
@@ -21,37 +21,45 @@ export default {
         },
         spawnTrigger: {
             type: "immediate",
-            value: ""
+            value: "0"
         }
     },
     movement: {
         mobile: true,
-        speed: 150,
-        activeSpeed: 180,
+        speed: 55,
+        activeSpeed: 200,
         scaling: {
             timeBase: true,
-            timeMultiplier: 1.1,
-            hpBase: "proportional",
-            hpPercentage: 100
+            timeMultiplier: 1.2,
+            hpBase: "none",
+            hpPercentage: 0
         },
-        style: "seek",
+        style: "flee",
         orbitRange: 120,
         erraticTime: 2000,
-        ignoreWalls: true,
-        isPhantom: true,
-        reactionRadius: 250,
-        disengageRadius: 500,
-        reactions: []
+        ignoreWalls: false,
+        isPhantom: false,
+        reactionRadius: 100,
+        disengageRadius: 100,
+        reactions: [
+            {
+                event: "enemyHit",
+                action: "flee",
+                radius: 300,
+                duration: 2000,
+                speed: 0
+            }
+        ]
     },
     damageMultipliers: {
-        dash: 1,
-        aerialDash: 2,
+        dash: 2,
+        aerialDash: 0.5,
         momentum3: 1,
-        slam: 1,
+        slam: 2,
         slam3: 2,
-        void: 0,
-        wallCrash: 1,
-        explosion: 2
+        void: 100,
+        wallCrash: 0,
+        explosion: 1
     },
     onDeath: [
         {
@@ -59,18 +67,18 @@ export default {
             chance: 100,
             condition: "any",
             params: {
-                amount: 3
+                amount: 2
             }
         }
     ],
     ambitious: {
         isWall: false,
-        seeThroughWalls: true,
+        seeThroughWalls: false,
         attack: {
             type: "contact",
-            effect: "none",
-            damage: 1,
-            cooldown: 250
+            effect: "push",
+            damage: 3,
+            cooldown: 1000
         },
         defense: {
             invulnerableAura: false,

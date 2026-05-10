@@ -3,10 +3,12 @@
 class EnemyEditor {
     constructor() {
         this.deathEffects = []; // Array para guardar múltiples efectos al morir
+        this.reactions = []; // Array para guardar reacciones a eventos
         this.setupTabs();
         this.setupEventListeners();
         this.setupDynamicFields();
         this.setupDeathEffectsManager();
+        this.setupReactionsManager();
         this.generate();
     }
 
@@ -32,13 +34,14 @@ class EnemyEditor {
             'enemyName', 'typeId', 'hp', 'hpRegen', 'color', 'shape', 'radius', 'isBoss',
             'selfDestructType', 'selfDestructValue', 'spawnTriggerType', 'spawnTriggerValue',
             // Movimiento
-            'mobile', 'speed', 'speedTimeScale', 'speedTimeMulti', 'speedHpScale', 'speedHpMulti',
+            'mobile', 'speed', 'activeSpeed', 'speedTimeScale', 'speedTimeMulti', 'speedHpScale', 'speedHpMulti',
             'movementStyle', 'orbitRange', 'erraticTime',
-            'ignoreWalls', 'isPhantom',
+            'ignoreWalls', 'isPhantom', 'reactionRadius', 'disengageRadius',
             // Ambitious (Avanzados)
             'isWall', 'attackType', 'attackEffect', 'attackDamage', 'attackCooldown', 'defenseAura', 'evade',
             'seeThroughWalls',
-            'spawnPattern', 'spawnCount'
+            'spawnPattern', 'spawnCount',
+            'hateTypes', 'hateRadius', 'hateDamage'
         ];
 
         inputs.forEach(id => {
@@ -206,6 +209,79 @@ class EnemyEditor {
         this.renderDeathEffects();
         this.generate();
     }
+
+    // --- SISTEMA DE REACCIONES A EVENTOS ---
+    setupReactionsManager() {
+        const btnAdd = document.getElementById('addReactionBtn');
+        if (btnAdd) {
+            btnAdd.addEventListener('click', () => {
+                this.reactions.push({
+                    event: 'enemyKilled',
+                    action: 'swarm',
+                    radius: 300,
+                    duration: 2000,
+                    speed: 0
+                });
+                this.renderReactions();
+                this.generate();
+            });
+        }
+    }
+
+    renderReactions() {
+        const container = document.getElementById('reactionsContainer');
+        if (!container) return;
+        container.innerHTML = '';
+
+        this.reactions.forEach((r, index) => {
+            const div = document.createElement('div');
+            div.style.border = "1px solid #555";
+            div.style.padding = "10px";
+            div.style.marginBottom = "8px";
+            div.style.borderRadius = "5px";
+            div.style.background = "rgba(0,0,0,0.2)";
+
+            div.innerHTML = `
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <span style="font-size:12px; color:#aaa;">Al</span>
+                    <select onchange="editor.updateReaction(${index}, 'event', this.value)" style="flex:1;">
+                        <option value="enemyKilled" ${r.event === 'enemyKilled' ? 'selected' : ''}>Aliado Muerto</option>
+                        <option value="enemyHit" ${r.event === 'enemyHit' ? 'selected' : ''}>Aliado Herido</option>
+                    </select>
+                    <span style="font-size:12px; color:#aaa;">hacer</span>
+                    <select onchange="editor.updateReaction(${index}, 'action', this.value)" style="flex:1;">
+                        <option value="swarm" ${r.action === 'swarm' ? 'selected' : ''}>Swarm (ir al evento)</option>
+                        <option value="retreat" ${r.action === 'retreat' ? 'selected' : ''}>Retreat (huir)</option>
+                        <option value="investigate" ${r.action === 'investigate' ? 'selected' : ''}>Investigate</option>
+                        <option value="flee" ${r.action === 'flee' ? 'selected' : ''}>Flee (huir jugador)</option>
+                    </select>
+                    <button onclick="editor.removeReaction(${index})" style="background:#633;color:#fff;border:none;padding:2px 8px;cursor:pointer;">X</button>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
+                    <label style="font-size:11px; color:#aaa;">Radio <input type="number" value="${r.radius}" min="0" step="50" onchange="editor.updateReaction(${index}, 'radius', this.value)" style="width:70px;"> px</label>
+                    <label style="font-size:11px; color:#aaa;">Duracion <input type="number" value="${r.duration}" min="100" step="100" onchange="editor.updateReaction(${index}, 'duration', this.value)" style="width:70px;"> ms</label>
+                    <label style="font-size:11px; color:#aaa;">Velocidad <input type="number" value="${r.speed}" min="0" step="10" onchange="editor.updateReaction(${index}, 'speed', this.value)" style="width:70px;"> <small>(0 = usa base)</small></label>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    updateReaction(index, key, value) {
+        this.reactions[index][key] = (key === 'radius' || key === 'duration' || key === 'speed') ? parseFloat(value) : value;
+        this.generate();
+    }
+
+    removeReaction(index) {
+        this.reactions.splice(index, 1);
+        this.renderReactions();
+        this.generate();
+    }
+    _parseHateTypes() {
+        const raw = this.getVal('hateTypes');
+        if (!raw || !raw.trim()) return [];
+        return raw.split(',').map(s => s.trim()).filter(Boolean);
+    }
     // ---------------------------------------------
 
     // Helper para obtener valores del DOM de forma segura
@@ -263,6 +339,7 @@ class EnemyEditor {
             movement: {
                 mobile: this.getVal('mobile', 'boolean'),
                 speed: this.getVal('speed', 'number'),
+                activeSpeed: this.getVal('activeSpeed', 'number'),
                 scaling: {
                     timeBase: this.getVal('speedTimeScale', 'boolean'),
                     timeMultiplier: this.getVal('speedTimeMulti', 'number'),
@@ -273,7 +350,10 @@ class EnemyEditor {
                 orbitRange: this.getVal('orbitRange', 'number'),
                 erraticTime: this.getVal('erraticTime', 'number'),
                 ignoreWalls: this.getVal('ignoreWalls', 'boolean'),
-                isPhantom: this.getVal('isPhantom', 'boolean')
+                isPhantom: this.getVal('isPhantom', 'boolean'),
+                reactionRadius: this.getVal('reactionRadius', 'number'),
+                disengageRadius: this.getVal('disengageRadius', 'number'),
+                reactions: this.reactions
             },
             damageMultipliers: {
                 dash: this.getVal('dmgDash', 'number'),
@@ -302,7 +382,10 @@ class EnemyEditor {
                 spawn: {
                     pattern: this.getVal('spawnPattern'), // 'normal', 'horde', 'radial', 'follower'
                     count: this.getVal('spawnCount', 'number')
-                }
+                },
+                hates: this._parseHateTypes(),
+                hateRadius: this.getVal('hateRadius', 'number'),
+                hateDamage: this.getVal('hateDamage', 'number')
             }
         };
     }
@@ -333,6 +416,7 @@ class EnemyEditor {
         if (config.movement) {
             this.setVal('mobile', config.movement.mobile);
             this.setVal('speed', config.movement.speed);
+            this.setVal('activeSpeed', config.movement.activeSpeed ?? 0);
             if (config.movement.scaling) {
                 this.setVal('speedTimeScale', config.movement.scaling.timeBase);
                 this.setVal('speedTimeMulti', config.movement.scaling.timeMultiplier);
@@ -344,6 +428,12 @@ class EnemyEditor {
             this.setVal('erraticTime', config.movement.erraticTime || 2000);
             this.setVal('ignoreWalls', config.movement.ignoreWalls);
             this.setVal('isPhantom', config.movement.isPhantom);
+            this.setVal('reactionRadius', config.movement.reactionRadius ?? 0);
+            this.setVal('disengageRadius', config.movement.disengageRadius ?? 0);
+            if (config.movement.reactions) {
+                this.reactions = config.movement.reactions.map(r => ({...r}));
+                this.renderReactions();
+            }
         }
         
         // Daño
@@ -376,6 +466,11 @@ class EnemyEditor {
                 this.setVal('spawnPattern', config.ambitious.spawn.pattern);
                 this.setVal('spawnCount', config.ambitious.spawn.count || 3);
             }
+            if (config.ambitious.hates) {
+                this.setVal('hateTypes', (config.ambitious.hates || []).join(', '));
+            }
+            this.setVal('hateRadius', config.ambitious.hateRadius ?? 0);
+            this.setVal('hateDamage', config.ambitious.hateDamage ?? 5);
         }
         
         this.updateDynamicFieldsVisibility();

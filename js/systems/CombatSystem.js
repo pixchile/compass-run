@@ -129,6 +129,7 @@ export default class CombatSystem {
     }
     const actualDamage = hpBefore - enemy.hp;
     if (actualDamage > 0) {
+        this.manager.addEvent('enemyHit', enemy.x, enemy.y, enemy.type, { damage: actualDamage });
         const colorKey = (type === 'slam' || type === 'slam3') ? 'slamDamage' : 'enemyDamage';
         this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, actualDamage, colorKey);
         const p = this.scene?.player;

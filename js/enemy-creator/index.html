@@ -124,15 +124,21 @@
                             <input type="number" id="speed" value="50">
                         </div>
                         <div class="field">
-                            <label>Estilo de movimiento</label>
-                            <select id="movementStyle">
-                                <option value="seek">Perseguir al jugador</option>
-                                <option value="flee">Huir del jugador</option>
-                                <option value="erratic">Errático</option>
-                                <option value="orbit">Orbitar</option>
-                                <option value="dashOnly">Sólo Embestida</option>
-                            </select>
+                            <label>⚡ Velocidad al Detectar (px/s)</label>
+                            <input type="number" id="activeSpeed" value="0" min="0" step="10">
+                            <small style="color:#888;">0 = usa velocidad base</small>
                         </div>
+                    </div>
+
+                    <div class="field">
+                        <label>Estilo de movimiento</label>
+                        <select id="movementStyle">
+                            <option value="seek">Perseguir al jugador</option>
+                            <option value="flee">Huir del jugador</option>
+                            <option value="erratic">Errático</option>
+                            <option value="orbit">Orbitar</option>
+                            <option value="dashOnly">Sólo Embestida</option>
+                        </select>
                     </div>
 
                     <div class="field" id="orbitRangeField" style="display:none;">
@@ -142,6 +148,19 @@
                     <div class="field" id="erraticTimeField" style="display:none;">
                         <label>🔄 Cambiar dirección cada (ms)</label>
                         <input type="number" id="erraticTime" value="2000">
+                    </div>
+
+                    <div class="grid-2">
+                        <div class="field">
+                            <label>📡 Radio de Deteccion (px)</label>
+                            <input type="number" id="reactionRadius" value="0" min="0" step="50">
+                            <small style="color:#888;">0 = default (400px)</small>
+                        </div>
+                        <div class="field">
+                            <label>📡 Radio de Desenganche (px)</label>
+                            <input type="number" id="disengageRadius" value="0" min="0" step="50">
+                            <small style="color:#888;">0 = deteccion × 2</small>
+                        </div>
                     </div>
 
                     <h4>Escalado Dinámico de Velocidad</h4>
@@ -299,6 +318,31 @@
                             <label>Cantidad de entidades</label>
                             <input type="number" id="spawnCount" value="3" min="2">
                         </div>
+                    </div>
+
+                    <h4>Odio entre Tipos (Hate)</h4>
+                    <div class="grid-2">
+                        <div class="field">
+                            <label>Tipos odiados (IDs separados por coma)</label>
+                            <input type="text" id="hateTypes" value="" placeholder="Ej: wasp, devil">
+                        </div>
+                        <div class="field">
+                            <label>Radio de odio (px)</label>
+                            <input type="number" id="hateRadius" value="0" min="0" step="50">
+                            <small style="color:#888;">0 = desactivado</small>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Daño por segundo a enemigos odiados</label>
+                        <input type="number" id="hateDamage" value="5" min="1" step="1">
+                    </div>
+
+                    <h4>Reacciones a Eventos</h4>
+                    <p style="font-size:12px; color:#aaa; margin-top:0;">El enemigo reacciona a eventos cercanos de otros tipos.</p>
+
+                    <button id="addReactionBtn" class="action-btn" style="margin-bottom: 15px;">Añadir Reaccion</button>
+
+                    <div id="reactionsContainer">
                     </div>
                 </div>
 

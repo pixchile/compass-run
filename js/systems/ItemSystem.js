@@ -14,8 +14,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const COMPONENT_PRICE = 500;
-export const ITEM_BASE_PRICE  = 2500;
-export const SELL_RATE        = 0.7;
+export const ITEM_BASE_PRICE  = 2000;
+export const SELL_RATE        = 0.5;
 export const DROP_CHANCE      = 0.04;
 
 // ── Stats de componentes individuales ─────────────────────────────────────────
