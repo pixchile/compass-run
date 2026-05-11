@@ -39,14 +39,14 @@ export default class DDDEffect {
     this.peakHp = player.health.maxHp;
     this.decaying = true;
 
-    const compassBonus = player.damageMultiplierBonus || 0;
     const fx = this.scene?.itemEffects;
     const aaaMult = fx?.has('AAA') ? fx.getAAAMultiplier(player) : 1;
-    const dbbBonus = fx?.has('DBB') ? ((fx.dbbBonus || 0) / 100) : 0;
-    const totalMult = (1 + compassBonus + dbbBonus) * aaaMult;
+    const totalMult = aaaMult;
     const explosionDmg = Math.max(10, player.health.maxHp - 10) * totalMult;
     const explosionRadius = explosionDmg * 3;
-    this._triggerFenixExplosion(player.px, player.py, explosionDmg, explosionRadius);
+    const dbbTrueMult = fx?.getDBBTrueDamageMultiplier() ?? 1;
+    const trueDmg = (player.trueDamage || 0) * dbbTrueMult;
+    this._triggerFenixExplosion(player.px, player.py, explosionDmg, explosionRadius, trueDmg);
 
     this._freezeAllEnemies();
     this.freezeTimer = 3000;
@@ -56,7 +56,7 @@ export default class DDDEffect {
     return true;
   }
 
-  _triggerFenixExplosion(x, y, damage, radius) {
+  _triggerFenixExplosion(x, y, damage, radius, trueDmg = 0) {
     const enemies = this.scene?.enemyManager?.enemies;
     const now = this.scene?.time?.now ?? Date.now();
 
@@ -72,6 +72,11 @@ export default class DDDEffect {
           const actualDmg = hpBefore - (e.hp || 0);
           if (actualDmg > 0) {
             this.scene?.spawnDamageNumber?.(e.x, e.y, actualDmg, 'enemyDamage');
+          }
+          // True damage
+          if (trueDmg > 0 && e.hp > 0) {
+            e.hp = (e.hp || 1) - trueDmg;
+            this.scene?.spawnDamageNumber?.(e.x, e.y, trueDmg, 'trueDamage');
           }
         }
       }

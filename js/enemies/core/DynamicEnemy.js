@@ -26,14 +26,24 @@ export default class DynamicEnemy extends Enemy {
         this.reactions = mov.reactions || [];
         this._activeReaction = null;
 
+        // flee por daño en vez de proximidad
+        this.fleeTrigger = mov.fleeTrigger || 'proximity'; // 'proximity' | 'damage'
+        this._fleeDamageActive = false; // flee activado por daño recibido
+
         // Odio hacia otros tipos de enemigos
         const amb = config.ambitious || {};
         this.hates = amb.hates || [];
         this.hateRadius = amb.hateRadius || 0;
         this.hateDamage = amb.hateDamage || 5;
+        this.hateOverridesFleeOnDamage = amb.hateOverridesFleeOnDamage ?? false;
         this._hateTarget = null;
         this._fleeActive = false;
         this._onPath = false;
+
+        // Throttle: recalcular hate target y reacciones 4 veces/segundo
+        // El offset aleatorio evita que todos los enemigos sincronicen el tick
+        this._hateCheckTimer  = Math.random() * 250;
+        this._hateCheckPeriod = 250; // ms → 4Hz
 
         this.ignoreWalls = mov.ignoreWalls ?? false;
         this.isPhantom = mov.isPhantom || false;
@@ -52,6 +62,24 @@ export default class DynamicEnemy extends Enemy {
         this.selfDestructTimer = 0;
 
         this.customConfig = config;
+    }
+
+    receiveDamage(attackPayload) {
+        const died = super.receiveDamage(attackPayload);
+        // Si fleeTrigger es 'damage' y el daño viene del jugador (no de haters ni void),
+        // activar flee solo si no hay hated en radio (o hateOverridesFleeOnDamage es false)
+        if (
+            this.fleeTrigger === 'damage' &&
+            attackPayload.type !== 'hater' &&
+            attackPayload.type !== 'void' &&
+            !died
+        ) {
+            const hateActive = this.hateOverridesFleeOnDamage && this._hateTarget != null;
+            if (!hateActive) {
+                this._fleeDamageActive = true;
+            }
+        }
+        return died;
     }
 
     update(delta, player, lines) {
@@ -96,21 +124,51 @@ export default class DynamicEnemy extends Enemy {
         if (this._frozen) return;
 
         // --- PATH FOLLOWING (sobrescribe AI si tiene ruta asignada) ---
+        // Cede el control si hay flee-by-damage activo y no hay hated en radio
         const hasMultiPath = this._paths && this._paths.length > 0;
         const hasSinglePath = this._path && this._path.length > 0;
         if (hasMultiPath || hasSinglePath) {
-            if (this._followPath(delta, player)) return;
+            const fleeDamageBlocking = this._fleeDamageActive && !this._hateTarget;
+            // También ceder si hay hate target — pero primero necesitamos correr
+            // el hate check para saber si hay target. Corremos hate check aquí si toca.
+            if (this.hates.length > 0 && this.hateRadius > 0) {
+                this._hateCheckTimer += delta;
+                if (this._hateCheckTimer >= this._hateCheckPeriod) {
+                    this._hateCheckTimer = 0;
+                    const enemies = this.scene?.enemyManager?.enemies || [];
+                    let nearestHated = null;
+                    let nearestHateDist = this.hateRadius;
+                    for (const other of enemies) {
+                        if (other === this || other.hp <= 0) continue;
+                        if (!this.hates.includes(other.type)) continue;
+                        const d = Math.hypot(other.x - this.x, other.y - this.y);
+                        if (d < nearestHateDist) { nearestHateDist = d; nearestHated = other; }
+                    }
+                    this._hateTarget = nearestHated;
+                } else {
+                    if (this._hateTarget && (
+                        this._hateTarget.hp <= 0 ||
+                        Math.hypot(this._hateTarget.x - this.x, this._hateTarget.y - this.y) > this.hateRadius
+                    )) {
+                        this._hateTarget = null;
+                    }
+                }
+            }
+            const hateBlocking = !!this._hateTarget;
+            if (!fleeDamageBlocking && !hateBlocking && this._followPath(delta, player)) return;
         }
 
         // --- REACTION RADIUS: histeresis deteccion/desenganche ---
         const trackingStyles = ['seek', 'flee', 'orbit', 'circle', 'axisX', 'axisY', 'dashOnly'];
-        const detectRadius = (this.reactionRadius == null || this.reactionRadius === 0)
+        // reactionRadius: null/undefined → usar global. 0 → desactivado explícitamente.
+        const hasExplicitRadius = this.reactionRadius != null;
+        const detectRadius = !hasExplicitRadius
             ? ENEMY_REACTION_RADIUS
-            : this.reactionRadius;
+            : this.reactionRadius; // 0 es válido = sin detección por proximidad
 
         let effectiveStyle = this.movementStyle;
 
-        if (detectRadius > 0) {
+        if (detectRadius > 0 && this.fleeTrigger !== 'damage') {
             const distToPlayer = Math.hypot(player.px - this.x, player.py - this.y);
             const seeThrough = this.customConfig?.ambitious?.seeThroughWalls;
 
@@ -159,7 +217,7 @@ export default class DynamicEnemy extends Enemy {
             }
         }
 
-        // Velocidad: activa si detecta al jugador, si no usa base + scaling
+        // Velocidad: activa si detecta al jugador O tiene hated en radio
         if ((this.state._awareOfPlayer || this._hateTarget) && this.activeSpeed != null) {
             this.speed = this.activeSpeed;
         } else if (this.speedScaling.hpBase === 'proportional') {
@@ -173,31 +231,29 @@ export default class DynamicEnemy extends Enemy {
         }
 
         // --- EVENT REACTIONS: reaccion a eventos cercanos ---
-        if (this.reactions.length > 0) {
-            const events = this.scene?.enemyManager?.recentEvents || [];
-            for (const event of events) {
-                if (event.enemyType === this.type) continue;
-                for (const reaction of this.reactions) {
-                    if (reaction.event !== event.type) continue;
+        // Throttled al mismo ciclo que hate (4Hz) — los eventos no son urgentes frame a frame.
+        if (this.reactions.length > 0 && !this._activeReaction && this._hateCheckTimer === 0) {
+            const eventIndex = this.scene?.enemyManager?.recentEventsByType;
+            for (const reaction of this.reactions) {
+                const events = eventIndex?.[reaction.event] || [];
+                for (const event of events) {
+                    if (event.sourceId === this.id) continue;
+                    if (reaction.allyType && event.enemyType !== reaction.allyType) continue;
                     const edist = Math.hypot(event.x - this.x, event.y - this.y);
-                    if (edist <= (reaction.radius || 300)) {
-                        // Don't react to events through walls
-                        if (!(this.customConfig?.ambitious?.seeThroughWalls)) {
-                            const wls = this._lines;
-                            if (wls && wls.length > 0 &&
-                                !this.scene?.hasLineOfSight?.(this.x, this.y, event.x, event.y, wls)) {
-                                continue;
-                            }
-                        }
-                        this._activeReaction = {
-                            action: reaction.action,
-                            targetX: event.x,
-                            targetY: event.y,
-                            speed: reaction.speed || this.speed,
-                            endTime: Date.now() + (reaction.duration || 2000)
-                        };
-                        break;
+                    if (edist > (reaction.radius || 300)) continue;
+                    if (!(this.customConfig?.ambitious?.seeThroughWalls)) {
+                        const wls = this._lines;
+                        if (wls && wls.length > 0 &&
+                            !this.scene?.hasLineOfSight?.(this.x, this.y, event.x, event.y, wls)) continue;
                     }
+                    this._activeReaction = {
+                        action: reaction.action,
+                        targetX: event.x,
+                        targetY: event.y,
+                        speed: reaction.speed > 0 ? reaction.speed : this.speed,
+                        endTime: Date.now() + (reaction.duration || 2000)
+                    };
+                    break;
                 }
                 if (this._activeReaction) break;
             }
@@ -212,30 +268,14 @@ export default class DynamicEnemy extends Enemy {
             effectiveStyle = this._activeReaction.action;
         }
 
-        // --- HATE SYSTEM: enemigos que odian otros tipos ---
-        this._hateTarget = null;
-        if (!this._activeReaction && !this._fleeActive && this.hates.length > 0 && this.hateRadius > 0) {
-            const enemies = this.scene?.enemyManager?.enemies || [];
-            let nearestHated = null;
-            let nearestHateDist = this.hateRadius;
-
-            for (const other of enemies) {
-                if (other === this || other.hp <= 0) continue;
-                if (!this.hates.includes(other.type)) continue;
-                const d = Math.hypot(other.x - this.x, other.y - this.y);
-                if (d < nearestHateDist) { nearestHateDist = d; nearestHated = other; }
-            }
-
-            if (nearestHated) {
-                const distToPlayer = Math.hypot(player.px - this.x, player.py - this.y);
-                if (nearestHateDist < distToPlayer) {
-                    this._hateTarget = nearestHated;
-                    effectiveStyle = 'seek';
-                    if (nearestHateDist < this.radius + (nearestHated.radius || 16) + 5) {
-                        nearestHated.hp -= (this.hateDamage || 5) * (delta / 1000);
-                        nearestHated._lastDamageSource = 'hater';
-                    }
-                }
+        if (this._hateTarget) {
+            effectiveStyle = 'seek';
+            if (this.hateOverridesFleeOnDamage) this._fleeDamageActive = false;
+            this._fleeActive = false;
+            const hd = Math.hypot(this._hateTarget.x - this.x, this._hateTarget.y - this.y);
+            if (hd < this.radius + (this._hateTarget.radius || 16) + 5) {
+                this._hateTarget.hp -= (this.hateDamage || 5) * (delta / 1000);
+                this._hateTarget._lastDamageSource = 'hater';
             }
         }
 
@@ -245,6 +285,22 @@ export default class DynamicEnemy extends Enemy {
             const fleeRadius = this._fleeRadius ?? 250;
             if (Math.hypot(player.px - this.x, player.py - this.y) > fleeRadius * 2) {
                 this._fleeActive = false;
+                if (this._path) {
+                    const nearest = this._getNearestWaypoint(this._path);
+                    if (nearest) this._pathIndex = this._path.indexOf(nearest);
+                } else if (this._paths) {
+                    this._evaluatePaths();
+                }
+            }
+        }
+
+        // --- FLEE BY DAMAGE: huir si recibió daño (fleeTrigger === 'damage') ---
+        if (this._fleeDamageActive && !this._hateTarget) {
+            effectiveStyle = 'flee';
+            const safeRadius = this._fleeRadius ?? 250;
+            if (Math.hypot(player.px - this.x, player.py - this.y) > safeRadius * 2) {
+                this._fleeDamageActive = false;
+                // Volver al waypoint más cercano
                 if (this._path) {
                     const nearest = this._getNearestWaypoint(this._path);
                     if (nearest) this._pathIndex = this._path.indexOf(nearest);
@@ -270,7 +326,10 @@ export default class DynamicEnemy extends Enemy {
                 moveX = dashOnly.x; moveY = dashOnly.y;
                 break;
             case 'seek':
-                const seek = this._seekMovement(player, delta);
+                const seekTarget = this._hateTarget
+                    ? { px: this._hateTarget.x, py: this._hateTarget.y }
+                    : player;
+                const seek = this._seekMovement(seekTarget, delta);
                 moveX = seek.x; moveY = seek.y;
                 break;
             case 'flee':
@@ -408,17 +467,14 @@ export default class DynamicEnemy extends Enemy {
 
         if (mode === 'chase' && player && !player.isDead) {
             const chaseRadius = this._chaseRadius ?? 300;
-            const dp = Math.hypot(player.px - this.x, player.py - this.y);
-            if (dp <= chaseRadius && this._canSeeTarget(player)) return false;
-            // Also break path to chase hated enemies
-            if (this.hates.length > 0 && this.hateRadius > 0) {
-                const enemies = this.scene?.enemyManager?.enemies || [];
-                for (const other of enemies) {
-                    if (other === this || other.hp <= 0) continue;
-                    if (!this.hates.includes(other.type)) continue;
-                    if (Math.hypot(other.x - this.x, other.y - this.y) <= chaseRadius) return false;
-                }
+            // Si el enemigo ignora al jugador hasta recibir daño, el path chase
+            // no rompe por proximidad del jugador — solo por hated en radio.
+            if (this.fleeTrigger !== 'damage') {
+                const dp = Math.hypot(player.px - this.x, player.py - this.y);
+                if (dp <= chaseRadius && this._canSeeTarget(player)) return false;
             }
+            // Usar _hateTarget cacheado (recalculado a 4Hz) en vez de loop O(n)
+            if (this._hateTarget && Math.hypot(this._hateTarget.x - this.x, this._hateTarget.y - this.y) <= chaseRadius) return false;
         }
 
         if (mode === 'flee' && player && !player.isDead) {
@@ -471,15 +527,10 @@ export default class DynamicEnemy extends Enemy {
 
         if (mode === 'chase' && player && !player.isDead) {
             const chaseRadius = this._chaseRadius ?? 300;
-            if (Math.hypot(player.px - this.x, player.py - this.y) <= chaseRadius && this._canSeeTarget(player)) return false;
-            if (this.hates.length > 0 && this.hateRadius > 0) {
-                const enemies = this.scene?.enemyManager?.enemies || [];
-                for (const other of enemies) {
-                    if (other === this || other.hp <= 0) continue;
-                    if (!this.hates.includes(other.type)) continue;
-                    if (Math.hypot(other.x - this.x, other.y - this.y) <= chaseRadius) return false;
-                }
+            if (this.fleeTrigger !== 'damage') {
+                if (Math.hypot(player.px - this.x, player.py - this.y) <= chaseRadius && this._canSeeTarget(player)) return false;
             }
+            if (this._hateTarget && Math.hypot(this._hateTarget.x - this.x, this._hateTarget.y - this.y) <= chaseRadius) return false;
         }
 
         if (mode === 'flee' && player && !player.isDead) {
@@ -565,8 +616,15 @@ export default class DynamicEnemy extends Enemy {
     }
 
     _advanceWaypoint(path, mode, idx, isMulti) {
-        if (mode === 'loop' || mode === 'chase' || mode === 'flee') {
+        if (mode === 'loop' || mode === 'chase' || mode === 'flee' || mode === 'patrol') {
             this._pathIndex = (idx + 1) % path.length;
+        } else if (mode === 'random') {
+            // Elegir cualquier waypoint excepto el actual
+            let next;
+            if (path.length > 1) {
+                do { next = Math.floor(Math.random() * path.length); } while (next === idx);
+            } else { next = 0; }
+            this._pathIndex = next;
         } else if (mode === 'pingpong') {
             if (this._pathReverse) {
                 if (idx === 0) { this._pathReverse = false; this._pathIndex = 1; }

@@ -102,7 +102,7 @@ export default class CombatSystem {
 
     if (attackPayload && isInAttackRange) {
         if (player.dashing && this.damagedThisDash.has(enemy)) return false;
-        enemyDied = this._damageEnemy(enemy, attackPayload.type, attackPayload.baseDamage, attackPayload.radius, now);
+        enemyDied = this._damageEnemy(enemy, attackPayload.type, attackPayload.baseDamage, attackPayload.radius, now, attackPayload.trueDamage || 0);
         if (player.dashing && !enemyDied) this.damagedThisDash.add(enemy);
     }
     else if (!player.isInvincible && !isInAttackRange && !enemy.isGrabbed && !player._stickState) {
@@ -112,9 +112,9 @@ export default class CombatSystem {
     return enemyDied;
   }
 
-  _damageEnemy(enemy, type, damage, radius, now) {
+  _damageEnemy(enemy, type, damage, radius, now, trueDamage = 0) {
     // AAG: One-Two — bonus damage on first enemy hit during bonus dash
-    const aagBonus = (type === 'dash' || type === 'aerialDash')
+    const aagBonus = (type === 'dash' || type === 'aerialDash' || type === 'wallJumpDash')
       ? (this.scene?.itemEffects?.consumeAAGBonus() || 0) : 0;
     const totalDamage = damage + aagBonus;
 
@@ -129,12 +129,20 @@ export default class CombatSystem {
     }
     const actualDamage = hpBefore - enemy.hp;
     if (actualDamage > 0) {
-        this.manager.addEvent('enemyHit', enemy.x, enemy.y, enemy.type, { damage: actualDamage });
+        this.manager.addEvent('enemyHit', enemy.x, enemy.y, enemy.type, { damage: actualDamage, sourceId: enemy.id });
         const colorKey = (type === 'slam' || type === 'slam3') ? 'slamDamage' : 'enemyDamage';
         this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, actualDamage, colorKey);
         const p = this.scene?.player;
         if (p) this.scene?.itemEffects?.applyGGGCreditEffect(p.px, p.py);
     }
+
+    // True damage — bypasses enemy type multipliers, always deals flat amount
+    if (trueDamage > 0 && !died) {
+      enemy.hp = (enemy.hp || 1) - trueDamage;
+      this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, trueDamage, 'trueDamage');
+      if (enemy.hp <= 0) died = true;
+    }
+
     return died;
   }
 
@@ -160,7 +168,7 @@ export default class CombatSystem {
       player.takeEnemyDamage(dmgMult);
 
       const effect = enemy.customConfig?.ambitious?.attack?.effect;
-      if (effect === 'slow') {
+      if (effect === 'slow' && !player._demonMode) {
           player.slowTimer = (player.slowTimer || 0) + 1500;
       } else if (effect === 'push') {
           const angle = Math.atan2(player.py - enemy.y, player.px - enemy.x);
@@ -198,7 +206,9 @@ export default class CombatSystem {
 
       if (dist > slamRadius) continue;
 
-      if (this._damageEnemy(enemy, this._slamAttackObj.type, SLAM.DAMAGE, slamRadius, now)) {
+      // True damage already applied via attack payload in processPlayerInteractions;
+      // only pass it for the knockback wall crash (separate damage instance).
+      if (this._damageEnemy(enemy, this._slamAttackObj.type, SLAM.DAMAGE, slamRadius, now, 0)) {
         fx?.onEnemyDied(enemy, this.manager);
         fx?.onEnemyKilledInDemon();
         this.manager.killEnemy(i, enemy, this._slamAttackObj.type);
@@ -206,14 +216,15 @@ export default class CombatSystem {
       }
 
       if (applyKnockback && dist > 0) {
-        if (this._applySlamKnockback(enemy, dx, dy, dist, now)) {
+        const knockTrueDmg = (player?.trueDamage || 0) * (fx?.getDBBTrueDamageMultiplier() ?? 1);
+        if (this._applySlamKnockback(enemy, dx, dy, dist, now, knockTrueDmg)) {
             this.manager.killEnemy(i, enemy, 'wallCrash');
         }
       }
     }
   }
 
-  _applySlamKnockback(enemy, dx, dy, dist, now) {
+  _applySlamKnockback(enemy, dx, dy, dist, now, trueDamage = 0) {
       const oldX = enemy.x, oldY = enemy.y;
       enemy.x += (dx / dist) * SLAM.KNOCKBACK_DIST;
       enemy.y += (dy / dist) * SLAM.KNOCKBACK_DIST;
@@ -239,7 +250,7 @@ export default class CombatSystem {
           this._wallAttackObj.now = now;
           this._wallAttackObj.radius = SLAM.RADIUS;
 
-          return this._damageEnemy(enemy, 'wallCrash', SLAM.WALL_COLLISION_DAMAGE, SLAM.RADIUS, now);
+          return this._damageEnemy(enemy, 'wallCrash', SLAM.WALL_COLLISION_DAMAGE, SLAM.RADIUS, now, trueDamage);
       }
       return false; 
   }

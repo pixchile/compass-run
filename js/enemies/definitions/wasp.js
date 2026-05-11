@@ -9,7 +9,7 @@ export default {
     id: "wasp",
     name: "wasp",
     basic: {
-        hp: 200,
+        hp: 100,
         hpRegen: 0,
         color: "0xFFFF00",
         shape: "circle",
@@ -59,7 +59,7 @@ export default {
             chance: 100,
             condition: "any",
             params: {
-                amount: 3
+                amount: 5
             }
         }
     ],

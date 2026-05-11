@@ -1,5 +1,5 @@
 // js/systems/effects/DBB_Patience.js
-// D+B+B: After 5s idle (no damage dealt or taken), next dash deals up to +999% damage
+// D+B+B: After 3s idle (no damage dealt or taken), next hit multiplies true damage up to 10x
 
 export default class DBBEffect {
   constructor(scene) {
@@ -13,7 +13,6 @@ export default class DBBEffect {
   }
 
   update(delta, player) {
-    // Reset cached multiplier when dash/slam ends
     if (!player.dashing && !player.combat?.activeSlam) {
       this._activeMult = 1;
     }
@@ -26,11 +25,11 @@ export default class DBBEffect {
       return;
     }
 
-    const idle = (player._lastDamageTime || 0) < Date.now() - 5000 &&
-                 (player._lastInflictTime || 0) < Date.now() - 5000;
+    const idle = (player._lastDamageTime || 0) < Date.now() - 3000 &&
+                 (player._lastInflictTime || 0) < Date.now() - 3000;
     if (idle) {
       this.idleTimer += delta;
-      this.bonus = Math.min(999, this.idleTimer / 1000 * 100);
+      this.bonus = Math.min(900, this.idleTimer / 1000 * 250);
       this.ready = true;
     } else {
       this.idleTimer = 0;
@@ -40,13 +39,13 @@ export default class DBBEffect {
   }
 
   onPlayerTookDamage() {
-    this.cooldown = 5000;
+    this.cooldown = 3000;
     this.idleTimer = 0;
     this.bonus = 0;
     this.ready = false;
   }
 
-  getDashDamageMultiplier(player) {
+  getTrueDamageMultiplier() {
     if (this._activeMult > 1) return this._activeMult;
     if (!this.ready) return 1;
 
@@ -56,7 +55,7 @@ export default class DBBEffect {
     this.idleTimer = 0;
     this.bonus = 0;
     this.ready = false;
-    this.cooldown = 5000;
+    this.cooldown = 3000;
     return mult;
   }
 

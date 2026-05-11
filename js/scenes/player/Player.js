@@ -28,9 +28,8 @@ export default class Player {
         this._stickTimer = 0;           // remaining ms before auto-kick
         this._stickEnemy = null;        // enemy reference while stuck
         this.attackRadiusMultiplier = 0;
-        this.damageMultiplierBonus = 0;
+        this.trueDamage = 0;
         this._addRebound = false;  // ADD: Amortiguador — rebote tras dash contra muro
-        this._dabBreaks = 0;      // DAB: Maestría — quiebres durante el dash
         this._vampireSpeed = false; // CAD: Vampiro — +40% vel. cerca de orbe
         
         this.moveDir = { x: 0, y: 0 };
@@ -49,6 +48,7 @@ export default class Player {
 
     takeEnemyDamage(mult) { this.health.takeEnemyDamage(mult); }
     getCurrentAttackPayload(lvl) { return this.combat.getCurrentAttackPayload(lvl); }
+    getAttackRadius(lvl) { return this.combat.getAttackRadius(lvl); }
     lerpK(k, dt) { return 1 - Math.pow(1 - k, dt * 60); }
 
     isMovingInCompassDirection(momentum, currentSpeed) {
@@ -139,6 +139,7 @@ export default class Player {
             if (this.jumpT >= this.jumpDur) {
                 this.jumping = false; this.combat.activeSlam = null;
                 this._addRebound = false;
+                this._fromWallJump = false;
                 this.landFx = this.jumpLv >= 3 ? 420 : this.jumpLv >= 2 ? 210 : 0;
             }
         }
@@ -222,7 +223,6 @@ export default class Player {
                     if (!this.jumping) this.dashCD = dashCDValue;
                     this.wasJumpingWhenDashed = this.jumping;
                     this.dashInitialSpeed = dashSpeed;
-                    this._dabBreaks = 0;
 
                     // AAA: Berserker — coste de HP
                     if (fx?.has('AAA')) {
@@ -258,24 +258,19 @@ export default class Player {
         if (!this.isStunned && !this.wallJump.wallStick) {
             if (this.jumping) {
                 const steer = moving ? 0.04 : 0;
-                let maxSpd = this._demonMode ? 1000 : momentum.getEffectiveMaxSpeed(this.jumpLv);
+                let maxSpd = this._demonMode ? momentum.getEffectiveMaxSpeed(this.jumpLv) * 1.5 : momentum.getEffectiveMaxSpeed(this.jumpLv);
                 if (this._vampireSpeed) maxSpd *= 1.4;
                 this.vx = this.jumpVx + (moving ? this.moveDir.x * maxSpd * steer : 0);
                 this.vy = this.jumpVy + (moving ? this.moveDir.y * maxSpd * steer : 0);
                 if (moving) this.facing = Math.atan2(this.moveDir.y, this.moveDir.x);
             } else if (this.dashing) {
-                // DAB: Maestría — cambio de dirección instantáneo durante el dash
                 const fx = this.scene.itemEffects;
-                if (fx?.has('DAB') && moving) {
-                    const spd = Math.hypot(this.dashVx, this.dashVy);
-                    const curDirX = this.dashVx / spd;
-                    const curDirY = this.dashVy / spd;
-                    const dot = this.moveDir.x * curDirX + this.moveDir.y * curDirY;
-                    if (dot < 0.9) { // ~25° de diferencia
-                        this.dashVx = this.moveDir.x * spd;
-                        this.dashVy = this.moveDir.y * spd;
-                        this._dabBreaks++;
-                        this.facing = Math.atan2(this.moveDir.y, this.moveDir.x);
+                if (moving) {
+                    const redirect = fx?.onDashRedirect(this.dashVx, this.dashVy, this.moveDir);
+                    if (redirect) {
+                        this.dashVx = redirect.dashVx;
+                        this.dashVy = redirect.dashVy;
+                        this.facing = redirect.facing;
                     }
                 }
                 const ease = 1 - Math.pow(this.dashT / DASH_DUR, 2);
@@ -320,11 +315,11 @@ export default class Player {
                 const tk = this.lerpK(turnK_mod, dt);
                 const sk = this.lerpK(STOP_K[lv], dt);
 
-                const slowMult = this.slowTimer > 0 ? 0.4 : 1.0;
+                const slowMult = this._demonMode ? 1.0 : (this.slowTimer > 0 ? 0.4 : 1.0);
                 const finalMult = slowMult;
 
                 if (moving) {
-                    let effSpd = this._demonMode ? 1000 : momentum.getEffectiveMaxSpeed(lv);
+                    let effSpd = this._demonMode ? momentum.getEffectiveMaxSpeed(lv) * 1.5 : momentum.getEffectiveMaxSpeed(lv);
                     if (this._vampireSpeed) effSpd *= 1.4;
                     this.vx += (this.moveDir.x * effSpd * finalMult - this.vx) * tk;
                     this.vy += (this.moveDir.y * effSpd * finalMult - this.vy) * tk;

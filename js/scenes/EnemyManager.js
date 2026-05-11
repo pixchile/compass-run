@@ -17,15 +17,24 @@ export default class EnemyManager {
     this.spawner = new EnemySpawner(this, scene);
     this.combatSystem = new CombatSystem(this, scene);
     this.recentEvents = [];
+    this.recentEventsByType = {}; // índice por tipo para lookup O(1) en reacciones
   }
 
   addEvent(type, x, y, enemyType, data = {}) {
-    this.recentEvents.push({ type, x, y, enemyType, time: Date.now(), ...data });
+    const event = { type, x, y, enemyType, time: Date.now(), ...data };
+    this.recentEvents.push(event);
+    if (!this.recentEventsByType[type]) this.recentEventsByType[type] = [];
+    this.recentEventsByType[type].push(event);
   }
 
   _cleanEvents() {
     const cutoff = Date.now() - 5000;
     this.recentEvents = this.recentEvents.filter(e => e.time > cutoff);
+    // Reconstruir índice solo si hubo limpieza (barato porque es raro)
+    for (const type in this.recentEventsByType) {
+      this.recentEventsByType[type] = this.recentEventsByType[type].filter(e => e.time > cutoff);
+      if (this.recentEventsByType[type].length === 0) delete this.recentEventsByType[type];
+    }
   }
 
   setRewardHandlers(rewardSystem, orbManager) {
@@ -81,14 +90,14 @@ export default class EnemyManager {
 
     const noRewards = fatalSource === 'void' || fatalSource === 'hater';
 
-    this.addEvent('enemyKilled', enemy.x, enemy.y, enemy.type, { killedBy: fatalSource });
+    this.addEvent('enemyKilled', enemy.x, enemy.y, enemy.type, { killedBy: fatalSource, sourceId: enemy.id });
 
     if (!noRewards) {
       this.totalKills++;
       this.scene?.itemEffects?.spawnVampireOrb(enemy.x, enemy.y);
       this.scene?.itemEffects?.onEnemyKilled();
       if (this.scene?.momentum) {
-        this.scene.momentum.addMaxSpeed(1);
+        this.scene.momentum.addMaxSpeed(2);
       }
       if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
 

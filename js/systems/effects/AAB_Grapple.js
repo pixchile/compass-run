@@ -1,7 +1,8 @@
 // js/systems/effects/AAB_Grapple.js
 // A+A+B: First enemy hit by dash is grabbed. Next dash launches it as a projectile.
 
-import { ATTACK_DAMAGE_MULTIPLIERS } from '../../constants.js';
+
+
 
 export default class AABEffect {
   constructor(scene) {
@@ -12,6 +13,7 @@ export default class AABEffect {
     this._releaseBlock = 0;
     this._projectile = null;
     this._projectileDamage = 0;
+    this._projectileTrueDamage = 0;
     this._projHitSet = new Set();
   }
 
@@ -53,17 +55,16 @@ export default class AABEffect {
     this._releaseBlock = 800;
     this._releaseGrab();
 
-    const momLv = this.scene?.momentum?.level ?? 1;
-    const baseDmgMult = ATTACK_DAMAGE_MULTIPLIERS[momLv] || 1;
-    const compassBonus = player.damageMultiplierBonus || 0;
+    const baseDmgMult = this.scene?.momentum?.getDamageMultiplier?.() ?? 1;
 
     const fx = this.scene.itemEffects;
     const aaaMult = fx?.has('AAA') ? fx.getAAAMultiplier(player) : 1;
-    const dbbBonus = fx?.has('DBB') ? (fx.getDashDamageMultiplier(player) - 1) : 0;
-    const totalDamageMult = (baseDmgMult + compassBonus + dbbBonus) * aaaMult;
+    const totalDamageMult = baseDmgMult * aaaMult;
     fx?.lockGGGForAttack();
     const gggMult = fx?.has('GGG') ? (fx.getGGGMultiplier() || 1) : 1;
     this._projectileDamage = dashSpeed * 0.1 * totalDamageMult * gggMult;
+    const dbbTrueMult = fx?.getDBBTrueDamageMultiplier() ?? 1;
+    this._projectileTrueDamage = (player.trueDamage || 0) * dbbTrueMult;
 
     enemy._projectileVx = dashDirX * dashSpeed;
     enemy._projectileVy = dashDirY * dashSpeed;
@@ -104,6 +105,11 @@ export default class AABEffect {
       if (this._projectileDamage > 0) {
         this.scene?.spawnDamageNumber?.(e.x, e.y, this._projectileDamage, 'enemyDamage');
       }
+      // True damage
+      if (this._projectileTrueDamage > 0 && e.hp > 0) {
+        e.hp = (e.hp || 1) - this._projectileTrueDamage;
+        this.scene?.spawnDamageNumber?.(e.x, e.y, this._projectileTrueDamage, 'trueDamage');
+      }
     }
   }
 
@@ -114,6 +120,7 @@ export default class AABEffect {
     this._releaseBlock = 0;
     this._projectile = null;
     this._projectileDamage = 0;
+    this._projectileTrueDamage = 0;
     this._projHitSet.clear();
   }
 }

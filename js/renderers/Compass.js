@@ -36,26 +36,17 @@ export default class Compass {
     const followingPrimary = compassSystem.isFollowingPrimary(player.vx, player.vy);
     const followingSecondary = compassSystem.isFollowingSecondary(player.vx, player.vy);
 
-    const primaryIsSpd = compassSystem.primaryBuff === 'maxSpeed';
-    const secondaryIsSpd = compassSystem.secondaryBuff === 'maxSpeed';
-
     // Flecha primaria
     const primAngle = Math.atan2(primaryDir.dy, primaryDir.dx);
     const primArrowX = cx + Math.cos(primAngle) * this.distance;
     const primArrowY = cy + Math.sin(primAngle) * this.distance;
-    const primSize = primaryIsSpd ? this.arrowSize * 1.35 : this.arrowSize;
-    const primAlpha = primaryIsSpd ? 1 : 0.95;
-    if (primaryIsSpd) this.drawArrowGlow(graphics, primArrowX, primArrowY, primAngle, primSize);
-    this.drawArrow(graphics, primArrowX, primArrowY, primAngle, this._currentPrimaryColor, primAlpha, primSize);
+    this.drawArrow(graphics, primArrowX, primArrowY, primAngle, this._currentPrimaryColor, 0.95, this.arrowSize);
 
     // Flecha secundaria
     const secAngle = Math.atan2(secondaryDir.dy, secondaryDir.dx);
     const secArrowX = cx + Math.cos(secAngle) * this.distance;
     const secArrowY = cy + Math.sin(secAngle) * this.distance;
-    const secSize = secondaryIsSpd ? this.arrowSize * 1.35 : this.arrowSize * 0.65;
-    const secAlpha = secondaryIsSpd ? 1 : 0.9;
-    if (secondaryIsSpd) this.drawArrowGlow(graphics, secArrowX, secArrowY, secAngle, secSize);
-    this.drawArrow(graphics, secArrowX, secArrowY, secAngle, this._currentSecondaryColor, secAlpha, secSize);
+    this.drawArrow(graphics, secArrowX, secArrowY, secAngle, this._currentSecondaryColor, 0.9, this.arrowSize * 0.65);
 
     // Labels — convert world coords to screen coords so text sticks with arrows
     const labelDist = this.distance + this.arrowSize + 8;
@@ -73,17 +64,15 @@ export default class Compass {
     const secLabel = compassSystem.getBuffLabel(compassSystem.secondaryBuff);
 
     this._ensureLabels();
-    const primFontSize = primaryIsSpd ? '13px' : this._primarySize;
-    const secFontSize = secondaryIsSpd ? '12px' : this._secondarySize;
     this._updateLabel(
       this._primaryLabel, primScreen.x, primScreen.y,
       `${primLabel} +${this._fmtVal(primAccum)}`,
-      compassSystem.getPrimaryHex(), followingPrimary, primFontSize
+      compassSystem.getPrimaryHex(), followingPrimary, this._primarySize
     );
     this._updateLabel(
       this._secondaryLabel, secScreen.x, secScreen.y,
       `${secLabel} +${this._fmtVal(secAccum)}`,
-      compassSystem.getSecondaryHex(), followingSecondary, secFontSize
+      compassSystem.getSecondaryHex(), followingSecondary, this._secondarySize
     );
   }
 
@@ -151,20 +140,5 @@ export default class Compass {
 
     graphics.fillStyle(0xffffff, 0.3);
     graphics.fillCircle(x, y, 3);
-  }
-
-  drawArrowGlow(graphics, x, y, angle, size) {
-    const s = size * 1.2;
-    const wing = s * 0.55;
-    const tipX = x + Math.cos(angle) * s;
-    const tipY = y + Math.sin(angle) * s;
-    const leftAngle = angle + Math.PI * 0.75;
-    const rightAngle = angle - Math.PI * 0.75;
-    const leftX = x + Math.cos(leftAngle) * wing;
-    const leftY = y + Math.sin(leftAngle) * wing;
-    const rightX = x + Math.cos(rightAngle) * wing;
-    const rightY = y + Math.sin(rightAngle) * wing;
-    graphics.fillStyle(0xffffff, 0.15);
-    graphics.fillTriangle(tipX, tipY, leftX, leftY, rightX, rightY);
   }
 }

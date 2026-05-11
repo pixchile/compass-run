@@ -35,13 +35,13 @@ class EnemyEditor {
             'selfDestructType', 'selfDestructValue', 'spawnTriggerType', 'spawnTriggerValue',
             // Movimiento
             'mobile', 'speed', 'activeSpeed', 'speedTimeScale', 'speedTimeMulti', 'speedHpScale', 'speedHpMulti',
-            'movementStyle', 'orbitRange', 'erraticTime',
+            'movementStyle', 'fleeTrigger', 'orbitRange', 'erraticTime',
             'ignoreWalls', 'isPhantom', 'reactionRadius', 'disengageRadius',
             // Ambitious (Avanzados)
             'isWall', 'attackType', 'attackEffect', 'attackDamage', 'attackCooldown', 'defenseAura', 'evade',
             'seeThroughWalls',
             'spawnPattern', 'spawnCount',
-            'hateTypes', 'hateRadius', 'hateDamage'
+            'hateTypes', 'hateRadius', 'hateDamage', 'hateOverridesFleeOnDamage'
         ];
 
         inputs.forEach(id => {
@@ -109,8 +109,11 @@ class EnemyEditor {
             const style = movementStyle.value;
             const orbitField = document.getElementById('orbitRangeField');
             const erraticField = document.getElementById('erraticTimeField');
+            const fleeTriggerField = document.getElementById('fleeTriggerField');
             if (orbitField) orbitField.style.display = style === 'orbit' ? 'block' : 'none';
-            if (erraticField) erraticField.style.display = style === 'erratic' ? 'block' : 'none';
+            if (erraticField) erraticField.style.display = (style === 'erratic' || style === 'wander') ? 'block' : 'none';
+            // fleeTrigger es relevante si el estilo puede resultar en flee
+            if (fleeTriggerField) fleeTriggerField.style.display = (style === 'flee' || style === 'wander') ? 'block' : 'none';
         }
         const spawnPattern = document.getElementById('spawnPattern');
         if (spawnPattern) {
@@ -217,6 +220,7 @@ class EnemyEditor {
             btnAdd.addEventListener('click', () => {
                 this.reactions.push({
                     event: 'enemyKilled',
+                    allyType: '',
                     action: 'swarm',
                     radius: 300,
                     duration: 2000,
@@ -251,16 +255,19 @@ class EnemyEditor {
                     <span style="font-size:12px; color:#aaa;">hacer</span>
                     <select onchange="editor.updateReaction(${index}, 'action', this.value)" style="flex:1;">
                         <option value="swarm" ${r.action === 'swarm' ? 'selected' : ''}>Swarm (ir al evento)</option>
-                        <option value="retreat" ${r.action === 'retreat' ? 'selected' : ''}>Retreat (huir)</option>
-                        <option value="investigate" ${r.action === 'investigate' ? 'selected' : ''}>Investigate</option>
-                        <option value="flee" ${r.action === 'flee' ? 'selected' : ''}>Flee (huir jugador)</option>
+                        <option value="retreat" ${r.action === 'retreat' ? 'selected' : ''}>Retreat (huir del evento)</option>
+                        <option value="investigate" ${r.action === 'investigate' ? 'selected' : ''}>Investigate (moverse al sitio)</option>
+                        <option value="flee" ${r.action === 'flee' ? 'selected' : ''}>Flee (huir del jugador)</option>
                     </select>
                     <button onclick="editor.removeReaction(${index})" style="background:#633;color:#fff;border:none;padding:2px 8px;cursor:pointer;">X</button>
                 </div>
+                <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap; align-items:center;">
+                    <label style="font-size:11px; color:#aaa;">Solo si aliado es tipo: <input type="text" value="${r.allyType || ''}" placeholder="(cualquier tipo)" onchange="editor.updateReaction(${index}, 'allyType', this.value)" style="width:100px;"></label>
+                </div>
                 <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;">
                     <label style="font-size:11px; color:#aaa;">Radio <input type="number" value="${r.radius}" min="0" step="50" onchange="editor.updateReaction(${index}, 'radius', this.value)" style="width:70px;"> px</label>
-                    <label style="font-size:11px; color:#aaa;">Duracion <input type="number" value="${r.duration}" min="100" step="100" onchange="editor.updateReaction(${index}, 'duration', this.value)" style="width:70px;"> ms</label>
-                    <label style="font-size:11px; color:#aaa;">Velocidad <input type="number" value="${r.speed}" min="0" step="10" onchange="editor.updateReaction(${index}, 'speed', this.value)" style="width:70px;"> <small>(0 = usa base)</small></label>
+                    <label style="font-size:11px; color:#aaa;">Duración <input type="number" value="${r.duration}" min="100" step="100" onchange="editor.updateReaction(${index}, 'duration', this.value)" style="width:70px;"> ms</label>
+                    <label style="font-size:11px; color:#aaa;">Velocidad <input type="number" value="${r.speed}" min="0" step="10" onchange="editor.updateReaction(${index}, 'speed', this.value)" style="width:70px;"> <small style="color:#666;">(0 = usa base)</small></label>
                 </div>
             `;
             container.appendChild(div);
@@ -268,7 +275,9 @@ class EnemyEditor {
     }
 
     updateReaction(index, key, value) {
-        this.reactions[index][key] = (key === 'radius' || key === 'duration' || key === 'speed') ? parseFloat(value) : value;
+        const numericKeys = ['radius', 'duration', 'speed'];
+        this.reactions[index][key] = numericKeys.includes(key) ? parseFloat(value) : value;
+        if (key !== 'radius' && key !== 'duration' && key !== 'speed') this.renderReactions();
         this.generate();
     }
 
@@ -347,6 +356,7 @@ class EnemyEditor {
                     hpPercentage: this.getVal('speedHpMulti', 'number')
                 },
                 style: this.getVal('movementStyle'), // 'seek', 'flee', 'erratic', 'orbit', 'dashOnly'
+                fleeTrigger: this.getVal('fleeTrigger'), // 'proximity' | 'damage'
                 orbitRange: this.getVal('orbitRange', 'number'),
                 erraticTime: this.getVal('erraticTime', 'number'),
                 ignoreWalls: this.getVal('ignoreWalls', 'boolean'),
@@ -358,6 +368,7 @@ class EnemyEditor {
             damageMultipliers: {
                 dash: this.getVal('dmgDash', 'number'),
                 aerialDash: this.getVal('dmgAerialDash', 'number'),
+                wallJumpDash: this.getVal('dmgWallJumpDash', 'number'),
                 momentum3: this.getVal('dmgMomentum3', 'number'),
                 slam: this.getVal('dmgSlam', 'number'),
                 slam3: this.getVal('dmgSlam3', 'number'),
@@ -385,7 +396,8 @@ class EnemyEditor {
                 },
                 hates: this._parseHateTypes(),
                 hateRadius: this.getVal('hateRadius', 'number'),
-                hateDamage: this.getVal('hateDamage', 'number')
+                hateDamage: this.getVal('hateDamage', 'number'),
+                hateOverridesFleeOnDamage: this.getVal('hateOverridesFleeOnDamage', 'boolean')
             }
         };
     }
@@ -424,6 +436,7 @@ class EnemyEditor {
                 this.setVal('speedHpMulti', config.movement.scaling.hpPercentage);
             }
             this.setVal('movementStyle', config.movement.style);
+            this.setVal('fleeTrigger', config.movement.fleeTrigger || 'proximity');
             this.setVal('orbitRange', config.movement.orbitRange || 120);
             this.setVal('erraticTime', config.movement.erraticTime || 2000);
             this.setVal('ignoreWalls', config.movement.ignoreWalls);
@@ -440,6 +453,7 @@ class EnemyEditor {
         if (config.damageMultipliers) {
             this.setVal('dmgDash', config.damageMultipliers.dash);
             this.setVal('dmgAerialDash', config.damageMultipliers.aerialDash);
+            this.setVal('dmgWallJumpDash', config.damageMultipliers.wallJumpDash ?? config.damageMultipliers.aerialDash ?? 1);
             this.setVal('dmgMomentum3', config.damageMultipliers.momentum3);
             this.setVal('dmgSlam', config.damageMultipliers.slam);
             this.setVal('dmgSlam3', config.damageMultipliers.slam3);
@@ -471,6 +485,7 @@ class EnemyEditor {
             }
             this.setVal('hateRadius', config.ambitious.hateRadius ?? 0);
             this.setVal('hateDamage', config.ambitious.hateDamage ?? 5);
+            this.setVal('hateOverridesFleeOnDamage', config.ambitious.hateOverridesFleeOnDamage ?? false);
         }
         
         this.updateDynamicFieldsVisibility();

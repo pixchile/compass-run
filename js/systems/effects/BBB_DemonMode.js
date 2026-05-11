@@ -1,5 +1,5 @@
 // js/systems/effects/BBB_DemonMode.js
-// B+B+B: Aerial dash activates Demon Mode: 1000px/s speed for 2s, killing resets duration
+// B+B+B: Aerial dash activates Demon Mode: maxSpeed +50% for 2s, killing resets duration
 
 export default class BBBEffect {
   constructor(scene) {
@@ -8,6 +8,7 @@ export default class BBBEffect {
     this.ready = false;
     this.active = false;
     this.timer = 0;
+    this.speedMultiplier = 1.5;
   }
 
   update(delta, player, momentum) {
@@ -17,7 +18,7 @@ export default class BBBEffect {
     }
     if (this.active) {
       this.timer -= delta;
-      if (this.timer <= 0) this._deactivate(player, momentum);
+      if (this.timer <= 0) this._deactivate(player);
     }
   }
 
@@ -27,7 +28,6 @@ export default class BBBEffect {
     this.active = true;
     this.timer = 2000;
     this.cooldown = 30000;
-    momentum._maxSpeedOverride = Math.max(momentum._maxSpeedOverride || 0, 1000);
     player._demonMode = true;
   }
 
@@ -35,10 +35,9 @@ export default class BBBEffect {
     if (this.active) this.timer = 2000;
   }
 
-  _deactivate(player, momentum) {
+  _deactivate(player) {
     this.active = false;
     player._demonMode = false;
-    if (momentum._maxSpeedOverride === 1000) momentum._maxSpeedOverride = null;
   }
 
   reset() {

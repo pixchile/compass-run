@@ -1,4 +1,4 @@
-import { SLAM, ATTACK_RADIOS, ATTACK_DAMAGE_MULTIPLIERS } from '../../constants.js';
+import { SLAM, ATTACK_RADIOS } from '../../constants.js';
 
 export default class PlayerCombat {
     constructor(player) {
@@ -56,6 +56,11 @@ export default class PlayerCombat {
         if (!skipCooldown) this.slamCooldown = SLAM.COOLDOWN;
     }
 
+    getAttackRadius(momentumLevel) {
+        const baseRadius = ATTACK_RADIOS[momentumLevel] || ATTACK_RADIOS[1];
+        return baseRadius * (1 + (this.player.attackRadiusMultiplier || 0));
+    }
+
     getCurrentAttackPayload(momentumLevel) {
         const currentSpeed = Math.hypot(this.player.vx, this.player.vy);
         const now = Date.now();
@@ -65,38 +70,45 @@ export default class PlayerCombat {
         const radiusMultiplier = 1 + (this.player.attackRadiusMultiplier || 0);
         const finalRadius = baseRadius * radiusMultiplier;
 
-        // Daño base según nivel, más bonificadores aditivos (compass, AAA, DBB)
-        const baseDamageMult = ATTACK_DAMAGE_MULTIPLIERS[momentumLevel] || ATTACK_DAMAGE_MULTIPLIERS[1];
-        const compassBonus = this.player.damageMultiplierBonus || 0;
+        // Daño base según nivel, multiplicado por AAA (Berserker)
+        const baseDamageMult = this.player.scene?.momentum?.getDamageMultiplier() || 1;
+        const trueDamage = this.player.trueDamage || 0;
 
         const fx = this.player.scene?.itemEffects;
         const isAttacking = this.activeSlam || this.player.dashing;
         const aaaMult = (fx && isAttacking) ? fx.getAAAMultiplier(this.player) : 1;
-        const dbbBonus = (fx && isAttacking) ? (fx.getDashDamageMultiplier(this.player) - 1) : 0;
-        const totalDamageMult = (baseDamageMult + compassBonus + dbbBonus) * aaaMult;
+        const totalDamageMult = baseDamageMult * aaaMult;
         const gggMult = (fx && isAttacking) ? (fx.getGGGMultiplier() || 1) : 1;
+        // DBB: multiplica daño verdadero
+        const dbbTrueMult = (fx && isAttacking) ? fx.getDBBTrueDamageMultiplier() : 1;
+        const finalTrueDamage = trueDamage * dbbTrueMult;
 
         if (this.activeSlam) {
             return {
                 type: this.activeSlam.isHighSpeed ? 'slam3' : 'slam',
                 baseDamage: this.activeSlam.speed * 0.1 * totalDamageMult * gggMult,
                 radius: finalRadius * 1.5,
-                now: now
+                now: now,
+                trueDamage: finalTrueDamage
             };
         }
 
         if (this.player.dashing) {
-            const dabMult = (fx?.has('DAB')) ? 1 + (this.player._dabBreaks || 0) * 0.1 : 1;
+            const dabMult = fx?.getDABMultiplier() ?? 1;
+            const isAerial = this.player.wasJumpingWhenDashed;
+            const isWallJump = isAerial && this.player._fromWallJump;
+            if (isWallJump) this.player._fromWallJump = false; // consumir el flag
             return {
-                type: this.player.wasJumpingWhenDashed ? 'aerialDash' : 'dash',
+                type: isWallJump ? 'wallJumpDash' : isAerial ? 'aerialDash' : 'dash',
                 baseDamage: this.player.dashInitialSpeed * 0.1 * totalDamageMult * gggMult * dabMult,
                 radius: finalRadius,
-                now: now
+                now: now,
+                trueDamage: finalTrueDamage
             };
         }
 
         if (momentumLevel === 3) {
-            return { type: 'momentum3', baseDamage: currentSpeed * 0.1 * (baseDamageMult + compassBonus), radius: finalRadius, now: now };
+            return { type: 'momentum3', baseDamage: currentSpeed * 0.1 * baseDamageMult, radius: finalRadius, now: now, trueDamage: finalTrueDamage };
         }
 
         return null;

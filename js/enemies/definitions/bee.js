@@ -59,7 +59,7 @@ export default {
             chance: 100,
             condition: "any",
             params: {
-                amount: 3
+                amount: 5
             }
         }
     ],

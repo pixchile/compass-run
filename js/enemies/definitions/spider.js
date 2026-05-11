@@ -1,6 +1,6 @@
 // Enemigo generado con Enemy Creator (v2.0)
 // Nombre: spider
-// Fecha: 10-05-2026, 1:31:06 p. m.
+// Fecha: 11-05-2026, 2:23:36 a. m.
 
 export default {
     id: 'spider',
@@ -9,7 +9,7 @@ export default {
     id: "spider",
     name: "spider",
     basic: {
-        hp: 100,
+        hp: 110,
         hpRegen: 0,
         color: "0xFF00EA",
         shape: "circle",
@@ -35,6 +35,7 @@ export default {
             hpPercentage: 0
         },
         style: "seek",
+        fleeTrigger: "proximity",
         orbitRange: 120,
         erraticTime: 2000,
         ignoreWalls: false,
@@ -47,8 +48,8 @@ export default {
         dash: 0.1,
         aerialDash: 0.1,
         momentum3: 0,
-        slam: 4,
-        slam3: 8,
+        slam: 2,
+        slam3: 4,
         void: 100,
         wallCrash: 1,
         explosion: 1
@@ -59,7 +60,7 @@ export default {
             chance: 100,
             condition: "any",
             params: {
-                amount: 80
+                amount: 100
             }
         }
     ],
@@ -82,7 +83,8 @@ export default {
         },
         hates: [],
         hateRadius: 0,
-        hateDamage: 0
+        hateDamage: 0,
+        hateOverridesFleeOnDamage: false
     }
 }
 };

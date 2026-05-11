@@ -1,7 +1,7 @@
 // js/scenes/ShopUI.js
 
 import { COMPONENTS, ITEMS, COMPONENT_PRICE, getItemPrice } from '../systems/ItemSystem.js';
-import { REROLL_COST, KEEPGOING_HP, KEEPGOING_TIME_SEC } from '../systems/ShopSystem.js';
+import { REROLL_COST, MYSTERY_BOX_COST } from '../systems/ShopSystem.js';
 import { W, H } from '../constants.js';
 
 const PAD   = 32;
@@ -74,7 +74,7 @@ export default class ShopUI {
     // Scrollbar
     this._scrollbar = this.scene.add.graphics().setDepth(2100);
 
-    this._hint = this.scene.add.text(cx, by + bh - 24, 'W/S navegar  ·  A/D cambiar tab  ·  ESPACIO comprar/vender  ·  ESC salir  ·  Rueda scroll', {
+    this._hint = this.scene.add.text(cx, by + bh - 24, 'W/S navegar  Â·  A/D cambiar tab  Â·  ESPACIO comprar/vender  Â·  ESC salir  Â·  Rueda scroll', {
       fontFamily: 'monospace', fontSize: '11px', color: '#445566'
     }).setOrigin(0.5);
 
@@ -159,10 +159,10 @@ export default class ShopUI {
     if (this._tab === 'buy') {
       let y = startY;
 
-      // ── Items terminados PRIMERO ──
+      // â”€â”€ Items terminados PRIMERO â”€â”€
       const stock = shop.getShopStock(this.shopId);
       if (stock.length > 0) {
-        this._addSectionLabel('─── Items disponibles ───', cx, y);
+        this._addSectionLabel('â”€â”€â”€ Items disponibles â”€â”€â”€', cx, y);
         y += 22;
         stock.forEach(item => {
           const price = getItemPrice(item.id, shop.components);
@@ -180,12 +180,12 @@ export default class ShopUI {
         });
         y += 10;
       } else {
-        this._addSectionLabel('─── Sin stock disponible ───', cx, y);
+        this._addSectionLabel('â”€â”€â”€ Sin stock disponible â”€â”€â”€', cx, y);
         y += 28;
       }
 
-      // ── Componentes ABAJO ──
-      this._addSectionLabel('─── Componentes ───', cx, y);
+      // â”€â”€ Componentes ABAJO â”€â”€
+      this._addSectionLabel('â”€â”€â”€ Componentes â”€â”€â”€', cx, y);
       y += 22;
       Object.values(COMPONENTS).forEach(comp => {
         this._addRow({
@@ -201,16 +201,16 @@ export default class ShopUI {
         y += ROW_H - 10;
       });
 
-      // ── Servicios ──
+      // â”€â”€ Servicios â”€â”€
       y += 14;
-      this._addSectionLabel('─── Servicios ───', cx, y);
+      this._addSectionLabel('â”€â”€â”€ Servicios â”€â”€â”€', cx, y);
       y += 22;
 
       // Re-Roll
       this._addRow({
         label:  'Re-Roll',
         sub:    `Reemplaza el stock con 1 item nuevo no visto en esta tienda`,
-        desc:   'Cambia todo el inventario de la tienda por 1 solo item que nunca haya aparecido aquí antes.',
+        desc:   'Cambia todo el inventario de la tienda por 1 solo item que nunca haya aparecido aquÃ­ antes.',
         price:  REROLL_COST,
         color:  '#ff8844',
         isBig:  false,
@@ -219,28 +219,29 @@ export default class ShopUI {
       });
       y += ROW_H - 10;
 
-      // Keep Going
-      const kgCost = shop.getKeepGoingCost();
+      // Mystery Box
+      const mysteryUsed = !!shop._mysteryUsed[this.shopId];
       this._addRow({
-        label:  'Keep Going',
-        sub:    `+${KEEPGOING_HP} HP  ·  +${KEEPGOING_TIME_SEC}s  ·  ${kgCost} cr (sube +100 c/u)`,
-        desc:   `Restaura ${KEEPGOING_HP} HP y añade ${KEEPGOING_TIME_SEC}s al temporizador. El precio aumenta 100 cr con cada uso.`,
-        price:  kgCost,
-        color:  '#44dd88',
+        label:  mysteryUsed ? 'Caja Misteriosa (AGOTADA)' : 'Caja Misteriosa',
+        sub:    'Otorga un item aleatorio del juego (1 uso por tienda)',
+        desc:   'Recibes un item al azar de entre todos los items del juego. Solo puedes comprarlo una vez por tienda.',
+        price:  mysteryUsed ? null : MYSTERY_BOX_COST,
+        color:  mysteryUsed ? '#555555' : '#ff44ff',
         isBig:  false,
         y,
-        onBuy:  () => this._keepGoing(),
+        onBuy:  () => this._buyMystery(),
       });
       y += ROW_H - 10;
+
 
       this._contentHeight = y - startY;
 
     } else {
-      // ── Vender ──
+      // â”€â”€ Vender â”€â”€
       let y = startY;
 
       if (shop.components.length === 0 && shop.equippedItems.length === 0) {
-        const emptyText = this.scene.add.text(cx, y + 20, 'Inventario vacío', {
+        const emptyText = this.scene.add.text(cx, y + 20, 'Inventario vacÃ­o', {
           fontFamily: 'monospace', fontSize: '13px', color: '#555555'
         }).setOrigin(0.5);
         this._listContainer.add(emptyText);
@@ -252,7 +253,7 @@ export default class ShopUI {
 
       // Items equipados primero
       if (shop.equippedItems.length > 0) {
-        this._addSectionLabel('─── Items equipados ───', cx, y);
+        this._addSectionLabel('â”€â”€â”€ Items equipados â”€â”€â”€', cx, y);
         y += 22;
         shop.equippedItems.forEach((item, i) => {
           this._addRow({
@@ -273,7 +274,7 @@ export default class ShopUI {
 
       // Componentes al final
       if (shop.components.length > 0) {
-        this._addSectionLabel('─── Componentes ───', cx, y);
+        this._addSectionLabel('â”€â”€â”€ Componentes â”€â”€â”€', cx, y);
         y += 22;
         shop.components.forEach((compId, i) => {
           const comp = COMPONENTS[compId];
@@ -437,7 +438,7 @@ export default class ShopUI {
     const result = shop.buyItem(itemId, this.shopId, cr);
     if (result.ok) {
       this.scene.rewardSystem.credits -= result.cost;
-      this._toast(`✓ ${ITEMS[itemId].name} equipado`);
+      this._toast(`âœ“ ${ITEMS[itemId].name} equipado`);
       this._refresh();
     } else {
       this._toast(result.msg, true);
@@ -477,81 +478,100 @@ export default class ShopUI {
     }
   }
 
-  _keepGoing() {
+  _buyMystery() {
     const shop = this.scene.shopSystem;
     const cr   = this.scene.rewardSystem.credits;
-    const result = shop.keepGoing(cr);
+    const result = shop.buyMysteryItem(this.shopId, cr);
     if (result.ok) {
       this.scene.rewardSystem.credits -= result.cost;
-      this._toast(`+${result.hpRestored} HP  ·  +${result.timeAdded}s  (${result.cost} cr)`);
+      this._toast(`Caja Misteriosa: ${result.item.name} [${result.item.id}]`);
       this._refresh();
     } else {
       this._toast(result.msg, true);
     }
   }
 
-  _toast(msg, isError = false) {
-    const t = this.scene.add.text(W / 2, H / 2 - 200, msg, {
-      fontFamily: 'monospace', fontSize: '14px',
-      color: isError ? '#ff4444' : '#44ff88',
-      backgroundColor: '#00000099', padding: { x: 12, y: 6 }
-    }).setOrigin(0.5).setDepth(2100);
-    this.scene.tweens.add({ targets: t, alpha: 0, y: t.y - 30, duration: 1200, onComplete: () => t.destroy() });
-  }
+  // ─── Public API ──────────────────────────────────────────────────
 
-  _refresh() {
-    this._credits.setText(`Créditos: ${Math.floor(this.scene.rewardSystem.credits)}`);
-    this._slots.setText(`Slots: ${this.scene.shopSystem.usedSlots} / ${this.scene.shopSystem.totalSlots}`);
-    this._buildList();
-  }
-
-  // ─── Abrir / Cerrar ─────────────────────────────────────────
   open(shopId) {
-    this.shopId  = shopId;
     this.visible = true;
+    this.shopId = shopId;
     this.manuallyClosed = false;
-    this._tab    = 'buy';
-    this._cursor = 0;
     this._root.setAlpha(1);
-    this._refreshTabs();
     this._refresh();
   }
 
-  close(manual = false) {
+  close(manual) {
     this.visible = false;
-    this.manuallyClosed = manual;
-    this._scrollY = 0;
+    if (manual) this.manuallyClosed = true;
     this._root.setAlpha(0);
-    this._listContainer.removeAll(true);
-    this._items = [];
-    this._scrollbar.clear();
     this._hideTooltip();
+    this._scrollbar.clear();
   }
 
-  // ─── Update (llamado desde Game.update) ─────────────────────
   update() {
     if (!this.visible) return;
 
-    const up    = this._kb.W.isDown;
-    const down  = this._kb.S.isDown;
-    const enter = this._kb.SPACE.isDown;
-    const left  = this._kb.A.isDown;
-    const right = this._kb.D.isDown;
+    const WKey = this._kb['W'];
+    const SKey = this._kb['S'];
+    const AKey = this._kb['A'];
+    const DKey = this._kb['D'];
+    const space = this._kb['SPACE'];
 
-    if (up && !this._prev.up && this._items.length > 0) {
-      this._cursor = (this._cursor - 1 + this._items.length) % this._items.length;
+    if (Phaser.Input.Keyboard.JustDown(WKey) && this._cursor > 0) {
+      this._cursor--;
       this._scrollCursorIntoView();
     }
-    if (down && !this._prev.down && this._items.length > 0) {
-      this._cursor = (this._cursor + 1) % this._items.length;
+    if (Phaser.Input.Keyboard.JustDown(SKey) && this._cursor < this._items.length - 1) {
+      this._cursor++;
       this._scrollCursorIntoView();
     }
-    if ((left && !this._prev.left)) this._setTab('buy');
-    if ((right && !this._prev.right)) this._setTab('sell');
-    if (enter && !this._prev.enter && this._items[this._cursor]) {
-      this._items[this._cursor].onBuy();
+    if (Phaser.Input.Keyboard.JustDown(AKey) || Phaser.Input.Keyboard.JustDown(DKey)) {
+      this._setTab(this._tab === 'buy' ? 'sell' : 'buy');
+    }
+    if (Phaser.Input.Keyboard.JustDown(space)) {
+      const row = this._items[this._cursor];
+      if (row?.onBuy) row.onBuy();
     }
 
-    this._prev = { up, down, enter, left, right };
+    // Update credits display each frame
+    const cr = this.scene.rewardSystem?.credits ?? 0;
+    this._credits.setText(`${cr} cr`);
+    const shop = this.scene.shopSystem;
+    this._slots.setText(`Slots ${shop.usedSlots}/${shop.totalSlots}`);
   }
+
+  // ─── Internals ───────────────────────────────────────────────────
+
+  _refresh() {
+    const cr = this.scene.rewardSystem?.credits ?? 0;
+    this._credits.setText(`${cr} cr`);
+    const shop = this.scene.shopSystem;
+    this._slots.setText(`Slots ${shop.usedSlots}/${shop.totalSlots}`);
+    this._buildList();
+  }
+
+  _toast(msg, isError) {
+    if (this._toastTween) this._toastTween.stop();
+
+    if (!this._toastText) {
+      this._toastText = this.scene.add.text(W / 2, H - 60, '', {
+        fontFamily: 'monospace', fontSize: '13px',
+        color: '#ffffff', backgroundColor: '#111122',
+        padding: { x: 14, y: 8 }
+      }).setOrigin(0.5).setDepth(2200).setAlpha(0);
+    }
+
+    this._toastText.setText(msg);
+    this._toastText.setStyle({ color: isError ? '#ff4444' : '#ffffff' });
+    this._toastText.setAlpha(1);
+
+    this._toastTween = this.scene.tweens.add({
+      targets: this._toastText,
+      alpha: 0,
+      delay: 1500,
+      duration: 400,
+    });
+  }
+
 }

@@ -134,7 +134,6 @@ export default class CollisionSystem {
                             player.stunT = DASH_WALL_STUN_DUR;
                             if (momentum) {
                                 momentum.halveStacks();
-                                itemEffects?.onDerape(momentum); // BCD: Equilibrio
                             }
                             const rawDmg = Math.floor(HP_DMG_DASH_WALL * impactSpeed);
                             const reduction = itemEffects?.getADDDamageReduction() || 0;

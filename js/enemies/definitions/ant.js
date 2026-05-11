@@ -1,6 +1,6 @@
 // Enemigo generado con Enemy Creator (v2.0)
 // Nombre: ant
-// Fecha: 10-05-2026, 5:08:31 p. m.
+// Fecha: 10-05-2026, 10:42:52 p. m.
 
 export default {
     id: 'ant',
@@ -31,25 +31,18 @@ export default {
         scaling: {
             timeBase: true,
             timeMultiplier: 1.2,
-            hpBase: "none",
-            hpPercentage: 0
+            hpBase: "inverse",
+            hpPercentage: 30
         },
-        style: "flee",
+        style: "wander",
+        fleeTrigger: "damage",
         orbitRange: 120,
-        erraticTime: 2000,
+        erraticTime: 3000,
         ignoreWalls: false,
         isPhantom: false,
-        reactionRadius: 10,
-        disengageRadius: 10,
-        reactions: [
-            {
-                event: "enemyHit",
-                action: "flee",
-                radius: 300,
-                duration: 2000,
-                speed: 0
-            }
-        ]
+        reactionRadius: 100,
+        disengageRadius: 100,
+        reactions: []
     },
     damageMultipliers: {
         dash: 2,
@@ -92,7 +85,8 @@ export default {
             "spider"
         ],
         hateRadius: 200,
-        hateDamage: 5
+        hateDamage: 5,
+        hateOverridesFleeOnDamage: true
     }
 }
 };

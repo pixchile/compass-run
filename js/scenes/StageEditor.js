@@ -606,7 +606,7 @@ export default class StageEditor extends Phaser.Scene {
       }
 
       if (this.placingSpawner) {
-        this.spawners.push({ x: wp.x, y: wp.y, types: [], interval: 0, startTime: 0, expireTime: 0, path: [], pathMode: 'loop' });
+        this.spawners.push({ x: wp.x, y: wp.y, types: [], interval: 0, startTime: 0, expireTime: 0, path: [], pathMode: 'loop', waypointWait: 0 });
         this._refreshTimeline();
         return;
       }
@@ -792,6 +792,8 @@ export default class StageEditor extends Phaser.Scene {
           <option value="loop" ${(activePath.mode || 'loop') === 'loop' ? 'selected' : ''}>Loop</option>
           <option value="pingpong" ${activePath.mode === 'pingpong' ? 'selected' : ''}>Pingpong</option>
           <option value="once" ${activePath.mode === 'once' ? 'selected' : ''}>Once</option>
+          <option value="patrol" ${activePath.mode === 'patrol' ? 'selected' : ''}>Patrol (pausa global)</option>
+          <option value="random" ${activePath.mode === 'random' ? 'selected' : ''}>Random</option>
           <option value="chase" ${activePath.mode === 'chase' ? 'selected' : ''}>Chase</option>
           <option value="flee" ${activePath.mode === 'flee' ? 'selected' : ''}>Flee</option>
         </select>
@@ -822,9 +824,16 @@ export default class StageEditor extends Phaser.Scene {
           <option value="loop" ${(s.pathMode || 'loop') === 'loop' ? 'selected' : ''}>Loop</option>
           <option value="pingpong" ${s.pathMode === 'pingpong' ? 'selected' : ''}>Pingpong</option>
           <option value="once" ${s.pathMode === 'once' ? 'selected' : ''}>Once</option>
+          <option value="patrol" ${s.pathMode === 'patrol' ? 'selected' : ''}>Patrol (pausa global)</option>
+          <option value="random" ${s.pathMode === 'random' ? 'selected' : ''}>Random</option>
           <option value="chase" ${s.pathMode === 'chase' ? 'selected' : ''}>Chase</option>
           <option value="flee" ${s.pathMode === 'flee' ? 'selected' : ''}>Flee</option>
         </select>
+        <span class="se-dim" id="se-wp-wait-label" style="${s.pathMode === 'patrol' ? '' : 'display:none'}">Pausa</span>
+        <input id="se-wp-wait-global" class="se-input se-input-sm" type="number"
+          value="${s.waypointWait || 1000}" min="0" max="30000" step="100"
+          style="width:60px;${s.pathMode === 'patrol' ? '' : 'display:none'}">
+        <span class="se-dim" id="se-wp-wait-ms" style="${s.pathMode === 'patrol' ? '' : 'display:none'}">ms</span>
       `;
     }
 
@@ -917,7 +926,20 @@ export default class StageEditor extends Phaser.Scene {
         if (activePath) activePath.mode = ev.target.value;
       } else {
         s.pathMode = ev.target.value;
+        // Mostrar/ocultar input de pausa global para patrol
+        const isPatrol = ev.target.value === 'patrol';
+        const lbl = box.querySelector('#se-wp-wait-label');
+        const inp = box.querySelector('#se-wp-wait-global');
+        const ms  = box.querySelector('#se-wp-wait-ms');
+        if (lbl) lbl.style.display = isPatrol ? '' : 'none';
+        if (inp) inp.style.display = isPatrol ? '' : 'none';
+        if (ms)  ms.style.display  = isPatrol ? '' : 'none';
       }
+    });
+
+    // Pausa global (patrol)
+    box.querySelector('#se-wp-wait-global')?.addEventListener('input', ev => {
+      s.waypointWait = parseInt(ev.target.value) || 0;
     });
 
     // Edit path toggle

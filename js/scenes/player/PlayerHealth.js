@@ -41,6 +41,10 @@ export default class PlayerHealth {
         // DBB: notificar daño recibido
         this.player?.scene?.itemEffects?.onPlayerTookDamage();
         this.player?.scene?.spawnDamageNumber?.(this.player.px, this.player.py, amount, 'playerDamage');
+        // El daño rompe el ritmo
+        if (this.player?.scene?.momentum) {
+            this.player.scene.momentum.stacks = Math.max(0, this.player.scene.momentum.stacks - 5);
+        }
     }
 
     takeEnemyDamage(mult = 1) { this.takeDamage(HP_DMG_ENEMY_HIT * mult); }

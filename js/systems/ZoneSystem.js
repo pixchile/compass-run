@@ -73,7 +73,7 @@ export default class ZoneSystem {
                     break;
 
                 case 'slow_zone':
-                    player.slowTimer = (player.slowTimer || 0) + delta * 1.5;
+                    if (!player._demonMode) player.slowTimer = (player.slowTimer || 0) + delta * 1.5;
                     break;
 
                 case 'trap':
@@ -135,23 +135,40 @@ export default class ZoneSystem {
         }
 
         // Expirar zonas temporales (ej: rastro de fuego de CCC)
+        this._fireFrame = (this._fireFrame || 0) + 1;
         for (let i = zones.length - 1; i >= 0; i--) {
             const z = zones[i];
             if (z.timeLeft !== undefined) {
-                // CCC: zonas de fuego dañan enemigos
+                // CCC: zonas de fuego dañan enemigos — una sola zona por frame por enemigo
                 if (z._isFire && enemies) {
                     const dps  = z.damagePerSec ?? 20;
-                    const compassBonus = this._scene?.player?.damageMultiplierBonus || 0;
-                    const dmg  = dps * (delta / 1000) * (1 + compassBonus);
+                    const dmg  = dps * (delta / 1000);
+                    const trueDps = this._scene?.player?.trueDamage || 0;
+                    const now = this._scene?.time?.now ?? Date.now();
                     for (let j = enemies.length - 1; j >= 0; j--) {
                         const e = enemies[j];
+                        if (e._fireFrame === this._fireFrame) continue; // ya dañado por otra zona este frame
                         if (this._isInsideZone(e.x, e.y, z)) {
+                            e._fireFrame = this._fireFrame;
                             const hpBefore = e.hp;
                             const died = e.receiveDamage
-                                ? e.receiveDamage({ type: 'fire', baseDamage: dmg, now: this._scene?.time?.now ?? Date.now() })
+                                ? e.receiveDamage({ type: 'fire', baseDamage: dmg, now })
                                 : (() => { e.hp = (e.hp || 1) - dmg; return e.hp <= 0; })();
                             const actualDmg = hpBefore - e.hp;
                             if (actualDmg > 0) this._scene?.spawnDamageNumber?.(e.x, e.y, actualDmg, 'fireDamage');
+                            // True damage batched every 200ms to avoid per-frame spam
+                            if (trueDps > 0 && !died) {
+                                e._trueFireAccum = (e._trueFireAccum || 0) + trueDps * (delta / 1000);
+                                e._lastTrueFireTime = e._lastTrueFireTime || 0;
+                                if (now - e._lastTrueFireTime >= 200) {
+                                    const batch = e._trueFireAccum;
+                                    e.hp = (e.hp || 1) - batch;
+                                    this._scene?.spawnDamageNumber?.(e.x, e.y, batch, 'trueDamage');
+                                    e._trueFireAccum = 0;
+                                    e._lastTrueFireTime = now;
+                                    if (e.hp <= 0) died = true;
+                                }
+                            }
                             if (died) this._scene.enemyManager.killEnemy(j, e, 'fire');
                         }
                     }

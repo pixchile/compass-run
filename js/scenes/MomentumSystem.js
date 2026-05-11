@@ -30,7 +30,7 @@ export default class MomentumSystem {
   }
 
   getDamageMultiplier() {
-    const multipliers = { 1: 1.0, 2: 1.5, 3: 2.0 };
+    const multipliers = { 1: 1.0, 2: 1.15, 3: 1.3 };
     return multipliers[this.level] || 1.0;
   }
 
@@ -67,12 +67,6 @@ export default class MomentumSystem {
   reset() {
     this.stacks = 0;
     this._lastActionTime = Date.now();
-    this._decayAccum = 0;
-  }
-
-  // ─── Renovación de actividad ───────────────────────────────
-  registerAction(now = Date.now()) {
-    this._lastActionTime = now;
     this._decayAccum = 0;
   }
 

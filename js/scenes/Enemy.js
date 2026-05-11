@@ -9,6 +9,7 @@ export default class Enemy {
         const basic = config.basic || {};
 
         this.type = config.id || 'enemy';
+        this.id = `${this.type}_${Math.random().toString(36).slice(2, 9)}`;
         this.radius = basic.radius || 12;
         this.shape = basic.shape || 'circle';
         this.maxHp = basic.hp || 1;

@@ -197,15 +197,22 @@ export default class EnemySpawner {
     }
     // Single path (formato legacy)
     if (spawner.path && spawner.path.length > 0) {
-      enemy._path = spawner.path;
+      // patrol: aplicar waypointWait global a todos los waypoints que no tienen wait propio
+      const waypointWait = spawner.waypointWait || 0;
+      const path = waypointWait > 0
+        ? spawner.path.map(wp => ({ ...wp, wait: wp.wait > 0 ? wp.wait : waypointWait }))
+        : spawner.path;
+
+      enemy._path = path;
       enemy._pathMode = spawner.pathMode || 'loop';
+      enemy._pathRandom = spawner.pathMode === 'random';
       enemy._pathIndex = 0;
       enemy._pathTimer = 0;
       enemy._chaseRadius = spawner.chaseRadius;
       enemy._fleeRadius = spawner.fleeRadius;
-      if (spawner.path[0].wait) {
-        enemy.x = spawner.path[0].x;
-        enemy.y = spawner.path[0].y;
+      if (path[0].wait) {
+        enemy.x = path[0].x;
+        enemy.y = path[0].y;
       }
     }
   }

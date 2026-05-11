@@ -13,6 +13,7 @@ const COLORS = {
     fireDamage:   '#ff8844',
     creditGain:   '#44ffcc',
     creditCost:   '#ff44cc',
+    trueDamage:   '#ffffff',
 };
 
 export default class DamageNumberManager {

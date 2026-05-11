@@ -4,7 +4,7 @@
 // GUÍA DE BALANCE — todas las cifras están aquí, no busques en otro lugar.
 //
 // Stats disponibles:
-//   dashCDReduction  : ms que se restan al CD base del dash (base: 2500ms)
+//   dashCDReduction  : ms que se restan al CD base del dash (base: DASH_CD)
 //   hpRegen          : HP regenerados por segundo (el engine divide /60 internamente)
 //   derapeReduction  : fracción (0–1) de reducción de fricción lateral al derrapar
 //   stackRateBonus   : fracción (0–1) de stacks extra por kill
@@ -40,11 +40,11 @@ const STATS = {
   // Doble + uno — combinaciones
   ADD: { dashCDReduction: 300,  hpRegen: 1.2 },            // A+DD
   AAD: { dashCDReduction: 600,  hpRegen: 0.6 },            // AA+D
-  BBC: { derapeReduction: 0.24, stackRateBonus: 0.12 },    // BB+C
+  BBC: { derapeReduction: 0.24, stackRateBonus: 0.12, attackRadius: 0.5 }, // BB+C
   CCB: { stackRateBonus:  0.24, derapeReduction: 0.12 },   // CC+B
   ACC: { dashCDReduction: 300,  stackRateBonus: 0.24 },    // A+CC
-  DBB: { hpRegen: 0.6,  derapeReduction: 0.24 },           // D+BB
-  DDC: { hpRegen: 1.2,  stackRateBonus: 0.12 },            // DD+C
+  DBB: { hpRegen: 0.6,  derapeReduction: 0.24, amplitude: 10 }, // D+BB
+  DDC: { hpRegen: 1.2,  stackRateBonus: 0.12, attackRadius: 0.5 }, // DD+C
   AAB: { dashCDReduction: 600,  derapeReduction: 0.12 },   // AA+B
 
   // Uno de cada — suma +50%

@@ -407,7 +407,7 @@ export default class UIManager {
     const creditsNum = creditsText.replace(/[^0-9]/g, '');
 
     const attackRadiusMult = ((player.attackRadiusMultiplier || 0) * 100).toFixed(1);
-    const damageBonus = (player.damageMultiplierBonus || 0).toFixed(3);
+    const trueDamage = (player.trueDamage || 0).toFixed(1);
     const payload = player.combat?.getCurrentAttackPayload(lv);
     const currentRadius = payload?.radius?.toFixed(0) || '-';
 
@@ -435,7 +435,7 @@ export default class UIManager {
         `── COMBATE ──`,
         ``,
         `Radio de ataque: +${attackRadiusMult}%`,
-        `Mult. daño:     +${damageBonus}`,
+        `Daño verdadero:  +${trueDamage}`,
         `Radio actual:    ${currentRadius} px`,
         `Mayor golpe:     ${highestHit.toFixed(1)}`,
         `Velocidad máx:  +${maxSpeedBonus.toFixed(1)} px/s`,

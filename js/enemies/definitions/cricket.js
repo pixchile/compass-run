@@ -46,6 +46,7 @@ export default {
     damageMultipliers: {
         dash: 1,
         aerialDash: 2,
+        wallJumpDash: 4,
         momentum3: 1,
         slam: 4,
         slam3: 4,

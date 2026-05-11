@@ -9,7 +9,7 @@ import ACCEffect from './effects/ACC_Propulsor.js';
 import ADDEffect from './effects/ADD_ShockAbsorber.js';
 import BBBEffect from './effects/BBB_DemonMode.js';
 import BBCEffect from './effects/BBC_Rebound.js';
-import BCDEffect from './effects/BCD_Equilibrium.js';
+
 import CADEffect from './effects/CAD_Vampire.js';
 import CBGEffect from './effects/CBG_EventHorizon.js';
 import CCGEffect from './effects/CCG_Builder.js';
@@ -18,6 +18,7 @@ import CCCEffect from './effects/CCC_Incendiary.js';
 import DBBEffect from './effects/DBB_Patience.js';
 import DDCEffect from './effects/DDC_SandKing.js';
 import DDDEffect from './effects/DDD_Fenix.js';
+import DABEffect from './effects/DAB_Mastery.js';
 import GGGEffect from './effects/GGG_Flipcoin.js';
 import GGCEffect from './effects/GGC_Auspice.js';
 import GGDEffect from './effects/GGD_Clockmaker.js';
@@ -36,7 +37,7 @@ export default class ItemEffects {
     this._add = new ADDEffect(scene);
     this._bbb = new BBBEffect(scene);
     this._bbc = new BBCEffect(scene);
-    this._bcd = new BCDEffect(scene);
+
     this._cad = new CADEffect(scene);
     this._cbg = new CBGEffect(scene);
     this._ccg = new CCGEffect(scene);
@@ -45,6 +46,7 @@ export default class ItemEffects {
     this._dbb = new DBBEffect(scene);
     this._ddc = new DDCEffect(scene);
     this._ddd = new DDDEffect(scene);
+    this._dab = new DABEffect(scene);
     this._ggg = new GGGEffect(scene);
     this._ggc = new GGCEffect(scene);
     this._ggd = new GGDEffect(scene);
@@ -138,9 +140,9 @@ export default class ItemEffects {
     if (this.has('DBB')) this._dbb.onPlayerTookDamage();
   }
 
-  getDashDamageMultiplier(player) {
+  getDBBTrueDamageMultiplier() {
     if (!this.has('DBB')) return 1;
-    return this._dbb.getDashDamageMultiplier(player);
+    return this._dbb.getTrueDamageMultiplier();
   }
 
   // ── DDD: Fenix ───────────────────────────────────────────────────
@@ -221,11 +223,6 @@ export default class ItemEffects {
     return this._aab.onDashWhileGrabbing(player, dashDirX, dashDirY, dashSpeed);
   }
 
-  // ── BCD: Equilibrium ─────────────────────────────────────────────
-
-  onDerape(momentum) {
-    if (this.has('BCD')) this._bcd.onDerape(momentum);
-  }
 
   // ── CCC: Incendiary ──────────────────────────────────────────────
 
@@ -286,6 +283,18 @@ export default class ItemEffects {
     return this._ccg.tryPlace(player);
   }
 
+  // ── DAB: Mastery ─────────────────────────────────────────────────
+
+  onDashRedirect(dashVx, dashVy, moveDir) {
+    if (!this.has('DAB')) return null;
+    return this._dab.tryRedirect(dashVx, dashVy, moveDir);
+  }
+
+  getDABMultiplier() {
+    if (!this.has('DAB')) return 1;
+    return this._dab.getDamageMultiplier();
+  }
+
   // ── Reset ────────────────────────────────────────────────────────
 
   reset() {
@@ -297,7 +306,7 @@ export default class ItemEffects {
     this._add.reset();
     this._bbb.reset();
     this._bbc.reset();
-    this._bcd.reset();
+
     this._cad.reset();
     this._cbg.reset();
     this._ccb.reset();
@@ -306,6 +315,7 @@ export default class ItemEffects {
     this._dbb.reset();
     this._ddc.reset();
     this._ddd.reset();
+    this._dab.reset();
     this._ggg.reset();
     this._ggc.reset();
     this._ggd.reset();

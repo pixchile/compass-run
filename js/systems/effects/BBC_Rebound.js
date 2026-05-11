@@ -50,8 +50,7 @@ export default class BBCEffect {
 
     const baseDmg = 5 + this.bounces * 5;
     const momentumMult = momentumSystem?.getDamageMultiplier?.() ?? 1;
-    const bonusMult = 1 + (player.damageMultiplierBonus || 0);
-    const finalDamage = baseDmg * momentumMult * bonusMult;
+    const finalDamage = baseDmg * momentumMult;
 
     const hpBefore = enemy.hp;
     const now = Date.now();
@@ -61,6 +60,12 @@ export default class BBCEffect {
     const actualDamage = hpBefore - enemy.hp;
     if (actualDamage > 0) {
       this.scene.spawnDamageNumber?.(enemy.x, enemy.y, actualDamage, 'enemyDamage');
+    }
+    // True damage
+    const trueDmg = player.trueDamage || 0;
+    if (trueDmg > 0 && enemy.hp > 0) {
+      enemy.hp = (enemy.hp || 1) - trueDmg;
+      this.scene.spawnDamageNumber?.(enemy.x, enemy.y, trueDmg, 'trueDamage');
     }
 
     enemy._frozen = false;
