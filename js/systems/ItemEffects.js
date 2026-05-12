@@ -170,6 +170,10 @@ export default class ItemEffects {
     return this.has('ADD') ? this._add.getDamageReduction() : 0;
   }
 
+  onDerape(momentum) {
+    // Hook para efectos que reaccionan al impacto de pared con ADD activo
+  }
+
   // ── AAD: Explosive ────────────────────────────────────────────────
 
   onEnemyDied(enemy, enemyManager) {

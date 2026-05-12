@@ -1,8 +1,13 @@
 const POOL_SIZE = 50;
-const FLOAT_SPEED = -0.4;
 const FADE_START = 0.5;
 const BASE_LIFETIME = 600;
-const HORIZONTAL_JITTER = 18;
+const BASE_LIFETIME_TRUE = 450;
+const HORIZONTAL_JITTER = 6;
+
+// Ease-out: velocidad inicial que decae exponencialmente
+const VY_NORMAL    = -0.6;   // sube
+const VY_TRUE      =  0.6;   // baja
+const DECAY        = 0.006;  // fracción por ms — llega a ~10% en ~380ms
 
 const COLORS = {
     playerDamage: '#ff4422',
@@ -45,18 +50,23 @@ export default class DamageNumberManager {
         const screen = camera.worldToScreen(worldX, worldY);
         const jitterX = (Math.random() - 0.5) * HORIZONTAL_JITTER * 2;
 
+        const isTrueDamage = colorKey === 'trueDamage';
         entry.screenX = screen.x + jitterX;
         entry.screenY = screen.y;
-        entry.vy = FLOAT_SPEED;
-        entry.lifetime = BASE_LIFETIME;
-        entry.maxLife = BASE_LIFETIME;
+        entry.vy = isTrueDamage ? VY_TRUE : VY_NORMAL;
+        const lifetime = isTrueDamage ? BASE_LIFETIME_TRUE : BASE_LIFETIME;
+        entry.lifetime = lifetime;
+        entry.maxLife = lifetime;
         entry.active = true;
 
         const displayVal = value < 1 ? value.toFixed(1) : Math.round(value).toString();
         entry.text.setPosition(entry.screenX, entry.screenY);
-        entry.text.setText(displayVal);
+        entry.text.setText(isTrueDamage ? `✦${displayVal}` : displayVal);
         entry.text.setStyle({ color: COLORS[colorKey] || '#ffffff' });
-        const scale = Math.min(1.8, 1.0 + Math.abs(value) * 0.012);
+        const scale = isTrueDamage
+            ? Math.min(1.6, 1.1 + Math.abs(value) * 0.008)
+            : Math.min(1.8, 1.0 + Math.abs(value) * 0.012);
+        entry.text.setDepth(isTrueDamage ? 600 : 500);
         entry.text.setAlpha(1).setVisible(true).setScale(scale);
     }
 
@@ -66,6 +76,7 @@ export default class DamageNumberManager {
             if (!entry.active) continue;
 
             entry.lifetime -= delta;
+            entry.vy *= Math.pow(1 - DECAY, delta);
             entry.screenY += entry.vy * delta;
 
             const lifeFrac = Math.max(0, entry.lifetime / entry.maxLife);

@@ -97,7 +97,7 @@ export default class CollisionSystem {
 
                             if (momentum) {
                                 momentum.halveStacks();
-                                itemEffects?.onDerape(momentum);
+                                itemEffects?.onDerape?.(momentum);
                             }
 
                             // Reflejar velocidad contra la pared

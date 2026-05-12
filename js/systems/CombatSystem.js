@@ -137,10 +137,12 @@ export default class CombatSystem {
     }
 
     // True damage — bypasses enemy type multipliers, always deals flat amount
-    if (trueDamage > 0 && !died) {
-      enemy.hp = (enemy.hp || 1) - trueDamage;
+    if (trueDamage > 0) {
+      if (!died) {
+        enemy.hp = (enemy.hp || 1) - trueDamage;
+        if (enemy.hp <= 0) died = true;
+      }
       this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, trueDamage, 'trueDamage');
-      if (enemy.hp <= 0) died = true;
     }
 
     return died;

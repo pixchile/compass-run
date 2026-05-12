@@ -149,7 +149,7 @@ export const BUFF_COLORS = {
 // Valores por tick (primaria = 1x, secundaria = 2x)
 export const BUFF_VALUES = {
   heal:       { primary: 0.2, secondary: 0.4 },
-  credit:     { primary: 1.0, secondary: 2.0 },
+  credit:     { primary: 1.3, secondary: 2.6 },
   momentum:   { primary: 0.5, secondary: 1 },
   dashCd:     { primary: 0.1, secondary: 0.2 },
   trueDamage: { primary: 0.03, secondary: 0.06 },

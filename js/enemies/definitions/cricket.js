@@ -1,6 +1,6 @@
 // Enemigo generado con Enemy Creator (v2.0)
 // Nombre: cricket
-// Fecha: 09-05-2026, 6:03:44 p. m.
+// Fecha: 11-05-2026, 6:20:21 p. m.
 
 export default {
     id: 'cricket',
@@ -35,6 +35,7 @@ export default {
             hpPercentage: 100
         },
         style: "dashOnly",
+        fleeTrigger: "proximity",
         orbitRange: 120,
         erraticTime: 2000,
         ignoreWalls: false,
@@ -44,15 +45,15 @@ export default {
         reactions: []
     },
     damageMultipliers: {
-        dash: 1,
-        aerialDash: 2,
+        dash: 2,
+        aerialDash: 1,
         wallJumpDash: 4,
         momentum3: 1,
-        slam: 4,
-        slam3: 4,
-        void: 0,
+        slam: 1,
+        slam3: 1,
+        void: 1,
         wallCrash: 1,
-        explosion: 2
+        explosion: 1
     },
     onDeath: [
         {
@@ -83,7 +84,8 @@ export default {
         },
         hates: [],
         hateRadius: 0,
-        hateDamage: 5
+        hateDamage: 5,
+        hateOverridesFleeOnDamage: false
     }
 }
 };

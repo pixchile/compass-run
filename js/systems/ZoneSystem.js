@@ -157,16 +157,18 @@ export default class ZoneSystem {
                             const actualDmg = hpBefore - e.hp;
                             if (actualDmg > 0) this._scene?.spawnDamageNumber?.(e.x, e.y, actualDmg, 'fireDamage');
                             // True damage batched every 200ms to avoid per-frame spam
-                            if (trueDps > 0 && !died) {
+                            if (trueDps > 0) {
                                 e._trueFireAccum = (e._trueFireAccum || 0) + trueDps * (delta / 1000);
                                 e._lastTrueFireTime = e._lastTrueFireTime || 0;
                                 if (now - e._lastTrueFireTime >= 200) {
                                     const batch = e._trueFireAccum;
-                                    e.hp = (e.hp || 1) - batch;
+                                    if (!died) {
+                                        e.hp = (e.hp || 1) - batch;
+                                        if (e.hp <= 0) died = true;
+                                    }
                                     this._scene?.spawnDamageNumber?.(e.x, e.y, batch, 'trueDamage');
                                     e._trueFireAccum = 0;
                                     e._lastTrueFireTime = now;
-                                    if (e.hp <= 0) died = true;
                                 }
                             }
                             if (died) this._scene.enemyManager.killEnemy(j, e, 'fire');

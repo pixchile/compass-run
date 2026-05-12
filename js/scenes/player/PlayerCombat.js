@@ -86,7 +86,7 @@ export default class PlayerCombat {
         if (this.activeSlam) {
             return {
                 type: this.activeSlam.isHighSpeed ? 'slam3' : 'slam',
-                baseDamage: this.activeSlam.speed * 0.1 * totalDamageMult * gggMult,
+                baseDamage: this.activeSlam.speed * 0.05 * totalDamageMult * gggMult,
                 radius: finalRadius * 1.5,
                 now: now,
                 trueDamage: finalTrueDamage
@@ -100,7 +100,7 @@ export default class PlayerCombat {
             if (isWallJump) this.player._fromWallJump = false; // consumir el flag
             return {
                 type: isWallJump ? 'wallJumpDash' : isAerial ? 'aerialDash' : 'dash',
-                baseDamage: this.player.dashInitialSpeed * 0.1 * totalDamageMult * gggMult * dabMult,
+                baseDamage: this.player.dashInitialSpeed * 0.05 * totalDamageMult * gggMult * dabMult,
                 radius: finalRadius,
                 now: now,
                 trueDamage: finalTrueDamage
@@ -108,7 +108,7 @@ export default class PlayerCombat {
         }
 
         if (momentumLevel === 3) {
-            return { type: 'momentum3', baseDamage: currentSpeed * 0.1 * baseDamageMult, radius: finalRadius, now: now, trueDamage: finalTrueDamage };
+            return { type: 'momentum3', baseDamage: currentSpeed * 0.05 * baseDamageMult, radius: finalRadius, now: now, trueDamage: finalTrueDamage };
         }
 
         return null;

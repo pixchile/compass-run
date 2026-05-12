@@ -73,7 +73,7 @@ export default class MomentumSystem {
   // ─── Pérdida pasiva por inactividad ────────────────────────
   updateDecay(delta, now = Date.now()) {
     const inactivity = now - this._lastActionTime;
-    if (inactivity >= 1000 && this.stacks > 0) {
+    if (inactivity >= 5000 && this.stacks > 0) {
       this._decayAccum += delta;
       while (this._decayAccum >= 1000) {
         this.stacks = Math.max(0, this.stacks - 2);
