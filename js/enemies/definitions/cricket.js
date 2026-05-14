@@ -1,6 +1,6 @@
 // Enemigo generado con Enemy Creator (v2.0)
 // Nombre: cricket
-// Fecha: 11-05-2026, 6:20:21 p. m.
+// Fecha: 13-05-2026, 12:35:32 a. m.
 
 export default {
     id: 'cricket',
@@ -10,7 +10,7 @@ export default {
     name: "cricket",
     basic: {
         hp: 500,
-        hpRegen: 0,
+        hpRegen: 5,
         color: "0xB30000",
         shape: "rectangle",
         radius: 20,
@@ -35,19 +35,28 @@ export default {
             hpPercentage: 100
         },
         style: "dashOnly",
-        fleeTrigger: "proximity",
+        locomotion: "jump",
+        intention: "chase",
+        fleeOn: { damaged: false, lowHp: 0 },
         orbitRange: 120,
         erraticTime: 2000,
         ignoreWalls: false,
         isPhantom: false,
         reactionRadius: 250,
         disengageRadius: 500,
-        reactions: []
+        reactions: [],
+        dash: {
+            speedMultiplier: 2.5,
+            windupTime: 400,
+            dashTime: 350,
+            cooldownMin: 600,
+            cooldownMax: 1500
+        }
     },
     damageMultipliers: {
-        dash: 2,
+        dash: 1,
         aerialDash: 1,
-        wallJumpDash: 4,
+        wallJumpDash: 5,
         momentum3: 1,
         slam: 1,
         slam3: 1,
@@ -66,13 +75,13 @@ export default {
         }
     ],
     ambitious: {
-        isWall: false,
+        impenetrable: true,
         seeThroughWalls: false,
         attack: {
             type: "dash",
             effect: "none",
-            damage: 1,
-            cooldown: 3
+            damage: 10,
+            cooldown: 1000
         },
         defense: {
             invulnerableAura: false,

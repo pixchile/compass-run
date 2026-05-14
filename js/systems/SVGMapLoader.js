@@ -1,4 +1,6 @@
 // SVGMapLoader.js
+import { WALL_CHUNK_SIZE } from '../constants.js';
+
 export default class SVGMapLoader {
   _VALID_PREFIXES = ['wall', 'pit', 'shop', 'trap', 'damage', 'void', 'trigger', 'slow'];
 
@@ -179,7 +181,7 @@ export default class SVGMapLoader {
         { x: geo.x, y: geo.y + geo.h }
       ], xf);
       for (let i = 0; i < 4; i++) {
-        lines.push({ start: corners[i], end: corners[(i + 1) % 4], thickness: geo.thickness });
+        lines.push(...this._chunkLine(corners[i], corners[(i + 1) % 4], geo.thickness));
       }
     } else if (geo.shapeType === 'polygon') {
       const rawPts = geo.points.trim().split(/[\s,]+/).map(Number);
@@ -189,17 +191,17 @@ export default class SVGMapLoader {
       }
       const tpts = this.transformPoints(pts, xf);
       for (let i = 0; i < tpts.length; i++) {
-        lines.push({ start: tpts[i], end: tpts[(i + 1) % tpts.length], thickness: geo.thickness });
+        lines.push(...this._chunkLine(tpts[i], tpts[(i + 1) % tpts.length], geo.thickness));
       }
     } else if (geo.shapeType === 'line') {
       const [s, e] = this.transformPoints([geo.start, geo.end], xf);
-      lines.push({ start: s, end: e, thickness: geo.thickness });
+      lines.push(...this._chunkLine(s, e, geo.thickness));
     } else if (geo.shapeType === 'path') {
       const localPts = this.samplePath(geo.pathData, 12);
       const pts = this.transformPoints(localPts, xf);
       const merged = this.mergeCollinearPoints(pts, 1.5);
       for (let i = 0; i < merged.length - 1; i++) {
-        lines.push({ start: merged[i], end: merged[i + 1], thickness: geo.thickness });
+        lines.push(...this._chunkLine(merged[i], merged[i + 1], geo.thickness));
       }
     }
 
@@ -211,6 +213,39 @@ export default class SVGMapLoader {
       l._origHp = hp;
     }
     return lines;
+  }
+
+  /** Split a line segment into WALL_CHUNK_SIZE px sub-segments.
+   *  Each sub-segment gets the full parent HP so they break independently. */
+  _chunkLine(start, end, thickness) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const len = Math.hypot(dx, dy);
+
+    if (len <= WALL_CHUNK_SIZE) {
+      return [{ start, end, thickness }];
+    }
+
+    const count = Math.ceil(len / WALL_CHUNK_SIZE);
+    const stepX = dx / count;
+    const stepY = dy / count;
+    const chunks = new Array(count);
+
+    let cx = start.x;
+    let cy = start.y;
+    for (let i = 0; i < count; i++) {
+      const nx = cx + stepX;
+      const ny = cy + stepY;
+      chunks[i] = {
+        start: { x: cx, y: cy },
+        end:   { x: nx, y: ny },
+        thickness
+      };
+      cx = nx;
+      cy = ny;
+    }
+
+    return chunks;
   }
 
   mergeCollinearPoints(pts, angleTolerance = 1.5) {

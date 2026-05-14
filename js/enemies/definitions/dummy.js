@@ -34,6 +34,9 @@ export default {
             hpPercentage: 0
         },
         style: "seek",
+        locomotion: "ground",
+        intention: "chase",
+        fleeOn: { damaged: false, lowHp: 0 },
         orbitRange: 120,
         erraticTime: 2000,
         distanceMin: 0,
@@ -60,7 +63,7 @@ export default {
         }
     ],
     ambitious: {
-        isWall: false,
+        impenetrable: false,
         seeThroughWalls: false,
         attack: {
             type: "contact",

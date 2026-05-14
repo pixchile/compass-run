@@ -14,22 +14,32 @@ export default class MapRenderer {
     if (!lines || lines.length === 0) return;
     
     for (const line of lines) {
-      const color = this.hexToNumber(line.color);
+      // Interpolate toward white as HP drops
+      let wallColor;
+      if (line.hp != null && line._origHp != null && line._origHp > 0) {
+        const ratio = Math.max(0, line.hp / line._origHp); // 1 = full, 0 = dead
+        const whiteness = 1 - ratio; // 0 = black, 1 = white
+        const r = Math.floor(0 + whiteness * 255);
+        const g = Math.floor(0 + whiteness * 255);
+        const b = Math.floor(0 + whiteness * 255);
+        wallColor = (r << 16) | (g << 8) | b;
+      } else {
+        wallColor = this.hexToNumber(line.color || '#000000');
+      }
 
-      // Relleno de la línea (grosor) usando el color original del SVG
-      g.lineStyle(line.thickness, color, 0.9);
+      g.lineStyle(line.thickness, wallColor, 1.0);
       g.lineBetween(line.start.x, line.start.y, line.end.x, line.end.y);
       
-      // Efectos visuales según el tipo de muro
+      // Highlight line — fade out as wall whitens (it's already bright)
       if (line.type === 'wall_jumpable') {
-        // Brillo blanco interior para los verdes
-        g.lineStyle(2, 0xffffff, 0.7); 
+        g.lineStyle(2, 0xffffff, 0.7);
       } else if (line.type === 'wall_breakable') {
-        // Brillo amarillo/naranja interior para los rojos
-        g.lineStyle(2, 0xffaa00, 0.7); 
+        g.lineStyle(2, 0xffaa00, 0.7);
+      } else if (line.hp == null || line._origHp == null || line._origHp <= 0) {
+        g.lineStyle(1, 0xffffff, 0.3);
       } else {
-        // Brillo suave estándar
-        g.lineStyle(1, 0xffffff, 0.3); 
+        const ratio = Math.max(0, line.hp / line._origHp);
+        g.lineStyle(1, 0xffffff, 0.3 * ratio);
       }
       g.lineBetween(line.start.x, line.start.y, line.end.x, line.end.y);
     }

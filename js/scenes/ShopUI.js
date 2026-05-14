@@ -23,6 +23,8 @@ export default class ShopUI {
     // Reutilizar las keys del PlayerInput para evitar conflictos con Phaser
     this._kb = scene.player?.input?.kb || scene.input.keyboard.addKeys('W,A,S,D,SPACE');
     this._prev = {};
+    this._gpPrev = { up: false, down: false, a: false, b: false, lb: false, rb: false, start: false };
+    this._gpRepeat = { up: 0, down: 0 };
 
     this._root = scene.add.container(0, 0).setDepth(2000).setAlpha(0);
     this._build();
@@ -74,7 +76,7 @@ export default class ShopUI {
     // Scrollbar
     this._scrollbar = this.scene.add.graphics().setDepth(2100);
 
-    this._hint = this.scene.add.text(cx, by + bh - 24, 'W/S navegar  Â·  A/D cambiar tab  Â·  ESPACIO comprar/vender  Â·  ESC salir  Â·  Rueda scroll', {
+    this._hint = this.scene.add.text(cx, by + bh - 24, 'W/S / Stick navegar  Â·  A/D / LB+RB tab  Â·  SPACE / A comprar  Â·  B salir', {
       fontFamily: 'monospace', fontSize: '11px', color: '#445566'
     }).setOrigin(0.5);
 
@@ -512,26 +514,71 @@ export default class ShopUI {
   update() {
     if (!this.visible) return;
 
+    // Gamepad polling
+    let gpUp = false, gpDown = false, gpA = false, gpB = false, gpLB = false, gpRB = false;
+    const gamepads = navigator.getGamepads();
+    if (gamepads) {
+      for (let i = 0; i < gamepads.length; i++) {
+        const gp = gamepads[i];
+        if (!gp) continue;
+        const stickY = gp.axes[1] || 0;
+        const dpadY = (gp.buttons[12]?.pressed ? 1 : 0) - (gp.buttons[13]?.pressed ? 1 : 0);
+        gpUp   = stickY < -0.3 || dpadY < 0;
+        gpDown = stickY > 0.3  || dpadY > 0;
+        gpA    = gp.buttons[0]?.pressed || false;
+        gpB    = gp.buttons[1]?.pressed || false;
+        gpLB   = gp.buttons[4]?.pressed || false;
+        gpRB   = gp.buttons[5]?.pressed || false;
+        break;
+      }
+    }
+
+    const gpUpJust   = gpUp   && !this._gpPrev.up;
+    const gpDownJust = gpDown && !this._gpPrev.down;
+    const gpAJust    = gpA    && !this._gpPrev.a;
+    const gpBJust    = gpB    && !this._gpPrev.b;
+    const gpLBJust   = gpLB   && !this._gpPrev.lb;
+    const gpRBJust   = gpRB   && !this._gpPrev.rb;
+
+    // Held repeat for stick/dpad (every 180ms after initial press)
+    if (gpUp && this._gpRepeat.up > 0)   { this._gpRepeat.up -= 16; }
+    else if (gpUp && this._gpRepeat.up <= 0) { this._gpRepeat.up = 180; }
+    if (gpDown && this._gpRepeat.down > 0) { this._gpRepeat.down -= 16; }
+    else if (gpDown && this._gpRepeat.down <= 0) { this._gpRepeat.down = 180; }
+    if (!gpUp) this._gpRepeat.up = 0;
+    if (!gpDown) this._gpRepeat.down = 0;
+
+    const gpUpAction  = gpUpJust  || (gpUp  && this._gpRepeat.up === 180);
+    const gpDownAction = gpDownJust || (gpDown && this._gpRepeat.down === 180);
+
+    this._gpPrev.up = gpUp; this._gpPrev.down = gpDown;
+    this._gpPrev.a = gpA;   this._gpPrev.b = gpB;
+    this._gpPrev.lb = gpLB; this._gpPrev.rb = gpRB;
+
+    // Navigation
     const WKey = this._kb['W'];
     const SKey = this._kb['S'];
     const AKey = this._kb['A'];
     const DKey = this._kb['D'];
     const space = this._kb['SPACE'];
 
-    if (Phaser.Input.Keyboard.JustDown(WKey) && this._cursor > 0) {
+    if ((Phaser.Input.Keyboard.JustDown(WKey) || gpUpAction) && this._cursor > 0) {
       this._cursor--;
       this._scrollCursorIntoView();
     }
-    if (Phaser.Input.Keyboard.JustDown(SKey) && this._cursor < this._items.length - 1) {
+    if ((Phaser.Input.Keyboard.JustDown(SKey) || gpDownAction) && this._cursor < this._items.length - 1) {
       this._cursor++;
       this._scrollCursorIntoView();
     }
-    if (Phaser.Input.Keyboard.JustDown(AKey) || Phaser.Input.Keyboard.JustDown(DKey)) {
+    if (Phaser.Input.Keyboard.JustDown(AKey) || Phaser.Input.Keyboard.JustDown(DKey) || gpLBJust || gpRBJust) {
       this._setTab(this._tab === 'buy' ? 'sell' : 'buy');
     }
-    if (Phaser.Input.Keyboard.JustDown(space)) {
+    if (Phaser.Input.Keyboard.JustDown(space) || gpAJust) {
       const row = this._items[this._cursor];
       if (row?.onBuy) row.onBuy();
+    }
+    if (gpBJust) {
+      this.close(true);
     }
 
     // Update credits display each frame

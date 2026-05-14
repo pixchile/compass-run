@@ -53,7 +53,7 @@ export default class MainMenu extends Phaser.Scene {
       fontSize: '18px', fill: '#888'
     }).setOrigin(0.5);
 
-    const hint = this.add.text(cx, H - 30, 'WASD · SPACE para navegar', {
+    const hint = this.add.text(cx, H - 30, 'WASD / Gamepad · SPACE / A para navegar', {
       fontSize: '12px', fill: '#555'
     }).setOrigin(0.5);
 
@@ -216,10 +216,27 @@ export default class MainMenu extends Phaser.Scene {
   }
 
   update() {
-    const up    = this._keys.up.isDown;
-    const down  = this._keys.down.isDown;
-    const enter = this._keys.enter.isDown;
-    const esc   = this._keys.esc.isDown;
+    // Gamepad polling
+    let gpUp = false, gpDown = false, gpEnter = false, gpEsc = false;
+    const gamepads = navigator.getGamepads();
+    if (gamepads) {
+      for (let i = 0; i < gamepads.length; i++) {
+        const gp = gamepads[i];
+        if (!gp) continue;
+        const stickY = gp.axes[1] || 0;
+        const dpadY = (gp.buttons[12]?.pressed ? 1 : 0) - (gp.buttons[13]?.pressed ? 1 : 0);
+        gpUp    = stickY < -0.3 || dpadY < 0;
+        gpDown  = stickY > 0.3  || dpadY > 0;
+        gpEnter = gp.buttons[0]?.pressed || false;  // A
+        gpEsc   = gp.buttons[1]?.pressed || false;  // B
+        break;
+      }
+    }
+
+    const up    = this._keys.up.isDown    || gpUp;
+    const down  = this._keys.down.isDown  || gpDown;
+    const enter = this._keys.enter.isDown || gpEnter;
+    const esc   = this._keys.esc.isDown   || gpEsc;
 
     if (this._view === 'main') {
       if (up && !this._prevUp) {

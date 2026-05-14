@@ -14,7 +14,11 @@ export default class DynamicEnemy extends Enemy {
 
         this.speedScaling = mov.scaling || { hpBase: 'none', hpPercentage: 0 };
 
-        this.movementStyle = mov.style || 'seek';
+        // --- Locomotion / Intention (v2) with backward compat from old style ---
+        const oldStyle = mov.style || null;
+        this.locomotion = mov.locomotion || DynamicEnemy._mapLocomotion(oldStyle);
+        this.intention  = mov.intention  || DynamicEnemy._mapIntention(oldStyle);
+
         this.orbitRadius = mov.orbitRange || 120;
         this.erraticTime = mov.erraticTime || 2000;
         this.reactionRadius = mov.reactionRadius ?? null;
@@ -26,9 +30,13 @@ export default class DynamicEnemy extends Enemy {
         this.reactions = mov.reactions || [];
         this._activeReaction = null;
 
-        // flee por daño en vez de proximidad
-        this.fleeTrigger = mov.fleeTrigger || 'proximity'; // 'proximity' | 'damage'
-        this._fleeDamageActive = false; // flee activado por daño recibido
+        // --- Flee triggers (global, any intention can flee) ---
+        const fleeOn = mov.fleeOn || {};
+        const oldFlee = mov.fleeTrigger || 'proximity';
+        this.fleeOnDamaged    = fleeOn.damaged ?? (oldFlee === 'damage');
+        this.fleeOnLowHp      = fleeOn.lowHp ?? 0;
+        this.chaseOnDamaged   = fleeOn.chaseOnDamaged ?? (oldFlee === 'chase');
+        this._damageReactionActive = false;
 
         // Odio hacia otros tipos de enemigos
         const amb = config.ambitious || {};
@@ -48,7 +56,7 @@ export default class DynamicEnemy extends Enemy {
         this.ignoreWalls = mov.ignoreWalls ?? false;
         this.isPhantom = mov.isPhantom || false;
 
-        this.isWall = amb.isWall || false;
+        this.impenetrable = amb.impenetrable || false;
         this.evade = amb.defense?.evade || false;
         this.invulnerableAura = amb.defense?.invulnerableAura || false;
 
@@ -66,17 +74,15 @@ export default class DynamicEnemy extends Enemy {
 
     receiveDamage(attackPayload) {
         const died = super.receiveDamage(attackPayload);
-        // Si fleeTrigger es 'damage' y el daño viene del jugador (no de haters ni void),
-        // activar flee solo si no hay hated en radio (o hateOverridesFleeOnDamage es false)
         if (
-            this.fleeTrigger === 'damage' &&
+            (this.fleeOnDamaged || this.chaseOnDamaged) &&
             attackPayload.type !== 'hater' &&
             attackPayload.type !== 'void' &&
             !died
         ) {
             const hateActive = this.hateOverridesFleeOnDamage && this._hateTarget != null;
             if (!hateActive) {
-                this._fleeDamageActive = true;
+                this._damageReactionActive = true;
             }
         }
         return died;
@@ -124,11 +130,10 @@ export default class DynamicEnemy extends Enemy {
         if (this._frozen) return;
 
         // --- PATH FOLLOWING (sobrescribe AI si tiene ruta asignada) ---
-        // Cede el control si hay flee-by-damage activo y no hay hated en radio
         const hasMultiPath = this._paths && this._paths.length > 0;
         const hasSinglePath = this._path && this._path.length > 0;
         if (hasMultiPath || hasSinglePath) {
-            const fleeDamageBlocking = this._fleeDamageActive && !this._hateTarget;
+            const fleeDamageBlocking = this._damageReactionActive && !this._hateTarget;
             // También ceder si hay hate target — pero primero necesitamos correr
             // el hate check para saber si hay target. Corremos hate check aquí si toca.
             if (this.hates.length > 0 && this.hateRadius > 0) {
@@ -159,16 +164,16 @@ export default class DynamicEnemy extends Enemy {
         }
 
         // --- REACTION RADIUS: histeresis deteccion/desenganche ---
-        const trackingStyles = ['seek', 'flee', 'orbit', 'circle', 'axisX', 'axisY', 'dashOnly'];
-        // reactionRadius: null/undefined → usar global. 0 → desactivado explícitamente.
         const hasExplicitRadius = this.reactionRadius != null;
         const detectRadius = !hasExplicitRadius
             ? ENEMY_REACTION_RADIUS
-            : this.reactionRadius; // 0 es válido = sin detección por proximidad
+            : this.reactionRadius;
 
-        let effectiveStyle = this.movementStyle;
+        let effectiveIntention = this.intention;
 
-        if (detectRadius > 0 && this.fleeTrigger !== 'damage') {
+        // Proximity detection only for non-wander intentions
+        const needsProximityDetection = this.intention !== 'wander';
+        if (detectRadius > 0 && needsProximityDetection) {
             const distToPlayer = Math.hypot(player.px - this.x, player.py - this.y);
             const seeThrough = this.customConfig?.ambitious?.seeThroughWalls;
 
@@ -213,7 +218,7 @@ export default class DynamicEnemy extends Enemy {
             }
 
             if (!this.state._awareOfPlayer && !this._onPath) {
-                effectiveStyle = 'wander';
+                effectiveIntention = 'wander';
             }
         }
 
@@ -265,23 +270,30 @@ export default class DynamicEnemy extends Enemy {
 
         if (this._activeReaction) {
             this.speed = this._activeReaction.speed;
-            effectiveStyle = this._activeReaction.action;
+            effectiveIntention = this._activeReaction.action;
         }
 
         if (this._hateTarget) {
-            effectiveStyle = 'seek';
-            if (this.hateOverridesFleeOnDamage) this._fleeDamageActive = false;
+            effectiveIntention = 'chase';
+            if (this.hateOverridesFleeOnDamage) this._damageReactionActive = false;
             this._fleeActive = false;
             const hd = Math.hypot(this._hateTarget.x - this.x, this._hateTarget.y - this.y);
-            if (hd < this.radius + (this._hateTarget.radius || 16) + 5) {
+            const minDist = this.radius + (this._hateTarget.radius || 16) + 8;
+            if (hd < minDist) {
                 this._hateTarget.hp -= (this.hateDamage || 5) * (delta / 1000);
                 this._hateTarget._lastDamageSource = 'hater';
+                // Empujar fuera del target para no stackearse encima
+                if (hd > 0.01) {
+                    const overlap = minDist - hd;
+                    this.x -= ((this._hateTarget.x - this.x) / hd) * overlap;
+                    this.y -= ((this._hateTarget.y - this.y) / hd) * overlap;
+                }
             }
         }
 
         // --- FLEE FROM PATH: huir del jugador, volver al path cuando seguro ---
         if (this._fleeActive) {
-            effectiveStyle = 'flee';
+            effectiveIntention = 'flee';
             const fleeRadius = this._fleeRadius ?? 250;
             if (Math.hypot(player.px - this.x, player.py - this.y) > fleeRadius * 2) {
                 this._fleeActive = false;
@@ -294,13 +306,12 @@ export default class DynamicEnemy extends Enemy {
             }
         }
 
-        // --- FLEE BY DAMAGE: huir si recibió daño (fleeTrigger === 'damage') ---
-        if (this._fleeDamageActive && !this._hateTarget) {
-            effectiveStyle = 'flee';
+        // --- DAMAGE REACTION: flee or chase when hit ---
+        if (this._damageReactionActive && !this._hateTarget) {
+            effectiveIntention = this.chaseOnDamaged ? 'chase' : 'flee';
             const safeRadius = this._fleeRadius ?? 250;
             if (Math.hypot(player.px - this.x, player.py - this.y) > safeRadius * 2) {
-                this._fleeDamageActive = false;
-                // Volver al waypoint más cercano
+                this._damageReactionActive = false;
                 if (this._path) {
                     const nearest = this._getNearestWaypoint(this._path);
                     if (nearest) this._pathIndex = this._path.indexOf(nearest);
@@ -310,60 +321,66 @@ export default class DynamicEnemy extends Enemy {
             }
         }
 
-        // --- UNDETECTABLE PLAYER ---
-        if (player._undetectable) {
-            if (trackingStyles.includes(effectiveStyle)) {
-                effectiveStyle = 'erratic';
-            }
+        // --- LOW HP FLEE: global override ---
+        if (this.fleeOnLowHp > 0 && (this.hp / this.maxHp * 100) <= this.fleeOnLowHp) {
+            effectiveIntention = 'flee';
         }
 
-        // --- LÓGICA DE DIRECCIONES ---
+        // --- UNDETECTABLE PLAYER ---
+        if (player._undetectable && effectiveIntention !== 'wander') {
+            effectiveIntention = 'wander';
+        }
+
+        // --- MOVEMENT EXECUTION ---
         let moveX = 0, moveY = 0;
 
-        switch (effectiveStyle) {
-            case 'dashOnly':
-                const dashOnly = this._dashOnlyMovement(player, delta);
-                moveX = dashOnly.x; moveY = dashOnly.y;
-                break;
-            case 'seek':
-                const seekTarget = this._hateTarget
-                    ? { px: this._hateTarget.x, py: this._hateTarget.y }
-                    : player;
-                const seek = this._seekMovement(seekTarget, delta);
-                moveX = seek.x; moveY = seek.y;
-                break;
-            case 'flee':
-                const flee = this._fleeMovement(player, delta);
-                moveX = flee.x; moveY = flee.y;
-                break;
-            case 'erratic':
-            case 'wander':
-                const wander = this._wanderMovement(delta);
-                moveX = wander.x; moveY = wander.y;
-                break;
-            case 'orbit':
-            case 'circle':
-                const circle = this._circleMovement(player, delta);
-                moveX = circle.x; moveY = circle.y;
-                break;
-            case 'swarm':
-                const swT = this._activeReaction || {};
-                const sw = this._swarmMovement(swT.targetX || player.px, swT.targetY || player.py, delta);
-                moveX = sw.x; moveY = sw.y;
-                break;
-            case 'retreat':
-                const rtT = this._activeReaction || { targetX: player.px, targetY: player.py };
-                const rt = this._retreatMovement(rtT.targetX, rtT.targetY, delta);
-                moveX = rt.x; moveY = rt.y;
-                break;
-            case 'investigate':
-                const invT = this._activeReaction || {};
-                const inv = this._investigateMovement(invT.targetX || player.px, invT.targetY || player.py, delta);
-                moveX = inv.x; moveY = inv.y;
-                break;
-            default:
-                const defaultSeek = this._seekMovement(player, delta);
-                moveX = defaultSeek.x; moveY = defaultSeek.y;
+        // Reaction styles bypass locomotion
+        if (effectiveIntention === 'swarm') {
+            const swT = this._activeReaction || {};
+            const sw = this._swarmMovement(swT.targetX || player.px, swT.targetY || player.py, delta);
+            moveX = sw.x; moveY = sw.y;
+        } else if (effectiveIntention === 'retreat') {
+            const rtT = this._activeReaction || { targetX: player.px, targetY: player.py };
+            const rt = this._retreatMovement(rtT.targetX, rtT.targetY, delta);
+            moveX = rt.x; moveY = rt.y;
+        } else if (effectiveIntention === 'investigate') {
+            const invT = this._activeReaction || {};
+            const inv = this._investigateMovement(invT.targetX || player.px, invT.targetY || player.py, delta);
+            moveX = inv.x; moveY = inv.y;
+        } else if (this.locomotion === 'jump') {
+            const jump = this._jumpMovement(player, delta, effectiveIntention);
+            moveX = jump.x; moveY = jump.y;
+        } else {
+            switch (effectiveIntention) {
+                case 'chase':
+                case 'seek': {
+                    const seekTarget = this._hateTarget
+                        ? { px: this._hateTarget.x, py: this._hateTarget.y }
+                        : player;
+                    const seek = this._seekMovement(seekTarget, delta);
+                    moveX = seek.x; moveY = seek.y;
+                    break;
+                }
+                case 'flee': {
+                    const flee = this._fleeMovement(player, delta);
+                    moveX = flee.x; moveY = flee.y;
+                    break;
+                }
+                case 'wander': {
+                    const wander = this._wanderMovement(delta);
+                    moveX = wander.x; moveY = wander.y;
+                    break;
+                }
+                case 'orbit': {
+                    const orbit = this._orbitMovement(player, delta);
+                    moveX = orbit.x; moveY = orbit.y;
+                    break;
+                }
+                default: {
+                    const defaultChase = this._seekMovement(player, delta);
+                    moveX = defaultChase.x; moveY = defaultChase.y;
+                }
+            }
         }
 
         // Aplicar movimiento
@@ -377,6 +394,9 @@ export default class DynamicEnemy extends Enemy {
                 this.handleWallCollisions(wallLines, player, delta);
             }
         }
+
+        // --- SEPARACION ENEMIGO-ENEMIGO ---
+        this._separateFromNearbyEnemies();
 
         // --- SISTEMA DESATASCAR (solo si el enemigo está intentando moverse) ---
         const distMoved = Math.hypot(this.x - this.state.lastX, this.y - this.state.lastY);
@@ -438,6 +458,31 @@ export default class DynamicEnemy extends Enemy {
         if (!hitWall) this._wallStuckFrames = 0;
     }
 
+    // ─── ENEMY-ENEMY SEPARATION ──────────────────────────────
+
+    _separateFromNearbyEnemies() {
+        // Los phantoms (ignoreWalls) pueden solaparse — atraviesan todo
+        if (this.ignoreWalls) return;
+
+        const enemies = this.scene?.enemyManager?.enemies;
+        if (!enemies || enemies.length < 2) return;
+
+        for (const other of enemies) {
+            if (other === this || other.hp <= 0) continue;
+            // Si el otro es phantom, no lo empujamos (atraviesa)
+            if (other.ignoreWalls) continue;
+            const dx = this.x - other.x;
+            const dy = this.y - other.y;
+            const dist = Math.hypot(dx, dy);
+            const minDist = this.radius + (other.radius || 16) + 4;
+            if (dist < minDist && dist > 0.01) {
+                const overlap = minDist - dist;
+                this.x += (dx / dist) * overlap * 0.5;
+                this.y += (dy / dist) * overlap * 0.5;
+            }
+        }
+    }
+
     // ─── PATH FOLLOWING ────────────────────────────────────────
 
     _canSeeTarget(target) {
@@ -450,13 +495,24 @@ export default class DynamicEnemy extends Enemy {
     }
 
     _followPath(delta, player) {
+        let result;
         if (this._paths && this._paths.length > 0) {
-            const result = this._followMultiPath(delta, player);
-            this._onPath = result;
-            return result;
+            result = this._followMultiPath(delta, player);
+        } else {
+            result = this._followSinglePath(delta, player);
         }
-        const result = this._followSinglePath(delta, player);
         this._onPath = result;
+
+        // Colision con muros y separacion enemigo-enemigo para enemigos
+        // en path (el return temprano de update() saltaba estos bloques)
+        if (result && !this.ignoreWalls) {
+            const wallLines = this.scene?.wallGrid?.query(this.x, this.y, this.radius + 30) || this._lines || [];
+            if (wallLines.length > 0) {
+                this.handleWallCollisions(wallLines, player, delta);
+            }
+            this._separateFromNearbyEnemies();
+        }
+
         return result;
     }
 
@@ -467,9 +523,7 @@ export default class DynamicEnemy extends Enemy {
 
         if (mode === 'chase' && player && !player.isDead) {
             const chaseRadius = this._chaseRadius ?? 300;
-            // Si el enemigo ignora al jugador hasta recibir daño, el path chase
-            // no rompe por proximidad del jugador — solo por hated en radio.
-            if (this.fleeTrigger !== 'damage') {
+            if (!this.fleeOnDamaged && !this.chaseOnDamaged) {
                 const dp = Math.hypot(player.px - this.x, player.py - this.y);
                 if (dp <= chaseRadius && this._canSeeTarget(player)) return false;
             }
@@ -491,6 +545,18 @@ export default class DynamicEnemy extends Enemy {
                 }
                 this._fleeActive = true;
                 return false;
+            }
+        }
+
+        // Breakaway: si esta atascado rompiendo un muro y el jugador/hated
+        // esta cerca, abandona el path temporalmente para pelear
+        if (mode !== 'chase' && mode !== 'flee' && player && !player.isDead) {
+            const stuckOnWall = (this._wallStuckFrames || 0) > 250;
+            if (stuckOnWall) {
+                const combatRadius = this._chaseRadius ?? this.reactionRadius ?? 300;
+                const dp = Math.hypot(player.px - this.x, player.py - this.y);
+                if (dp <= combatRadius && this._canSeeTarget(player)) return false;
+                if (this._hateTarget && Math.hypot(this._hateTarget.x - this.x, this._hateTarget.y - this.y) <= combatRadius) return false;
             }
         }
 
@@ -527,7 +593,7 @@ export default class DynamicEnemy extends Enemy {
 
         if (mode === 'chase' && player && !player.isDead) {
             const chaseRadius = this._chaseRadius ?? 300;
-            if (this.fleeTrigger !== 'damage') {
+            if (!this.fleeOnDamaged && !this.chaseOnDamaged) {
                 if (Math.hypot(player.px - this.x, player.py - this.y) <= chaseRadius && this._canSeeTarget(player)) return false;
             }
             if (this._hateTarget && Math.hypot(this._hateTarget.x - this.x, this._hateTarget.y - this.y) <= chaseRadius) return false;
@@ -546,6 +612,18 @@ export default class DynamicEnemy extends Enemy {
                 }
                 this._fleeActive = true;
                 return false;
+            }
+        }
+
+        // Breakaway: si esta atascado rompiendo un muro y el jugador/hated
+        // esta cerca, abandona el path temporalmente para pelear
+        if (mode !== 'chase' && mode !== 'flee' && player && !player.isDead) {
+            const stuckOnWall = (this._wallStuckFrames || 0) > 250;
+            if (stuckOnWall) {
+                const combatRadius = this._chaseRadius ?? this.reactionRadius ?? 300;
+                const dp = Math.hypot(player.px - this.x, player.py - this.y);
+                if (dp <= combatRadius && this._canSeeTarget(player)) return false;
+                if (this._hateTarget && Math.hypot(this._hateTarget.x - this.x, this._hateTarget.y - this.y) <= combatRadius) return false;
             }
         }
 
@@ -586,7 +664,31 @@ export default class DynamicEnemy extends Enemy {
     }
 
     _evaluatePaths() {
+        // Fast path: keep current active path and use direct _pathIndex access
+        if (this._activePathIndex != null && this._activePathIndex < this._paths.length) {
+            const currentPath = this._paths[this._activePathIndex].path;
+            const idx = this._pathIndex;
+            if (idx != null && idx >= 0 && idx < currentPath.length) {
+                const wp = currentPath[idx];
+                if (this._hasClearPathTo(wp.x, wp.y)) {
+                    this._pathTimer = 0;
+                    this._pathCheckTimer = 0;
+                    return;
+                }
+            }
+            // _pathIndex stale — scan current path for nearest reachable waypoint
+            const wp = this._getNearestWaypoint(currentPath);
+            if (wp && this._hasClearPathTo(wp.x, wp.y)) {
+                this._pathIndex = currentPath.indexOf(wp);
+                this._pathTimer = 0;
+                this._pathCheckTimer = 0;
+                return;
+            }
+        }
+
+        // Fallback: scan other paths
         for (let i = 0; i < this._paths.length; i++) {
+            if (i === this._activePathIndex) continue;
             const wp = this._getNearestWaypoint(this._paths[i].path);
             if (wp && this._hasClearPathTo(wp.x, wp.y)) {
                 this._activePathIndex = i;
@@ -596,8 +698,6 @@ export default class DynamicEnemy extends Enemy {
                 return;
             }
         }
-        // Todos los paths bloqueados — reintentar primario en el proximo ciclo
-        this._activePathIndex = 0;
     }
 
     _hasClearPathTo(tx, ty) {
@@ -618,6 +718,10 @@ export default class DynamicEnemy extends Enemy {
     _advanceWaypoint(path, mode, idx, isMulti) {
         if (mode === 'loop' || mode === 'chase' || mode === 'flee' || mode === 'patrol') {
             this._pathIndex = (idx + 1) % path.length;
+            // Wrapping al inicio → ciclo completado
+            if (this._pathIndex === 0 && path.length > 1) {
+                if (this._onPathCycle(isMulti)) return;
+            }
         } else if (mode === 'random') {
             // Elegir cualquier waypoint excepto el actual
             let next;
@@ -625,6 +729,8 @@ export default class DynamicEnemy extends Enemy {
                 do { next = Math.floor(Math.random() * path.length); } while (next === idx);
             } else { next = 0; }
             this._pathIndex = next;
+            // Cada waypoint random cuenta como un ciclo
+            if (this._onPathCycle(isMulti)) return;
         } else if (mode === 'pingpong') {
             if (this._pathReverse) {
                 if (idx === 0) { this._pathReverse = false; this._pathIndex = 1; }
@@ -633,18 +739,41 @@ export default class DynamicEnemy extends Enemy {
                 if (idx === path.length - 1) { this._pathReverse = true; this._pathIndex = idx - 1; }
                 else { this._pathIndex = idx + 1; }
             }
-        } else { // 'once'
+            // Ciclo completado al volver al inicio en direccion forward
+            if (!this._pathReverse && this._pathIndex === 0 && path.length > 1) {
+                if (this._onPathCycle(isMulti)) return;
+            }
+        } else { // 'once' — por compatibilidad, una sola ejecucion
             if (idx < path.length - 1) {
                 this._pathIndex = idx + 1;
             } else {
-                if (isMulti) {
-                    this._paths = null;
-                } else {
-                    this._path = null; this._pathMode = null;
-                }
-                this._pathIndex = 0; this._pathTimer = 0;
+                this._clearPathData(isMulti);
             }
         }
+    }
+
+    _onPathCycle(isMulti) {
+        const cycles = isMulti
+            ? (this._paths?.[this._activePathIndex]?.cycles || 0)
+            : (this._pathCycles || 0);
+        if (cycles <= 0) return false; // 0 = eterno
+
+        this._pathLoopCount = (this._pathLoopCount || 0) + 1;
+        if (this._pathLoopCount >= cycles) {
+            this._clearPathData(isMulti);
+            return true;
+        }
+        return false;
+    }
+
+    _clearPathData(isMulti) {
+        if (isMulti) {
+            this._paths = null;
+        } else {
+            this._path = null; this._pathMode = null; this._pathCycles = 0;
+        }
+        this._pathIndex = 0; this._pathTimer = 0;
+        this._pathLoopCount = 0;
     }
 
     // Movimiento Helpers
@@ -697,19 +826,19 @@ export default class DynamicEnemy extends Enemy {
         };
     }
 
-    _dashOnlyMovement(player, delta) {
-        // Init dash state if needed
+    _jumpMovement(player, delta, intention) {
         if (!this._dash) {
             this._dash = { phase: 'cooldown', timer: 500 + Math.random() * 1000 };
         }
         const ds = this._dash;
         ds.timer -= delta;
 
-        const dashSpeed = (this.activeSpeed || this.speed) * 2.5;
-        const windupTime = 400;
-        const dashTime = 350;
-        const cooldownMin = 600;
-        const cooldownMax = 1500;
+        const dashCfg = this.customConfig?.movement?.dash || {};
+        const dashSpeed = (this.activeSpeed || this.speed) * (dashCfg.speedMultiplier || 2.5);
+        const windupTime = dashCfg.windupTime ?? 400;
+        const dashTime = dashCfg.dashTime ?? 350;
+        const cooldownMin = dashCfg.cooldownMin ?? 600;
+        const cooldownMax = dashCfg.cooldownMax ?? 1500;
 
         if (ds.phase === 'cooldown') {
             if (ds.timer <= 0) {
@@ -723,11 +852,18 @@ export default class DynamicEnemy extends Enemy {
             if (ds.timer <= 0) {
                 ds.phase = 'dash';
                 ds.timer = dashTime;
-                // Lock target at windup end
-                ds.targetX = player.px;
-                ds.targetY = player.py;
-                const dx2 = ds.targetX - this.x;
-                const dy2 = ds.targetY - this.y;
+                let dx2, dy2;
+                if (intention === 'flee') {
+                    dx2 = this.x - player.px;
+                    dy2 = this.y - player.py;
+                } else if (intention === 'wander') {
+                    const angle = Math.random() * Math.PI * 2;
+                    dx2 = Math.cos(angle);
+                    dy2 = Math.sin(angle);
+                } else {
+                    dx2 = player.px - this.x;
+                    dy2 = player.py - this.y;
+                }
                 const dist2 = Math.hypot(dx2, dy2);
                 if (dist2 > 0.01) {
                     ds.dirX = dx2 / dist2;
@@ -755,7 +891,7 @@ export default class DynamicEnemy extends Enemy {
         return { x: 0, y: 0 };
     }
 
-    _circleMovement(player, delta) {
+    _orbitMovement(player, delta) {
         this.state.orbitAngle += 2 * (delta / 1000);
         const targetX = player.px + Math.cos(this.state.orbitAngle) * this.orbitRadius;
         const targetY = player.py + Math.sin(this.state.orbitAngle) * this.orbitRadius;
@@ -885,6 +1021,25 @@ export default class DynamicEnemy extends Enemy {
             const my = this.y + Math.sin(angle) * distance;
             const minion = window.enemyRegistry.create(minionType, mx, my, this.scene);
             if (minion) this.scene.enemyManager.enemies.push(minion);
+        }
+    }
+
+    // --- Backward compat: old style → new locomotion/intention ---
+    static _mapLocomotion(style) {
+        if (style === 'dashOnly') return 'jump';
+        return 'ground';
+    }
+
+    static _mapIntention(style) {
+        switch (style) {
+            case 'seek':     return 'chase';
+            case 'flee':     return 'flee';
+            case 'wander':   return 'wander';
+            case 'erratic':  return 'wander';
+            case 'orbit':    return 'orbit';
+            case 'circle':   return 'orbit';
+            case 'dashOnly': return 'chase';
+            default:         return 'chase';
         }
     }
 }

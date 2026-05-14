@@ -35,10 +35,11 @@ class EnemyEditor {
             'selfDestructType', 'selfDestructValue', 'spawnTriggerType', 'spawnTriggerValue',
             // Movimiento
             'mobile', 'speed', 'activeSpeed', 'speedTimeScale', 'speedTimeMulti', 'speedHpScale', 'speedHpMulti',
-            'movementStyle', 'fleeTrigger', 'orbitRange', 'erraticTime',
+            'locomotion', 'intention', 'fleeOnDamaged', 'fleeOnLowHp', 'chaseOnDamaged',
+            'orbitRange', 'erraticTime',
             'ignoreWalls', 'isPhantom', 'reactionRadius', 'disengageRadius',
             // Ambitious (Avanzados)
-            'isWall', 'attackType', 'attackEffect', 'attackDamage', 'attackCooldown', 'defenseAura', 'evade',
+            'impenetrable', 'attackType', 'attackEffect', 'attackDamage', 'attackCooldown', 'defenseAura', 'evade',
             'seeThroughWalls',
             'spawnPattern', 'spawnCount',
             'hateTypes', 'hateRadius', 'hateDamage', 'hateOverridesFleeOnDamage'
@@ -84,10 +85,16 @@ class EnemyEditor {
     }
 
     setupDynamicFields() {
-        // Mostrar/Ocultar campos de movimiento según estilo
-        const movementStyle = document.getElementById('movementStyle');
-        if (movementStyle) {
-            movementStyle.addEventListener('change', () => {
+        const locomotion = document.getElementById('locomotion');
+        if (locomotion) {
+            locomotion.addEventListener('change', () => {
+                this.updateDynamicFieldsVisibility();
+                this.generate();
+            });
+        }
+        const intention = document.getElementById('intention');
+        if (intention) {
+            intention.addEventListener('change', () => {
                 this.updateDynamicFieldsVisibility();
                 this.generate();
             });
@@ -104,16 +111,17 @@ class EnemyEditor {
     }
 
     updateDynamicFieldsVisibility() {
-        const movementStyle = document.getElementById('movementStyle');
-        if (movementStyle) {
-            const style = movementStyle.value;
+        const locomotion = document.getElementById('locomotion');
+        const intention = document.getElementById('intention');
+        if (locomotion && intention) {
+            const loco = locomotion.value;
+            const intent = intention.value;
             const orbitField = document.getElementById('orbitRangeField');
             const erraticField = document.getElementById('erraticTimeField');
-            const fleeTriggerField = document.getElementById('fleeTriggerField');
-            if (orbitField) orbitField.style.display = style === 'orbit' ? 'block' : 'none';
-            if (erraticField) erraticField.style.display = (style === 'erratic' || style === 'wander') ? 'block' : 'none';
-            // fleeTrigger es relevante si el estilo puede resultar en flee
-            if (fleeTriggerField) fleeTriggerField.style.display = (style === 'flee' || style === 'wander') ? 'block' : 'none';
+            const dashField = document.getElementById('dashOnlyField');
+            if (orbitField) orbitField.style.display = intent === 'orbit' ? 'block' : 'none';
+            if (erraticField) erraticField.style.display = intent === 'wander' ? 'block' : 'none';
+            if (dashField) dashField.style.display = loco === 'jump' ? 'block' : 'none';
         }
         const spawnPattern = document.getElementById('spawnPattern');
         if (spawnPattern) {
@@ -352,18 +360,30 @@ class EnemyEditor {
                 scaling: {
                     timeBase: this.getVal('speedTimeScale', 'boolean'),
                     timeMultiplier: this.getVal('speedTimeMulti', 'number'),
-                    hpBase: this.getVal('speedHpScale'), // 'none', 'proportional', 'inverse'
+                    hpBase: this.getVal('speedHpScale'),
                     hpPercentage: this.getVal('speedHpMulti', 'number')
                 },
-                style: this.getVal('movementStyle'), // 'seek', 'flee', 'erratic', 'orbit', 'dashOnly'
-                fleeTrigger: this.getVal('fleeTrigger'), // 'proximity' | 'damage'
+                locomotion: this.getVal('locomotion'),
+                intention: this.getVal('intention'),
+                fleeOn: {
+                    damaged: this.getVal('fleeOnDamaged', 'boolean'),
+                    lowHp: this.getVal('fleeOnLowHp', 'number'),
+                    chaseOnDamaged: this.getVal('chaseOnDamaged', 'boolean')
+                },
                 orbitRange: this.getVal('orbitRange', 'number'),
                 erraticTime: this.getVal('erraticTime', 'number'),
                 ignoreWalls: this.getVal('ignoreWalls', 'boolean'),
                 isPhantom: this.getVal('isPhantom', 'boolean'),
                 reactionRadius: this.getVal('reactionRadius', 'number'),
                 disengageRadius: this.getVal('disengageRadius', 'number'),
-                reactions: this.reactions
+                reactions: this.reactions,
+                dash: {
+                    speedMultiplier: this.getVal('dashSpeedMult', 'number'),
+                    windupTime: this.getVal('dashWindup', 'number'),
+                    dashTime: this.getVal('dashDashTime', 'number'),
+                    cooldownMin: this.getVal('dashCdMin', 'number'),
+                    cooldownMax: this.getVal('dashCdMax', 'number')
+                }
             },
             damageMultipliers: {
                 dash: this.getVal('dmgDash', 'number'),
@@ -378,7 +398,7 @@ class EnemyEditor {
             },
             onDeath: this.deathEffects,
             ambitious: {
-                isWall: this.getVal('isWall', 'boolean'),
+                impenetrable: this.getVal('impenetrable', 'boolean'),
                 seeThroughWalls: this.getVal('seeThroughWalls', 'boolean'),
                 attack: {
                     type: this.getVal('attackType'), // 'contact', 'shoot', 'dash'
@@ -435,14 +455,32 @@ class EnemyEditor {
                 this.setVal('speedHpScale', config.movement.scaling.hpBase);
                 this.setVal('speedHpMulti', config.movement.scaling.hpPercentage);
             }
-            this.setVal('movementStyle', config.movement.style);
-            this.setVal('fleeTrigger', config.movement.fleeTrigger || 'proximity');
+            // Locomotion / Intention (new format with backward compat from old style)
+            const oldStyle = config.movement.style || 'seek';
+            const locoMap = { dashOnly: 'jump', default: 'ground' };
+            const intentMap = { seek: 'chase', erratic: 'wander', circle: 'orbit', dashOnly: 'chase' };
+            this.setVal('locomotion', config.movement.locomotion || locoMap[oldStyle] || 'ground');
+            this.setVal('intention', config.movement.intention || intentMap[oldStyle] || oldStyle);
+
+            // FleeOn (new format with backward compat from old fleeTrigger)
+            const fleeOn = config.movement.fleeOn || {};
+            const oldFlee = config.movement.fleeTrigger || 'proximity';
+            this.setVal('fleeOnDamaged', fleeOn.damaged ?? (oldFlee === 'damage'));
+            this.setVal('fleeOnLowHp', fleeOn.lowHp ?? 0);
+            this.setVal('chaseOnDamaged', fleeOn.chaseOnDamaged ?? (oldFlee === 'chase'));
             this.setVal('orbitRange', config.movement.orbitRange || 120);
             this.setVal('erraticTime', config.movement.erraticTime || 2000);
             this.setVal('ignoreWalls', config.movement.ignoreWalls);
             this.setVal('isPhantom', config.movement.isPhantom);
             this.setVal('reactionRadius', config.movement.reactionRadius ?? 0);
             this.setVal('disengageRadius', config.movement.disengageRadius ?? 0);
+            if (config.movement.dash) {
+                this.setVal('dashSpeedMult', config.movement.dash.speedMultiplier ?? 2.5);
+                this.setVal('dashWindup', config.movement.dash.windupTime ?? 400);
+                this.setVal('dashDashTime', config.movement.dash.dashTime ?? 350);
+                this.setVal('dashCdMin', config.movement.dash.cooldownMin ?? 600);
+                this.setVal('dashCdMax', config.movement.dash.cooldownMax ?? 1500);
+            }
             if (config.movement.reactions) {
                 this.reactions = config.movement.reactions.map(r => ({...r}));
                 this.renderReactions();
@@ -464,7 +502,7 @@ class EnemyEditor {
         
         // Avanzado
         if (config.ambitious) {
-            this.setVal('isWall', config.ambitious.isWall);
+            this.setVal('impenetrable', config.ambitious.impenetrable);
             this.setVal('seeThroughWalls', config.ambitious.seeThroughWalls ?? false);
             if (config.ambitious.attack) {
                 this.setVal('attackType', config.ambitious.attack.type);

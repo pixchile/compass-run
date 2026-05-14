@@ -15,6 +15,10 @@ export default class EnemySpawner {
     this.spawners = [];
     this._spawnerTimers = {};
     this._spawnerRoundRobin = {};
+
+    this.squads = [];
+    this.squadInstances = [];
+    this._squadSpawned = {};
   }
 
   setDensity(density) {
@@ -25,6 +29,12 @@ export default class EnemySpawner {
     this.spawners = spawners || [];
     this._spawnerTimers = {};
     this._spawnerRoundRobin = {};
+  }
+
+  setSquads(squads, squadInstances) {
+    this.squads = squads || [];
+    this.squadInstances = squadInstances || [];
+    this._squadSpawned = {};
   }
 
   setSpawnList(enemies) {
@@ -67,6 +77,7 @@ export default class EnemySpawner {
     this._processTimeSpawns(elapsedSeconds, hardcap, player, currentEnemiesCount);
     this._processTriggerSpawns(player);
     this._processIntervalSpawns(delta, elapsedSeconds, hardcap, player, currentEnemiesCount);
+    this._processSquadSpawns(elapsedSeconds, hardcap, player, currentEnemiesCount);
     this._processDensitySpawns(delta, elapsedSeconds, elapsedMin, hardcap, currentEnemiesCount);
   }
 
@@ -107,12 +118,59 @@ export default class EnemySpawner {
   _processIntervalSpawns(delta, elapsedSeconds, hardcap, player, currentEnemiesCount) {
     for (let i = 0; i < this.spawners.length; i++) {
       const s = this.spawners[i];
+
+      // Wave mode
+      if (s.waveInterval > 0 && s.waveCount > 0) {
+        if (currentEnemiesCount >= hardcap) continue;
+        if (s.startTime && s.startTime > 0 && elapsedSeconds < s.startTime) continue;
+        if (s.expireTime && s.expireTime > 0 && elapsedSeconds >= s.expireTime) continue;
+
+        // Mid-wave: still spawning staggered enemies
+        const ws = this._spawnerWaveState?.[i];
+        if (ws && ws.remaining > 0) {
+          ws.delayTimer -= delta;
+          if (ws.delayTimer <= 0) {
+            this._spawnWaveEnemy(s, i);
+            ws.remaining--;
+            if (ws.remaining > 0) {
+              ws.delayTimer = s.waveDelay || 0;
+            } else {
+              delete this._spawnerWaveState[i];
+            }
+          }
+          continue;
+        }
+
+        // Accumulate wave timer
+        this._spawnerWaveTimers = this._spawnerWaveTimers || {};
+        this._spawnerWaveTimers[i] = (this._spawnerWaveTimers[i] || 0) + delta;
+        if (this._spawnerWaveTimers[i] < s.waveInterval) continue;
+        this._spawnerWaveTimers[i] -= s.waveInterval;
+
+        const waveDelay = s.waveDelay || 0;
+        const count = s.waveCount;
+
+        if (waveDelay <= 0) {
+          // All at once
+          for (let j = 0; j < count && currentEnemiesCount < hardcap; j++) {
+            this._spawnWaveEnemy(s, i);
+          }
+        } else {
+          // Staggered: spawn first, queue the rest
+          this._spawnWaveEnemy(s, i);
+          if (count > 1) {
+            this._spawnerWaveState = this._spawnerWaveState || {};
+            this._spawnerWaveState[i] = { remaining: count - 1, delayTimer: waveDelay };
+          }
+        }
+        continue;
+      }
+
+      // Legacy interval mode
       if (!s.interval || s.interval <= 0) continue;
       if (currentEnemiesCount >= hardcap) continue;
 
-      // Not started yet?
       if (s.startTime && s.startTime > 0 && elapsedSeconds < s.startTime) continue;
-      // Expired?
       if (s.expireTime && s.expireTime > 0 && elapsedSeconds >= s.expireTime) continue;
 
       this._spawnerTimers[i] = (this._spawnerTimers[i] || 0) + delta;
@@ -137,6 +195,161 @@ export default class EnemySpawner {
     }
   }
 
+  /** Spawn one enemy from a wave spawner using round-robin type cycling. */
+  _spawnWaveEnemy(spawner, idx) {
+    const types = spawner.types || [];
+    if (types.length === 0) return;
+
+    this._spawnerRoundRobin[idx] = (this._spawnerRoundRobin[idx] || 0) % types.length;
+    const type = types[this._spawnerRoundRobin[idx]];
+    this._spawnerRoundRobin[idx]++;
+
+    if (!enemyRegistry.has(type)) return;
+
+    const enemy = enemyRegistry.create(type, spawner.x, spawner.y, this.scene);
+    if (enemy) {
+      this._assignPath(enemy, spawner);
+      this.manager.addEnemy(enemy);
+    }
+  }
+
+  _processSquadSpawns(elapsedSeconds, hardcap, player, currentEnemiesCount) {
+    for (let i = 0; i < this.squadInstances.length; i++) {
+      const inst = this.squadInstances[i];
+      if (this._squadSpawned[i]) continue;
+      if (elapsedSeconds < inst.spawnTime) continue;
+      if (!player) continue;
+
+      const template = this.squads.find(s => s.name === inst.squadName);
+      if (!template || !template.members) continue;
+
+      // Face direction: player movement, or default down (0, 1)
+      let fdX = 0, fdY = 1;
+      if (Math.abs(player.vx) > 1 || Math.abs(player.vy) > 1) {
+        const mag = Math.hypot(player.vx, player.vy);
+        fdX = player.vx / mag;
+        fdY = player.vy / mag;
+      }
+
+      // Rotation angle from default face (0,1) to (fdX, fdY)
+      const theta = -Math.atan2(fdX, fdY);
+      const cosT = Math.cos(theta);
+      const sinT = Math.sin(theta);
+
+      // Spawn origin: ahead of the player (off-screen, ready to engage)
+      const ox = player.px + fdX * 700;
+      const oy = player.py + fdY * 700;
+
+      for (const member of template.members) {
+        if (this.manager.enemies.length >= hardcap) break;
+        if (!enemyRegistry.has(member.type)) continue;
+
+        // Rotate offset by formation facing
+        const rx = member.offsetX * cosT - member.offsetY * sinT;
+        const ry = member.offsetX * sinT + member.offsetY * cosT;
+
+        let ex = ox + rx;
+        let ey = oy + ry;
+
+        // Nudge out of unsafe zones / walls
+        const safe = this._findSafeSpawn(ex, ey, player.px, player.py);
+        if (!safe) continue;
+
+        const enemy = enemyRegistry.create(member.type, safe.x, safe.y, this.scene);
+        if (enemy) {
+          enemy._squadName = inst.squadName;
+          this.manager.addEnemy(enemy);
+        }
+      }
+      this._squadSpawned[i] = true;
+    }
+  }
+
+  spawnSquadNow(squadName, ox, oy, fdX, fdY, player) {
+    const template = this.squads.find(s => s.name === squadName);
+    if (!template || !template.members) return;
+
+    const theta = -Math.atan2(fdX, fdY);
+    const cosT = Math.cos(theta);
+    const sinT = Math.sin(theta);
+
+    for (const member of template.members) {
+      if (!enemyRegistry.has(member.type)) continue;
+      const rx = member.offsetX * cosT - member.offsetY * sinT;
+      const ry = member.offsetX * sinT + member.offsetY * cosT;
+      const safe = this._findSafeSpawn(ox + rx, oy + ry, player.px, player.py);
+      if (!safe) continue;
+      const enemy = enemyRegistry.create(member.type, safe.x, safe.y, this.scene);
+      if (enemy) {
+        enemy._squadName = squadName;
+        this.manager.addEnemy(enemy);
+      }
+    }
+  }
+
+  _findSafeSpawn(x, y, playerX, playerY) {
+    const zones = this.scene?.currentMap?.zones;
+    const wallGrid = this.scene?.wallGrid;
+    const unsafeTypes = new Set(['void', 'shop', 'pit_stop']);
+
+    const isUnsafe = (px, py) => {
+      // Check zones
+      if (zones) {
+        for (const zone of zones) {
+          if (!unsafeTypes.has(zone.type)) continue;
+          const bx = zone.x ?? zone.geometry?.bbox?.x ?? zone.geometry?.x;
+          const by = zone.y ?? zone.geometry?.bbox?.y ?? zone.geometry?.y;
+          const bw = zone.w ?? zone.geometry?.bbox?.w ?? zone.geometry?.w;
+          const bh = zone.h ?? zone.geometry?.bbox?.h ?? zone.geometry?.h;
+          if (bx === undefined || by === undefined) continue;
+          if (px >= bx && px <= bx + bw && py >= by && py <= by + bh) return true;
+        }
+      }
+      // Check wall proximity
+      if (wallGrid) {
+        const r = 20;
+        const nearby = wallGrid.query(px, py, r);
+        for (const wall of nearby) {
+          if (wall._broken) continue;
+          const cx = (wall.start.x + wall.end.x) / 2;
+          const cy = (wall.start.y + wall.end.y) / 2;
+          const len = Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y);
+          const hlen = len / 2;
+          if (hlen < 1) {
+            if (Math.hypot(px - cx, py - cy) < r) return true;
+            continue;
+          }
+          const ux = (wall.end.x - wall.start.x) / len;
+          const uy = (wall.end.y - wall.start.y) / len;
+          let t = (px - wall.start.x) * ux + (py - wall.start.y) * uy;
+          t = Math.max(0, Math.min(len, t));
+          const closestX = wall.start.x + t * ux;
+          const closestY = wall.start.y + t * uy;
+          if (Math.hypot(px - closestX, py - closestY) < r) return true;
+        }
+      }
+      return false;
+    };
+
+    if (!isUnsafe(x, y)) return { x, y };
+
+    // Spiral outward from original position toward player to find a safe spot
+    const dirX = playerX - x;
+    const dirY = playerY - y;
+    const dist = Math.hypot(dirX, dirY) || 1;
+    const ndX = dirX / dist;
+    const ndY = dirY / dist;
+
+    for (let step = 1; step <= 8; step++) {
+      for (const sign of [1, -1]) {
+        const sx = x + ndX * 40 * step * sign;
+        const sy = y + ndY * 40 * step * sign;
+        if (!isUnsafe(sx, sy)) return { x: sx, y: sy };
+      }
+    }
+    return null;
+  }
+
   _processDensitySpawns(delta, elapsedSeconds, elapsedMin, hardcap, currentEnemiesCount) {
     if (!this.density || !this.spawners.length) return;
 
@@ -147,6 +360,7 @@ export default class EnemySpawner {
 
     const fillerSpawners = this.spawners.filter(s => {
       if (s.interval && s.interval > 0) return false;
+      if (s.waveInterval && s.waveCount > 0) return false;
       if (s.startTime && s.startTime > 0 && elapsedSeconds < s.startTime) return false;
       if (s.expireTime && s.expireTime > 0 && elapsedSeconds >= s.expireTime) return false;
       return true;
@@ -193,6 +407,7 @@ export default class EnemySpawner {
       enemy._pathIndex = 0;
       enemy._pathTimer = 0;
       enemy._pathCheckTimer = 0;
+      enemy._pathLoopCount = 0;
       return;
     }
     // Single path (formato legacy)
@@ -208,6 +423,8 @@ export default class EnemySpawner {
       enemy._pathRandom = spawner.pathMode === 'random';
       enemy._pathIndex = 0;
       enemy._pathTimer = 0;
+      enemy._pathCycles = spawner.pathCycles || 0;
+      enemy._pathLoopCount = 0;
       enemy._chaseRadius = spawner.chaseRadius;
       enemy._fleeRadius = spawner.fleeRadius;
       if (path[0].wait) {
@@ -245,7 +462,10 @@ export default class EnemySpawner {
     this.gameStartTime = 0;
     this._fillCooldown = 0;
     this._spawnerTimers = {};
+    this._spawnerWaveTimers = {};
+    this._spawnerWaveState = {};
     this._spawnerRoundRobin = {};
+    this._squadSpawned = {};
     for (const enemy of this.spawnList) enemy.active = false;
   }
 }

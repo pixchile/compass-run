@@ -1,19 +1,19 @@
 // Enemigo generado con Enemy Creator (v2.0)
-// Nombre: beetle
-// Fecha: 09-05-2026, 9:45:53 p. m.
+// Nombre: anti
+// Fecha: 12-05-2026, 2:28:42 p. m.
 
 export default {
-    id: 'beetle',
-    name: 'beetle',
+    id: 'anti',
+    name: 'anti',
     config: {
-    id: "beetle",
-    name: "beetle",
+    id: "anti",
+    name: "anti",
     basic: {
-        hp: 200,
+        hp: 50,
         hpRegen: 0,
-        color: "0x4F38FF",
+        color: "0xFF9500",
         shape: "circle",
-        radius: 15,
+        radius: 10,
         isBoss: false,
         selfDestruct: {
             type: "none",
@@ -26,40 +26,33 @@ export default {
     },
     movement: {
         mobile: true,
-        speed: 55,
-        activeSpeed: 200,
+        speed: 150,
+        activeSpeed: 175,
         scaling: {
             timeBase: true,
             timeMultiplier: 1.2,
-            hpBase: "none",
-            hpPercentage: 0
+            hpBase: "inverse",
+            hpPercentage: 30
         },
-        style: "flee",
+        style: "wander",
         locomotion: "ground",
-        intention: "flee",
-        fleeOn: { damaged: false, lowHp: 0 },
+        intention: "wander",
+        fleeOn: { damaged: true, lowHp: 0 },
         orbitRange: 120,
-        erraticTime: 2000,
+        erraticTime: 3000,
         ignoreWalls: false,
         isPhantom: false,
-        reactionRadius: 100,
-        disengageRadius: 100,
-        reactions: [
-            {
-                event: "enemyHit",
-                action: "flee",
-                radius: 300,
-                duration: 2000,
-                speed: 0
-            }
-        ]
+        reactionRadius: 400,
+        disengageRadius: 400,
+        reactions: []
     },
     damageMultipliers: {
-        dash: 2,
-        aerialDash: 0.5,
+        dash: 1,
+        aerialDash: 1,
+        wallJumpDash: 1,
         momentum3: 1,
-        slam: 2,
-        slam3: 2,
+        slam: 1,
+        slam3: 1,
         void: 100,
         wallCrash: 0,
         explosion: 1
@@ -79,7 +72,7 @@ export default {
         seeThroughWalls: false,
         attack: {
             type: "contact",
-            effect: "push",
+            effect: "none",
             damage: 3,
             cooldown: 1000
         },
@@ -91,9 +84,16 @@ export default {
             pattern: "normal",
             count: 3
         },
-        hates: [],
-        hateRadius: 0,
-        hateDamage: 5
+        hates: [
+            "spider",
+            "ant",
+            "cricket",
+            "wasp",
+            "bee"
+        ],
+        hateRadius: 50,
+        hateDamage: 10,
+        hateOverridesFleeOnDamage: true
     }
 }
 };

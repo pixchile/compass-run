@@ -130,25 +130,47 @@
                         </div>
                     </div>
 
-                    <div class="field">
-                        <label>Estilo de movimiento</label>
-                        <select id="movementStyle">
-                            <option value="seek">Perseguir al jugador</option>
-                            <option value="flee">Huir del jugador</option>
-                            <option value="wander">Wander (pasivo, ignora jugador)</option>
-                            <option value="erratic">Errático</option>
-                            <option value="orbit">Orbitar</option>
-                            <option value="dashOnly">Sólo Embestida</option>
-                        </select>
+                    <div class="grid-2">
+                        <div class="field">
+                            <label>🦿 Locomoción</label>
+                            <select id="locomotion">
+                                <option value="ground">Terrestre</option>
+                                <option value="jump">Salto / Embestida</option>
+                                <option value="fly">Volador</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>🎯 Intención</label>
+                            <select id="intention">
+                                <option value="chase">Perseguir al jugador</option>
+                                <option value="flee">Huir del jugador</option>
+                                <option value="wander">Wander (pasivo)</option>
+                                <option value="orbit">Orbitar</option>
+                            </select>
+                        </div>
                     </div>
 
-                    <div class="field" id="fleeTriggerField">
-                        <label>¿Cuándo huye del jugador?</label>
-                        <select id="fleeTrigger">
-                            <option value="proximity">Por proximidad (radio de detección)</option>
-                            <option value="damage">Solo si recibe daño del jugador</option>
-                        </select>
-                        <small style="color:#888;">«Por daño» ignora al jugador hasta que lo golpeen, luego huye y regresa al path</small>
+                    <h4>Reacciones de Huida</h4>
+                    <div class="grid-2">
+                        <div class="field">
+                            <label>💢 Huir al recibir daño</label>
+                            <select id="fleeOnDamaged">
+                                <option value="false">No</option>
+                                <option value="true">Sí</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>❤️‍🩹 Huir si HP bajo (%)</label>
+                            <input type="number" id="fleeOnLowHp" value="0" min="0" max="100" step="5">
+                            <small style="color:#888;">0 = desactivado</small>
+                        </div>
+                        <div class="field">
+                            <label>⚔️ Perseguir al recibir daño</label>
+                            <select id="chaseOnDamaged">
+                                <option value="false">No</option>
+                                <option value="true">Sí</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div class="field" id="orbitRangeField" style="display:none;">
@@ -158,6 +180,21 @@
                     <div class="field" id="erraticTimeField" style="display:none;">
                         <label>🔄 Cambiar dirección cada (ms)</label>
                         <input type="number" id="erraticTime" value="2000">
+                    </div>
+
+                    <div id="dashOnlyField" style="display:none;">
+                        <div class="field"><label>⚡ Multiplicador de velocidad de dash</label>
+                            <input type="number" id="dashSpeedMult" value="2.5" step="0.1" min="1"></div>
+                        <div class="field"><label>⏱ Wind-up (ms)</label>
+                            <input type="number" id="dashWindup" value="400" step="10" min="0"></div>
+                        <div class="field"><label>💨 Duración del dash (ms)</label>
+                            <input type="number" id="dashDashTime" value="350" step="10" min="50"></div>
+                        <div class="grid-2">
+                            <div class="field"><label>Cooldown min (ms)</label>
+                                <input type="number" id="dashCdMin" value="600" step="10" min="100"></div>
+                            <div class="field"><label>Cooldown max (ms)</label>
+                                <input type="number" id="dashCdMax" value="1500" step="10" min="100"></div>
+                        </div>
                     </div>
 
                     <div class="grid-2">
@@ -282,10 +319,10 @@
                 <div id="tab-advanced" class="tab-pane">
                     <h4>Comportamientos Especiales</h4>
                     <div class="field">
-                        <label>🧱 ¿Actúa como Muro?</label>
-                        <select id="isWall">
+                        <label>🧱 ¿Impenetrable?</label>
+                        <select id="impenetrable">
                             <option value="false">No</option>
-                            <option value="true">Sí (Jugador interactúa como pared)</option>
+                            <option value="true">Sí (Jugador no puede atravesar)</option>
                         </select>
                     </div>
 

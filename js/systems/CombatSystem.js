@@ -165,6 +165,11 @@ export default class CombatSystem {
         }
       }
 
+      // Attack type gate
+      const attackType = enemy.customConfig?.ambitious?.attack?.type || 'contact';
+      if (attackType === 'shoot') return; // ranged only, no contact damage
+      if (attackType === 'dash' && enemy._dash?.phase !== 'dash') return; // only during dash burst
+
       enemy.state.lastAttackTime = now;
       const dmgMult = enemy.customConfig?.ambitious?.attack?.damage ?? 1;
       player.takeEnemyDamage(dmgMult);
@@ -283,16 +288,27 @@ export default class CombatSystem {
     return collided;
   }
 
-  getWallEnemyLines() {
-    return this.manager.enemies.filter(e => e.isWall).flatMap(enemy => {
+  checkImpenetrableCollision(player, playerRadius = 12) {
+    if (player._undetectable) return;
+    for (const enemy of this.manager.enemies) {
+      if (!enemy.impenetrable || enemy.isPhantom) continue;
       const r = enemy.radius || 12;
-      return [
-        { start: { x: enemy.x - r, y: enemy.y - r }, end: { x: enemy.x + r, y: enemy.y - r }, thickness: 4 },
-        { start: { x: enemy.x + r, y: enemy.y - r }, end: { x: enemy.x + r, y: enemy.y + r }, thickness: 4 },
-        { start: { x: enemy.x + r, y: enemy.y + r }, end: { x: enemy.x - r, y: enemy.y + r }, thickness: 4 },
-        { start: { x: enemy.x - r, y: enemy.y + r }, end: { x: enemy.x - r, y: enemy.y - r }, thickness: 4 }
-      ];
-    });
+      const minDist = playerRadius + r;
+      const dx = player.px - enemy.x;
+      const dy = player.py - enemy.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < minDist && dist > 0) {
+        const push = (minDist - dist) / dist;
+        player.px += dx * push;
+        player.py += dy * push;
+        const nx = dx / dist, ny = dy / dist;
+        const velDot = player.vx * nx + player.vy * ny;
+        if (velDot < 0) {
+          player.vx -= nx * velDot;
+          player.vy -= ny * velDot;
+        }
+      }
+    }
   }
 
   _checkLineCollision(p1, p2, line, radius) {

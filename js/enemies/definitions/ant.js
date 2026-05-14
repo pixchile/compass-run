@@ -1,6 +1,6 @@
 // Enemigo generado con Enemy Creator (v2.0)
 // Nombre: ant
-// Fecha: 10-05-2026, 10:42:52 p. m.
+// Fecha: 12-05-2026, 2:28:05 p. m.
 
 export default {
     id: 'ant',
@@ -9,11 +9,11 @@ export default {
     id: "ant",
     name: "ant",
     basic: {
-        hp: 200,
+        hp: 50,
         hpRegen: 0,
-        color: "0x4F38FF",
+        color: "0x0062FF",
         shape: "circle",
-        radius: 15,
+        radius: 10,
         isBoss: false,
         selfDestruct: {
             type: "none",
@@ -26,8 +26,8 @@ export default {
     },
     movement: {
         mobile: true,
-        speed: 75,
-        activeSpeed: 100,
+        speed: 150,
+        activeSpeed: 175,
         scaling: {
             timeBase: true,
             timeMultiplier: 1.2,
@@ -35,21 +35,24 @@ export default {
             hpPercentage: 30
         },
         style: "wander",
-        fleeTrigger: "damage",
+        locomotion: "ground",
+        intention: "wander",
+        fleeOn: { damaged: true, lowHp: 0 },
         orbitRange: 120,
         erraticTime: 3000,
         ignoreWalls: false,
         isPhantom: false,
-        reactionRadius: 100,
+        reactionRadius: 400,
         disengageRadius: 100,
         reactions: []
     },
     damageMultipliers: {
-        dash: 2,
-        aerialDash: 0.5,
+        dash: 1,
+        aerialDash: 1,
+        wallJumpDash: 1,
         momentum3: 1,
-        slam: 2,
-        slam3: 2,
+        slam: 1,
+        slam3: 1,
         void: 100,
         wallCrash: 0,
         explosion: 1
@@ -65,7 +68,7 @@ export default {
         }
     ],
     ambitious: {
-        isWall: false,
+        impenetrable: false,
         seeThroughWalls: false,
         attack: {
             type: "contact",
@@ -82,10 +85,14 @@ export default {
             count: 3
         },
         hates: [
-            "spider"
+            "spider",
+            "anti",
+            "bee",
+            "wasp",
+            "cricket"
         ],
-        hateRadius: 200,
-        hateDamage: 5,
+        hateRadius: 50,
+        hateDamage: 10,
         hateOverridesFleeOnDamage: true
     }
 }

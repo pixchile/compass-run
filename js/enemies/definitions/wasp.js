@@ -1,6 +1,6 @@
 // Enemigo generado con Enemy Creator (v2.0)
 // Nombre: wasp
-// Fecha: 10-05-2026, 2:03:28 a. m.
+// Fecha: 12-05-2026, 11:59:22 p. m.
 
 export default {
     id: 'wasp',
@@ -35,6 +35,9 @@ export default {
             hpPercentage: 100
         },
         style: "seek",
+        locomotion: "fly",
+        intention: "chase",
+        fleeOn: { damaged: false, lowHp: 0 },
         orbitRange: 120,
         erraticTime: 2000,
         ignoreWalls: true,
@@ -46,6 +49,7 @@ export default {
     damageMultipliers: {
         dash: 1,
         aerialDash: 2,
+        wallJumpDash: 2,
         momentum3: 1,
         slam: 1,
         slam3: 2,
@@ -64,11 +68,11 @@ export default {
         }
     ],
     ambitious: {
-        isWall: false,
+        impenetrable: false,
         seeThroughWalls: true,
         attack: {
             type: "contact",
-            effect: "push",
+            effect: "none",
             damage: 2,
             cooldown: 1000
         },
@@ -84,7 +88,8 @@ export default {
             "bee"
         ],
         hateRadius: 25,
-        hateDamage: 5
+        hateDamage: 5,
+        hateOverridesFleeOnDamage: false
     }
 }
 };

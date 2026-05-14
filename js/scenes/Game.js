@@ -20,7 +20,6 @@ export default class Game extends Phaser.Scene {
     constructor() {
         super('Game');
         this._visibleLines = [];
-        this._wallEnemyLines = [];
 
         this.collisionSystem = new CollisionSystem();
         this.zoneSystem      = new ZoneSystem();
@@ -55,6 +54,8 @@ export default class Game extends Phaser.Scene {
                     this.currentMap.enemies = stage.enemies || [];
                     this.currentMap.spawners = stage.spawners || [];
                     this.currentMap.density = stage.density || null;
+                    this.currentMap.squads = stage.squads || [];
+                    this.currentMap.squadInstances = stage.squadInstances || [];
                     if (stage.timeLimit) this.currentMap.timeLimit = stage.timeLimit;
                 }
             } catch (e) { console.warn("Error loading stage:", e); }
@@ -63,6 +64,8 @@ export default class Game extends Phaser.Scene {
         this.gameOver = false;
         this.gameOverAlpha = 0;
         this.gameOverReason = null;
+        this._gpPrevA = false;
+        this._gpPrevStart = false;
 
         this.timeLimit = this.currentMap.timeLimit || 300;
         this.timeRemaining = this.timeLimit;
@@ -81,6 +84,7 @@ export default class Game extends Phaser.Scene {
         this.enemyManager.setSpawnList(this.currentMap.enemies || []);
         this.enemyManager.setDensity(this.currentMap.density || null);
         this.enemyManager.setSpawners(this.currentMap.spawners || []);
+        this.enemyManager.setSquads(this.currentMap.squads || [], this.currentMap.squadInstances || []);
 
         this.renderer = new GameRenderer(this, this.camera, this);
         this.renderer.setCustomLines(this.currentMap.lines || []);
@@ -187,13 +191,14 @@ export default class Game extends Phaser.Scene {
         if (this.gameOver || this.player.isDead) {
             if (this.player.isDead) { this.gameOver = true; this.gameOverReason = 'death'; }
             this.gameOverAlpha = Math.min(1, this.gameOverAlpha + delta / 500);
-            if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.restartGame();
+            if (Phaser.Input.Keyboard.JustDown(this.restartKey) || this._gamepadAJustPressed())
+              this.restartGame();
             if (Phaser.Input.Keyboard.JustDown(this.menuKey)) this.scene.start('MainMenu');
             this.renderer.render(this.player, this.compass, true, this.gameOverAlpha, this.gameOverReason, this.timeRemaining, delta);
             return;
         }
 
-        if (Phaser.Input.Keyboard.JustDown(this.pauseKey) || Phaser.Input.Keyboard.JustDown(this.pauseKey2)) {
+        if (Phaser.Input.Keyboard.JustDown(this.pauseKey) || Phaser.Input.Keyboard.JustDown(this.pauseKey2) || this._gamepadStartJustPressed()) {
             if (this.shopUI?.visible) {
                 this.shopUI.close(true); // ESC = cierre manual
                 return;
@@ -254,10 +259,7 @@ export default class Game extends Phaser.Scene {
         this.zoneSystem.checkZones(this.player, this.currentMap.zones, delta);
         this.shopUI?.update();
 
-        this._wallEnemyLines = this.enemyManager.getWallEnemyLines();
-        if (this._wallEnemyLines && this._wallEnemyLines.length > 0) {
-            this.collisionSystem.checkLineCollisions(this.player, this.momentum, this._wallEnemyLines, this.itemEffects);
-        }
+        this.enemyManager.checkImpenetrableCollision(this.player, 12);
 
         if (this.player.activeSlam) {
             this.enemyManager.processSlam(this.player.activeSlam, this.time.now, this.momentum);
@@ -268,6 +270,36 @@ export default class Game extends Phaser.Scene {
         this.camera.update(this.player.px, this.player.py, playerSpeed);
         this.renderer.setCustomLines(this._visibleLines);
         this.renderer.render(this.player, this.compass, false, 0, this.gameOverReason, this.timeRemaining, delta);
+    }
+
+    _gamepadAJustPressed() {
+        const gamepads = navigator.getGamepads();
+        if (!gamepads) return false;
+        for (let i = 0; i < gamepads.length; i++) {
+            const gp = gamepads[i];
+            if (!gp) continue;
+            const down = gp.buttons[0]?.pressed || false;
+            const just = down && !this._gpPrevA;
+            this._gpPrevA = down;
+            return just;
+        }
+        this._gpPrevA = false;
+        return false;
+    }
+
+    _gamepadStartJustPressed() {
+        const gamepads = navigator.getGamepads();
+        if (!gamepads) return false;
+        for (let i = 0; i < gamepads.length; i++) {
+            const gp = gamepads[i];
+            if (!gp) continue;
+            const down = gp.buttons[9]?.pressed || false;
+            const just = down && !this._gpPrevStart;
+            this._gpPrevStart = down;
+            return just;
+        }
+        this._gpPrevStart = false;
+        return false;
     }
 
     restartGame() {

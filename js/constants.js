@@ -28,6 +28,7 @@ export const HP_REGEN_RATE      = 0.2;
 
 // Muros destructibles
 export const WALL_DEFAULT_HP = 300;
+export const WALL_CHUNK_SIZE = 80; // px por segmento al cargar muros (rotura parcial)
 export const DASH_WALL_DAMAGE_FACTOR = 0.1; // 10% de la velocidad de impacto
 export const ENEMY_WALL_DAMAGE_RATE = 15;  // HP/segundo que un enemigo atascado inflige al muro
 export const ENEMY_WALL_BREAK_RANGE = 800; // distancia máxima jugador para que enemigo rompa muros
@@ -149,7 +150,7 @@ export const BUFF_COLORS = {
 // Valores por tick (primaria = 1x, secundaria = 2x)
 export const BUFF_VALUES = {
   heal:       { primary: 0.2, secondary: 0.4 },
-  credit:     { primary: 1.3, secondary: 2.6 },
+  credit:     { primary: 0.7, secondary: 1.4 },
   momentum:   { primary: 0.5, secondary: 1 },
   dashCd:     { primary: 0.1, secondary: 0.2 },
   trueDamage: { primary: 0.03, secondary: 0.06 },

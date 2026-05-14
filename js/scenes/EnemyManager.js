@@ -1,6 +1,7 @@
 // js/scenes/EnemyManager.js
 
 import EnemySpawner from '../spawn/EnemySpawner.js';
+import SquadDirector from '../spawn/SquadDirector.js';
 import CombatSystem from '../systems/CombatSystem.js';
 
 export default class EnemyManager {
@@ -15,6 +16,7 @@ export default class EnemyManager {
     this.momentum     = null;
 
     this.spawner = new EnemySpawner(this, scene);
+    this.director = new SquadDirector();
     this.combatSystem = new CombatSystem(this, scene);
     this.recentEvents = [];
     this.recentEventsByType = {}; // índice por tipo para lookup O(1) en reacciones
@@ -46,10 +48,30 @@ export default class EnemyManager {
   setDensity(density)         { this.spawner.setDensity(density); }
   setSpawners(spawners)       { this.spawner.setSpawners(spawners); }
   setSpawnList(enemies)       { this.spawner.setSpawnList(enemies); }
+  setSquads(squads, squadInstances) { this.spawner.setSquads(squads, squadInstances); }
 
   update(delta, currentTime, player, lines) {
     this._cleanEvents();
     this.spawner.update(delta, currentTime, player);
+
+    // Director: algorithmic squad spawns
+    const elapsedSec = currentTime / 1000;
+    const itemCount = this.scene?.shopSystem?.equippedItems?.length || 0;
+    const result = this.director.update(
+      delta, currentTime, player, this.totalKills,
+      itemCount, elapsedSec, this.spawner.squads
+    );
+    if (result) {
+      let fdX = 0, fdY = 1;
+      if (Math.abs(player.vx) > 1 || Math.abs(player.vy) > 1) {
+        const mag = Math.hypot(player.vx, player.vy);
+        fdX = player.vx / mag;
+        fdY = player.vy / mag;
+      }
+      const ox = player.px + fdX * 700;
+      const oy = player.py + fdY * 700;
+      this.spawner.spawnSquadNow(result.squadName, ox, oy, fdX, fdY, player);
+    }
 
     for (let i = this.enemies.length - 1; i >= 0; i--) {
         const enemy = this.enemies[i];
@@ -75,8 +97,8 @@ export default class EnemyManager {
     return this.combatSystem.checkSolidCollision(player, playerRadius);
   }
 
-  getWallEnemyLines() {
-    return this.combatSystem.getWallEnemyLines();
+  checkImpenetrableCollision(player, playerRadius = 12) {
+    this.combatSystem.checkImpenetrableCollision(player, playerRadius);
   }
 
   addEnemy(enemyInstance) {
@@ -97,7 +119,7 @@ export default class EnemyManager {
       this.scene?.itemEffects?.spawnVampireOrb(enemy.x, enemy.y);
       this.scene?.itemEffects?.onEnemyKilled();
       if (this.scene?.momentum) {
-        this.scene.momentum.addMaxSpeed(2);
+        this.scene.momentum.addMaxSpeed(1);
       }
       if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
 
@@ -125,6 +147,7 @@ export default class EnemyManager {
     this.enemies = [];
     this.totalKills = 0;
     this.spawner.clear();
+    this.director.reset();
     this.combatSystem.clear();
   }
 
