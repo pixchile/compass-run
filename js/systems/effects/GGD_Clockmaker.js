@@ -1,5 +1,5 @@
 // js/systems/effects/GGD_Clockmaker.js
-// G+G+D: Stage timer depletes 2x faster. Killing an enemy adds 6 seconds.
+// G+G+D: Stage timer depletes 1.5x faster. Killing an enemy adds 6 seconds.
 
 export default class GGDEffect {
   constructor(scene) {
@@ -20,7 +20,7 @@ export default class GGDEffect {
 
   /** +6 seconds to the stage timer per kill */
   onEnemyKilled() {
-    this.scene.timeRemaining += 6;
+    this.scene.timeRemaining += 2;
   }
 
   reset() {

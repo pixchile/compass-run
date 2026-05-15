@@ -448,8 +448,13 @@ export default class DynamicEnemy extends Enemy {
                     if (this._wallStuckFrames > 500) {
                         const playerDist = Math.hypot(player.px - this.x, player.py - this.y);
                         if (playerDist <= 800) {
-                            line.hp -= 5 * (delta / 1000);
-                            if (line.hp <= 0) line._broken = true;
+                            const dmg = 5 * (delta / 1000);
+                            line.hp -= dmg;
+                            this.scene?.runStats?.recordWallDamage(dmg);
+                            if (line.hp <= 0) {
+                                line._broken = true;
+                                this.scene?.runStats?.recordWallDestroyed();
+                            }
                         }
                     }
                 }

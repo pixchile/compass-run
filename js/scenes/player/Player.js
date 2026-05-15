@@ -141,6 +141,7 @@ export default class Player {
                 this._addRebound = false;
                 this._fromWallJump = false;
                 this.landFx = this.jumpLv >= 3 ? 420 : this.jumpLv >= 2 ? 210 : 0;
+                this.scene?.runStats?.recordJumpLand(this.px, this.py);
             }
         }
 
@@ -155,7 +156,8 @@ export default class Player {
                     this.vx = jumpResult.vx; this.vy = jumpResult.vy;
                     this.jumping = true; this.jumpT = 0; this.jumpDur = JUMP_DUR[lv]; this.jumpLv = lv;
                     this.jumpVx = this.vx; this.jumpVy = this.vy;
-                    this.combat.hasSlammedThisJump = false; 
+                    this.combat.hasSlammedThisJump = false;
+                    this.scene?.runStats?.recordWallJumpStart(this.px, this.py);
                 }
             } else if (this.jumping && !this.combat.hasSlammedThisJump && (this.combat.slamCooldown <= 0 || this._addRebound)) {
                 if (currentSpeed >= SLAM.MIN_SPEED) this.combat.performSlam(currentSpeed, this._addRebound);
@@ -164,6 +166,7 @@ export default class Player {
                 this.jumping = true; this.jumpT = 0; this.jumpDur = JUMP_DUR[lv]; this.jumpHMax = JUMP_HMAX[lv]; this.jumpLv = lv;
                 this.jumpVx = this.vx; this.jumpVy = this.vy;
                 this.dashing = false; this.combat.hasSlammedThisJump = false;
+                this.scene?.runStats?.recordJumpStart(this.px, this.py);
             } else if (this._stickState) {
                 // BBC: Space durante stick — saltar del enemigo en 8 direcciones
                 let dirX = 0, dirY = 0;
@@ -189,7 +192,8 @@ export default class Player {
                 } else {
                     this.jumpVx = Math.cos(this.facing) * MAX_SPD[1] * 0.45; this.jumpVy = Math.sin(this.facing) * MAX_SPD[1] * 0.45;
                 }
-                this.combat.hasSlammedThisJump = false; 
+                this.combat.hasSlammedThisJump = false;
+                this.scene?.runStats?.recordJumpStart(this.px, this.py);
             }
         }
 

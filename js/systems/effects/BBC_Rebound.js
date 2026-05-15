@@ -35,6 +35,8 @@ export default class BBCEffect {
     } else {
       this.bounces++;
     }
+    this.scene?.runStats?.recordBbcBounce();
+    this.scene?.runStats?.recordBbcCombo(this.bounces);
 
     if (this.scene.renderer?.addSlamEffect) {
       this.scene.renderer.addSlamEffect(player.px, player.py, false);

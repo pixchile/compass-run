@@ -1,6 +1,6 @@
 // Enemigo generado con Enemy Creator (v2.0)
 // Nombre: beetle
-// Fecha: 09-05-2026, 9:45:53 p. m.
+// Fecha: 14-05-2026, 3:12:33 p. m.
 
 export default {
     id: 'beetle',
@@ -26,7 +26,7 @@ export default {
     },
     movement: {
         mobile: true,
-        speed: 55,
+        speed: 80,
         activeSpeed: 200,
         scaling: {
             timeBase: true,
@@ -34,10 +34,13 @@ export default {
             hpBase: "none",
             hpPercentage: 0
         },
-        style: "flee",
         locomotion: "ground",
-        intention: "flee",
-        fleeOn: { damaged: false, lowHp: 0 },
+        intention: "chase",
+        fleeOn: {
+            damaged: true,
+            lowHp: 0,
+            chaseOnDamaged: false
+        },
         orbitRange: 120,
         erraticTime: 2000,
         ignoreWalls: false,
@@ -49,17 +52,26 @@ export default {
                 event: "enemyHit",
                 action: "flee",
                 radius: 300,
-                duration: 2000,
-                speed: 0
+                duration: 5000,
+                speed: 150,
+                allyType: "beetle"
             }
-        ]
+        ],
+        dash: {
+            speedMultiplier: 2.5,
+            windupTime: 400,
+            dashTime: 350,
+            cooldownMin: 600,
+            cooldownMax: 1500
+        }
     },
     damageMultipliers: {
-        dash: 2,
-        aerialDash: 0.5,
+        dash: 0,
+        aerialDash: 0,
+        wallJumpDash: 0,
         momentum3: 1,
-        slam: 2,
-        slam3: 2,
+        slam: 0,
+        slam3: 0,
         void: 100,
         wallCrash: 0,
         explosion: 1
@@ -70,7 +82,16 @@ export default {
             chance: 100,
             condition: "any",
             params: {
-                amount: 2
+                amount: 3
+            }
+        },
+        {
+            type: "spawnEnemies",
+            chance: 20,
+            condition: "any",
+            params: {
+                type: "beetle",
+                count: 5
             }
         }
     ],
@@ -79,9 +100,9 @@ export default {
         seeThroughWalls: false,
         attack: {
             type: "contact",
-            effect: "push",
-            damage: 3,
-            cooldown: 1000
+            effect: "slow",
+            damage: 1,
+            cooldown: 500
         },
         defense: {
             invulnerableAura: false,
@@ -93,7 +114,8 @@ export default {
         },
         hates: [],
         hateRadius: 0,
-        hateDamage: 5
+        hateDamage: 0,
+        hateOverridesFleeOnDamage: false
     }
 }
 };

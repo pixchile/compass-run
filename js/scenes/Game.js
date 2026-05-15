@@ -15,6 +15,8 @@ import ShopSystem from '../systems/ShopSystem.js';
 import ShopUI from './ShopUI.js';
 import ItemEffects from '../systems/ItemEffects.js';
 import { registerAllCustomEnemies } from '../enemies/definitions/index.js';
+import DeathPuddleSystem from '../systems/DeathPuddleSystem.js';
+import RunStats from '../RunStats.js';
 
 export default class Game extends Phaser.Scene {
     constructor() {
@@ -39,6 +41,12 @@ export default class Game extends Phaser.Scene {
         this.currentMap = await this.mapLoader.loadMapFromURL(`assets/maps/${this.mapName}.svg`);
         if (!this.currentMap) {
             this.currentMap = { arena: { x: 50, y: 50, w: 2000, h: 2000 }, lines: [], zones: [] };
+        }
+
+        // Snapshot del estado original de cada línea (hp puede ser null en muros normales)
+        for (const line of (this.currentMap.lines || [])) {
+            line._snapHp     = line.hp;      // null o número
+            line._snapOrigHp = line._origHp; // null o número
         }
 
         // Spatial grid para consultas de muros O(1)
@@ -108,6 +116,11 @@ export default class Game extends Phaser.Scene {
         this.shopSystem.setScene(this);
         this.itemEffects = new ItemEffects(this);
         this.shopUI = new ShopUI(this);
+        this.deathPuddles = new DeathPuddleSystem(this);
+
+        this.runStats = new RunStats();
+        this.runStats.startRun(this.time.now, this.rewardSystem.credits);
+        this.collisionSystem.runStats = this.runStats;
 
         // Inicializar solo las tiendas que existen en el mapa
         const shopIds = this._collectShopIds(this.currentMap.zones || []);
@@ -190,6 +203,11 @@ export default class Game extends Phaser.Scene {
 
         if (this.gameOver || this.player.isDead) {
             if (this.player.isDead) { this.gameOver = true; this.gameOverReason = 'death'; }
+            if (!this._statsFinalized) {
+                this.runStats.finalize(this.time.now, this.rewardSystem.credits);
+                this._statsFinalized = true;
+                console.log('Run stats:', JSON.stringify(this.runStats.getSummary(), null, 2));
+            }
             this.gameOverAlpha = Math.min(1, this.gameOverAlpha + delta / 500);
             if (Phaser.Input.Keyboard.JustDown(this.restartKey) || this._gamepadAJustPressed())
               this.restartGame();
@@ -223,6 +241,7 @@ export default class Game extends Phaser.Scene {
         this.itemEffects?.update(delta, this.player, this.momentum, this.enemyManager);
         this.rewardSystem.update(delta, this.player);
         this.orbManager.update(delta, this.player);
+        this.deathPuddles?.update(delta);
 
         this.enemyManager.processPlayerInteractions(this.player, delta, this.time.now, this.momentum);
         this.enemyManager.cleanupDead();
@@ -267,6 +286,7 @@ export default class Game extends Phaser.Scene {
         }
 
         const playerSpeed = Math.hypot(this.player.vx, this.player.vy);
+        this.runStats.recordMaxSpeed(playerSpeed);
         this.camera.update(this.player.px, this.player.py, playerSpeed);
         this.renderer.setCustomLines(this._visibleLines);
         this.renderer.render(this.player, this.compass, false, 0, this.gameOverReason, this.timeRemaining, delta);
@@ -313,6 +333,8 @@ export default class Game extends Phaser.Scene {
         this.compass = new CompassSystem();
         this.compass.setReferences(this.momentum, this.rewardSystem, this);
         this.rewardSystem.reset();
+        this.runStats.startRun(this.time.now, this.rewardSystem.credits);
+        this._statsFinalized = false;
         this.orbManager.reset();
         this.shopSystem.reset();
         this.itemEffects?.reset();
@@ -325,10 +347,13 @@ export default class Game extends Phaser.Scene {
         this.camera.x = this.camera.viewWidth / 2; this.camera.y = this.camera.viewHeight / 2;
         this.camera.zoom = 1.0; this.camera.targetZoom = 1.0;
 
-        // Limpiar zonas dinamicas (fuego CCC) y restaurar muros destruidos
-        this.currentMap.zones = this.currentMap.zones.filter(z => !z._isFire);
+        // Limpiar zonas dinamicas (fuego CCC, pozos de muerte) y restaurar muros al estado inicial
+        this.deathPuddles?.reset();
+        this.currentMap.zones = this.currentMap.zones.filter(z => !z._isFire && !z._isPuddle);
         for (const line of this.currentMap.lines) {
-            if (line._broken) { line._broken = false; line.hp = line._origHp; }
+            line._broken  = false;
+            line.hp       = line._snapHp     !== undefined ? line._snapHp     : line._origHp;
+            line._origHp  = line._snapOrigHp !== undefined ? line._snapOrigHp : line._origHp;
         }
         this.renderer?.setCustomZones(this.currentMap.zones);
         this.renderer?.setCustomLines(this.currentMap.lines);

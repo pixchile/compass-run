@@ -1,11 +1,11 @@
 // js/systems/effects/GGG_Flipcoin.js
-// G+G+G: Damage multiplier oscillates randomly x0.5-x2.5. High rolls grant credits, low rolls cost credits.
+// G+G+G: Damage multiplier oscillates randomly x0.5-x2.0. High rolls grant credits, low rolls cost credits.
 
 export default class GGGEffect {
   constructor(scene) {
     this.scene = scene;
     this.timer = 0;
-    this._multiplier = 1.5;
+    this._multiplier = 1.25;
     this._nextTick = 500;
     this._lockedMult = null;
     this._effectConsumed = false;
@@ -14,7 +14,7 @@ export default class GGGEffect {
   update(delta) {
     this.timer += delta;
     if (this.timer >= this._nextTick) {
-      this._multiplier = 0.5 + Math.random() * 2.0;
+      this._multiplier = 0.5 + Math.random() * 1.5;
       this._nextTick = this.timer + 400 + Math.random() * 400;
     }
   }
@@ -35,8 +35,8 @@ export default class GGGEffect {
     const rewardSys = this.scene?.rewardSystem;
     if (!rewardSys) return;
 
-    if (m > 2.0) {
-      const deviation = m - 2.0;
+    if (m > 1.5) {
+      const deviation = m - 1.5;
       const reward = Math.floor(25 + (deviation / 0.5) * 25);
       rewardSys.credits += reward;
       if (this.scene?.spawnDamageNumber) {

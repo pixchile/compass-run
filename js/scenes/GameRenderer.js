@@ -173,6 +173,9 @@ export default class GameRenderer {
       this.mapRenderer.renderZones(g, this.customZones);
     }
 
+    // Pozos de muerte — se renderizan sobre el mapa, bajo el jugador
+    this.gameScene.deathPuddles?.render(g, now);
+
     if (this.customLines && this.customLines.length > 0) {
       this.mapRenderer.renderLines(g, this.customLines);
     }

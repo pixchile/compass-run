@@ -210,6 +210,11 @@ export default class UIManager {
           labelText = '';
           break;
         }
+        case 'GGC': {
+          const disc = fx.getAuspiceDiscount() * 100;
+          labelText = disc > 0 ? `-${disc.toFixed(0)}%` : '';
+          break;
+        }
         default: {
           // Items sin CD — sin etiqueta
           labelText = '';

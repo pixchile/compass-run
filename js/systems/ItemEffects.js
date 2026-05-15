@@ -251,8 +251,12 @@ export default class ItemEffects {
 
   // ── AAG: One-Two ────────────────────────────────────────────────
 
-  onDashStarted(baseDamage) {
-    if (this.has('AAG')) this._aag.onDashStarted(baseDamage);
+  onDashStarted() {
+    if (this.has('AAG')) this._aag.onDashStarted();
+  }
+
+  accumulateAAGDamage(amount) {
+    if (this.has('AAG')) this._aag.accumulateDamage(amount);
   }
 
   consumeAAGBonus() {

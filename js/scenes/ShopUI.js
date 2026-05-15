@@ -1,4 +1,4 @@
-// js/scenes/ShopUI.js
+﻿// js/scenes/ShopUI.js
 
 import { COMPONENTS, ITEMS, COMPONENT_PRICE, getItemPrice } from '../systems/ItemSystem.js';
 import { REROLL_COST, MYSTERY_BOX_COST } from '../systems/ShopSystem.js';
@@ -161,13 +161,16 @@ export default class ShopUI {
     if (this._tab === 'buy') {
       let y = startY;
 
+      const auspiceDisc = this.scene.itemEffects?.getAuspiceDiscount() || 0;
+
       // â”€â”€ Items terminados PRIMERO â”€â”€
       const stock = shop.getShopStock(this.shopId);
       if (stock.length > 0) {
         this._addSectionLabel('â”€â”€â”€ Items disponibles â”€â”€â”€', cx, y);
         y += 22;
         stock.forEach(item => {
-          const price = getItemPrice(item.id, shop.components);
+          const basePrice = getItemPrice(item.id, shop.components);
+          const price = Math.floor(basePrice * (1 - auspiceDisc));
           this._addRow({
             label:   item.name,
             sub:     `[${item.id}]  ${item.components.join(' + ')}`,
@@ -194,7 +197,7 @@ export default class ShopUI {
           label:  `[${comp.id}]  ${comp.desc}`,
           sub:    '',
           desc:   null,
-          price:  COMPONENT_PRICE,
+          price:  Math.floor(COMPONENT_PRICE * (1 - auspiceDisc)),
           color:  comp.color,
           isBig:  false,
           y,
@@ -213,7 +216,7 @@ export default class ShopUI {
         label:  'Re-Roll',
         sub:    `Reemplaza el stock con 1 item nuevo no visto en esta tienda`,
         desc:   'Cambia todo el inventario de la tienda por 1 solo item que nunca haya aparecido aquÃ­ antes.',
-        price:  REROLL_COST,
+        price:  Math.floor(REROLL_COST * (1 - auspiceDisc)),
         color:  '#ff8844',
         isBig:  false,
         y,
@@ -227,7 +230,7 @@ export default class ShopUI {
         label:  mysteryUsed ? 'Caja Misteriosa (AGOTADA)' : 'Caja Misteriosa',
         sub:    'Otorga un item aleatorio del juego (1 uso por tienda)',
         desc:   'Recibes un item al azar de entre todos los items del juego. Solo puedes comprarlo una vez por tienda.',
-        price:  mysteryUsed ? null : MYSTERY_BOX_COST,
+        price:  mysteryUsed ? null : Math.floor(MYSTERY_BOX_COST * (1 - auspiceDisc)),
         color:  mysteryUsed ? '#555555' : '#ff44ff',
         isBig:  false,
         y,
@@ -427,6 +430,7 @@ export default class ShopUI {
     const result = shop.buyComponent(compId, cr);
     if (result.ok) {
       this.scene.rewardSystem.credits -= result.cost;
+      this.scene.runStats?.recordGoldSpent(result.cost);
       this._toast(`+[${compId}] comprado`);
       this._refresh();
     } else {
@@ -440,6 +444,7 @@ export default class ShopUI {
     const result = shop.buyItem(itemId, this.shopId, cr);
     if (result.ok) {
       this.scene.rewardSystem.credits -= result.cost;
+      this.scene.runStats?.recordGoldSpent(result.cost);
       this._toast(`âœ“ ${ITEMS[itemId].name} equipado`);
       this._refresh();
     } else {
@@ -473,6 +478,7 @@ export default class ShopUI {
     const result = shop.rerollShop(this.shopId, cr);
     if (result.ok) {
       this.scene.rewardSystem.credits -= result.cost;
+      this.scene.runStats?.recordGoldSpent(result.cost);
       this._toast(`Re-Roll: ${result.item.name} [${result.item.id}]`);
       this._refresh();
     } else {

@@ -55,8 +55,8 @@ export const WALL_JUMP = {
 
 export const ATTACK_RADIOS = {
     1: 50,
-    2: 55,
-    3: 60
+    2: 60,
+    3: 70
 };
 
 
@@ -82,7 +82,7 @@ export const REWARDS = {
 
   CREDIT_BASE_PER_SEC:     1,
   CREDIT_TICK_RATE:      100,
-  CREDIT_SPEED_FACTOR: 0.00015,
+  CREDIT_SPEED_FACTOR: 0.0001,
 
 };
 
@@ -150,7 +150,7 @@ export const BUFF_COLORS = {
 // Valores por tick (primaria = 1x, secundaria = 2x)
 export const BUFF_VALUES = {
   heal:       { primary: 0.2, secondary: 0.4 },
-  credit:     { primary: 0.7, secondary: 1.4 },
+  credit:     { primary: 0.6, secondary: 1.2 },
   momentum:   { primary: 0.5, secondary: 1 },
   dashCd:     { primary: 0.1, secondary: 0.2 },
   trueDamage: { primary: 0.03, secondary: 0.06 },

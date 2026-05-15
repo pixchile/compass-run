@@ -79,8 +79,10 @@ export default class CollisionSystem {
                         const damageMult = hasBuilder ? 2 : 1;
                         const damage = impactSpeed * DASH_WALL_DAMAGE_FACTOR * damageMult;
                         line.hp -= damage;
+                        this.runStats?.recordWallDamage(damage);
                         if (line.hp <= 0) {
                             line._broken = true;
+                            this.runStats?.recordWallDestroyed();
                             if (hasBuilder) itemEffects.addBuilderCharge();
                             continue;
                         }

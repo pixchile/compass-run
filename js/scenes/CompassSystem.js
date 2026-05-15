@@ -82,6 +82,7 @@ export default class CompassSystem {
   _applyBuff(buffType, isSecondary, player, now, mult = 1) {
     const value = this._getBuffValue(buffType, isSecondary) * mult;
     if (value === 0) return;
+    this.gameScene?.runStats?.recordCompassTick(COMPASS_TICK_RATE);
 
     switch (buffType) {
       case 'heal':

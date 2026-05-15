@@ -12,7 +12,7 @@ export default class CCCEffect {
     if (!zones) return;
     zones.push({
       type: 'damage_zone',
-      damagePerSec: 30,
+      damagePerSec: 60,
       timeLeft: 15000,
       geometry: { bbox: { x: x - R, y: y - R, w: R * 2, h: R * 2 } },
       _isFire: true,

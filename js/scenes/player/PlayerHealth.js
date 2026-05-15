@@ -34,6 +34,7 @@ export default class PlayerHealth {
             const fx = this.player?.scene?.itemEffects;
             if (fx?.onLethalDamage(this.player)) return; // absorbido
         }
+        this.player?.scene?.runStats?.recordDamageReceived(amount);
         this.hp = Math.max(0, newHp);
         this.hpRegenT = 0;
         this.isInvincible = true;

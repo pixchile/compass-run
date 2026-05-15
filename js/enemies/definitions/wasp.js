@@ -1,6 +1,6 @@
 // Enemigo generado con Enemy Creator (v2.0)
 // Nombre: wasp
-// Fecha: 12-05-2026, 11:59:22 p. m.
+// Fecha: 14-05-2026, 11:38:52 p. m.
 
 export default {
     id: 'wasp',
@@ -30,29 +30,39 @@ export default {
         activeSpeed: 250,
         scaling: {
             timeBase: true,
-            timeMultiplier: 1.1,
+            timeMultiplier: 1.3,
             hpBase: "inverse",
             hpPercentage: 100
         },
-        style: "seek",
         locomotion: "fly",
         intention: "chase",
-        fleeOn: { damaged: false, lowHp: 0 },
+        fleeOn: {
+            damaged: false,
+            lowHp: 0,
+            chaseOnDamaged: false
+        },
         orbitRange: 120,
         erraticTime: 2000,
         ignoreWalls: true,
         isPhantom: true,
         reactionRadius: 300,
         disengageRadius: 600,
-        reactions: []
+        reactions: [],
+        dash: {
+            speedMultiplier: 2.5,
+            windupTime: 400,
+            dashTime: 350,
+            cooldownMin: 600,
+            cooldownMax: 1500
+        }
     },
     damageMultipliers: {
         dash: 1,
         aerialDash: 2,
-        wallJumpDash: 2,
-        momentum3: 1,
+        wallJumpDash: 1,
+        momentum3: 0.5,
         slam: 1,
-        slam3: 2,
+        slam3: 1,
         void: 0,
         wallCrash: 1,
         explosion: 2
@@ -63,7 +73,7 @@ export default {
             chance: 100,
             condition: "any",
             params: {
-                amount: 5
+                amount: 4
             }
         }
     ],
@@ -87,7 +97,7 @@ export default {
         hates: [
             "bee"
         ],
-        hateRadius: 25,
+        hateRadius: 100,
         hateDamage: 5,
         hateOverridesFleeOnDamage: false
     }

@@ -110,6 +110,10 @@ export default class EnemyManager {
   killEnemy(index, enemy, fatalSource) {
     if (typeof enemy.kill === 'function') enemy.kill(fatalSource);
 
+    const playerSources = ['dash', 'aerialDash', 'wallJumpDash', 'momentum3', 'slam', 'slam3', 'wallCrash', 'stomp', 'explosion', 'fire'];
+    const byPlayer = playerSources.includes(fatalSource);
+    this.scene?.runStats?.recordEnemyKilled(byPlayer);
+
     const noRewards = fatalSource === 'void' || fatalSource === 'hater';
 
     this.addEvent('enemyKilled', enemy.x, enemy.y, enemy.type, { killedBy: fatalSource, sourceId: enemy.id });
@@ -122,6 +126,9 @@ export default class EnemyManager {
         this.scene.momentum.addMaxSpeed(1);
       }
       if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
+
+      // Pozos de muerte (slow + daño temporal)
+      this.scene?.deathPuddles?.onEnemyDeath(enemy.x, enemy.y);
 
       // Drop de componente (chance global baja)
       if (this.scene?.shopSystem) {

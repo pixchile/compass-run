@@ -40,9 +40,9 @@ export default class CombatSystem {
 
     const attackPayload = player.getCurrentAttackPayload(momentumSystem.level);
 
-    // AAG: One-Two — record base damage on dash start
+    // AAG: One-Two — signal dash start
     if (dashJustStarted && attackPayload) {
-      fx?.onDashStarted(attackPayload.baseDamage);
+      fx?.onDashStarted();
     }
     const enemies = this.manager.enemies;
     const auraEmitters = enemies.filter(e => e.invulnerableAura && e.hp > 0);
@@ -113,22 +113,36 @@ export default class CombatSystem {
   }
 
   _damageEnemy(enemy, type, damage, radius, now, trueDamage = 0) {
-    // AAG: One-Two — bonus damage on first enemy hit during bonus dash
-    const aagBonus = (type === 'dash' || type === 'aerialDash' || type === 'wallJumpDash')
-      ? (this.scene?.itemEffects?.consumeAAGBonus() || 0) : 0;
-    const totalDamage = damage + aagBonus;
+    // If the enemy is immune to this attack type (multiplier <= 0), skip all damage including true damage
+    const multiplier = enemy.damageMultipliers?.[type] ?? 1.0;
+    if (multiplier <= 0) return false;
 
-    if (totalDamage > 0) this.scene?.compass?.recordHitDamage(totalDamage);
+    const isDashType = type === 'dash' || type === 'aerialDash' || type === 'wallJumpDash';
+
+    // AAG: accumulate damage dealt during record dash
+    if (isDashType && damage > 0) {
+      this.scene?.itemEffects?.accumulateAAGDamage(damage);
+    }
+
+    // AAG: bonus true damage on first enemy hit during bonus dash
+    const aagBonus = isDashType
+      ? (this.scene?.itemEffects?.consumeAAGBonus() || 0) : 0;
+
+    // DBB (Paciencia) also multiplies AAG bonus true damage
+    const aagWithDBB = aagBonus * (this.scene?.itemEffects?.getDBBTrueDamageMultiplier() ?? 1);
+
+    if (damage > 0) this.scene?.compass?.recordHitDamage(damage);
     const hpBefore = enemy.hp;
     let died;
     if (typeof enemy.receiveDamage === 'function') {
-        died = enemy.receiveDamage({ type, baseDamage: totalDamage, radius, now });
+        died = enemy.receiveDamage({ type, baseDamage: damage, radius, now });
     } else {
-        enemy.hp = (enemy.hp || 1) - totalDamage;
+        enemy.hp = (enemy.hp || 1) - damage;
         died = enemy.hp <= 0;
     }
     const actualDamage = hpBefore - enemy.hp;
     if (actualDamage > 0) {
+        this.scene?.runStats?.recordDamageDealt(actualDamage);
         this.manager.addEvent('enemyHit', enemy.x, enemy.y, enemy.type, { damage: actualDamage, sourceId: enemy.id });
         const colorKey = (type === 'slam' || type === 'slam3') ? 'slamDamage' : 'enemyDamage';
         this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, actualDamage, colorKey);
@@ -136,13 +150,15 @@ export default class CombatSystem {
         if (p) this.scene?.itemEffects?.applyGGGCreditEffect(p.px, p.py);
     }
 
-    // True damage — bypasses enemy type multipliers, always deals flat amount
-    if (trueDamage > 0) {
+    // True damage (incl. AAG bonus) — bypasses enemy type multipliers
+    const totalTrueDamage = trueDamage + aagWithDBB;
+    if (totalTrueDamage > 0) {
       if (!died) {
-        enemy.hp = (enemy.hp || 1) - trueDamage;
+        enemy.hp = (enemy.hp || 1) - totalTrueDamage;
         if (enemy.hp <= 0) died = true;
       }
-      this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, trueDamage, 'trueDamage');
+      this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, totalTrueDamage, 'trueDamage');
+      this.scene?.runStats?.recordTrueDamage(totalTrueDamage);
     }
 
     return died;
