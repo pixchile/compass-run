@@ -1,4 +1,4 @@
-import { W, H, TRAIL_MAX, MAX_SPD, TURN_K, STOP_K, JUMP_DUR, JUMP_HMAX, JUMP_DIST_K, DASH_DUR, DASH_CD, DASH_SPD, SLAM } from '../../constants.js';
+import { W, H, TRAIL_MAX, MAX_SPD, TURN_K, STOP_K, JUMP_DUR, JUMP_HMAX, JUMP_DIST_K, DASH_DUR, DASH_CD, DASH_SPD, SLAM, SPEED_BUFFER_SIZE, WALL_JUMP_MOMENTUM_COST, WALL_JUMP_DASH_MOMENTUM_COST } from '../../constants.js';
 import { WallJumpSystem } from '../PlayerWallJump.js';
 import PlayerInput from './PlayerInput.js';
 import PlayerHealth from './PlayerHealth.js';
@@ -31,11 +31,15 @@ export default class Player {
         this.trueDamage = 0;
         this._addRebound = false;  // ADD: Amortiguador — rebote tras dash contra muro
         this._vampireSpeed = false; // CAD: Vampiro — +40% vel. cerca de orbe
+        this._fromWallJump = false; // Seguimiento de origen de salto en muro
         
         this.moveDir = { x: 0, y: 0 };
         this.trail = []; 
         this.wasJumpingWhenDashed = false;
         this.currentWallLine = null;
+
+        // Buffer circular de velocidad
+        this.speedBuffer = [];
     }
 
     // Getters / Delegaciones
@@ -50,6 +54,18 @@ export default class Player {
     getCurrentAttackPayload(lvl) { return this.combat.getCurrentAttackPayload(lvl); }
     getAttackRadius(lvl) { return this.combat.getAttackRadius(lvl); }
     lerpK(k, dt) { return 1 - Math.pow(1 - k, dt * 60); }
+
+    // Obtener velocidad de hace X milisegundos
+    getSpeedMsAgo(ms) {
+        if (this.speedBuffer.length === 0) return 0;
+        const targetTime = performance.now() - ms;
+        for (let i = this.speedBuffer.length - 1; i >= 0; i--) {
+            if (this.speedBuffer[i].time <= targetTime) {
+                return this.speedBuffer[i].speed;
+            }
+        }
+        return this.speedBuffer[0].speed;
+    }
 
     isMovingInCompassDirection(momentum, currentSpeed) {
         if (currentSpeed < 15) return false;
@@ -75,10 +91,22 @@ export default class Player {
     }
 
     update(delta, momentum) {
+        const currentSpeed = Math.hypot(this.vx, this.vy);
+
+        // Actualizar buffer de velocidad
+        this.speedBuffer.push({ time: performance.now(), speed: currentSpeed });
+        if (this.speedBuffer.length > SPEED_BUFFER_SIZE) {
+            this.speedBuffer.shift();
+        }
+
+        // Ganancia de momentum por velocidad
+        let effectiveMaxSpeed = this._demonMode ? momentum.getEffectiveMaxSpeed(momentum.level) * 1.5 : momentum.getEffectiveMaxSpeed(momentum.level);
+        if (this._vampireSpeed) effectiveMaxSpeed *= 1.4;
+        momentum.gainFromSpeed(delta, currentSpeed, effectiveMaxSpeed);
+
         const dt = delta / 1000;
         const lv = momentum.level;
         const now = this.scene.time.now;
-        const currentSpeed = Math.hypot(this.vx, this.vy);
 
         // Actualizar Subsistemas
         this.input.update();
@@ -148,16 +176,19 @@ export default class Player {
         // Lógica de Inputs
         if (this.input.isSpaceJustPressed() && !this.isStunned && this.noJumpTimer <= 0) {
             if (this.wallJump.wallStick) {
-                const jumpResult = this.wallJump.tryJump(
-                    this.moveDir, momentum, () => this.moveDir,
-                    (m) => this.isMovingInCompassDirection(m, currentSpeed), now
-                );
-                if (jumpResult?.success) {
-                    this.vx = jumpResult.vx; this.vy = jumpResult.vy;
-                    this.jumping = true; this.jumpT = 0; this.jumpDur = JUMP_DUR[lv]; this.jumpLv = lv;
-                    this.jumpVx = this.vx; this.jumpVy = this.vy;
-                    this.combat.hasSlammedThisJump = false;
-                    this.scene?.runStats?.recordWallJumpStart(this.px, this.py);
+                if (momentum.consumeStacks(WALL_JUMP_MOMENTUM_COST)) {
+                    const jumpResult = this.wallJump.tryJump(
+                        this.moveDir, momentum, () => this.moveDir,
+                        (m) => this.isMovingInCompassDirection(m, currentSpeed), now
+                    );
+                    if (jumpResult?.success) {
+                        this.vx = jumpResult.vx; this.vy = jumpResult.vy;
+                        this.jumping = true; this.jumpT = 0; this.jumpDur = JUMP_DUR[lv]; this.jumpLv = lv;
+                        this.jumpVx = this.vx; this.jumpVy = this.vy;
+                        this.combat.hasSlammedThisJump = false;
+                        this.scene?.runStats?.recordWallJumpStart(this.px, this.py);
+                        this._fromWallJump = true;
+                    }
                 }
             } else if (this.jumping && !this.combat.hasSlammedThisJump && (this.combat.slamCooldown <= 0 || this._addRebound)) {
                 if (currentSpeed >= SLAM.MIN_SPEED) this.combat.performSlam(currentSpeed, this._addRebound);
@@ -221,38 +252,48 @@ export default class Player {
                     // lanzamiento ejecutado
 
                 } else if (!fx?.aabGrabbed && (this.jumping || this.dashCD === 0)) {
-                    // dash: aéreo sin CD, terrestre requiere CD
-                    const dashCDValue = this._dashCDBase || DASH_CD;
-                    this.dashing = true; this.dashT = 0;
-                    if (!this.jumping) this.dashCD = dashCDValue;
-                    this.wasJumpingWhenDashed = this.jumping;
-                    this.dashInitialSpeed = dashSpeed;
-
-                    // AAA: Berserker — coste de HP
-                    if (fx?.has('AAA')) {
-                        const cost = fx.getAAACost(this);
-                        if (cost > 0) this.health.takeDamage(cost);
-                    }
-
-                    this.dashVx = dashDirX * this.dashInitialSpeed;
-                    this.dashVy = dashDirY * this.dashInitialSpeed;
-                    if (this.jumping) { this.jumpVx = this.dashVx; this.jumpVy = this.dashVy; }
-                    this.facing = Math.atan2(dashDirY, dashDirX);
-
-                    // ABC: Brújula Activa — dar stacks si el dash va en dirección de la brújula
-                    if (fx?.has('ABC')) {
-                        const compass = this.scene?.compass;
-                        if (compass) {
-                            const dot = (dir, vx, vy) => (dir.dx ?? 0) * vx + (dir.dy ?? 0) * vy;
-                            const pd = compass.primaryDir;
-                            const sd = compass.secondaryDir;
-                            if (pd && dot(pd, dashDirX, dashDirY) > 0.7)      fx.onDashInCompassDir(this, this.scene.momentum, true);
-                            else if (sd && dot(sd, dashDirX, dashDirY) > 0.7) fx.onDashInCompassDir(this, this.scene.momentum, false);
+                    let canDash = true;
+                    if (this._fromWallJump) {
+                        if (!momentum.consumeStacks(WALL_JUMP_DASH_MOMENTUM_COST)) {
+                            canDash = false;
                         }
+                        this._fromWallJump = false;
                     }
 
-                    // BBB: dash aéreo activa Modo Demonio
-                    if (this.jumping) fx?.onAerialDash(this, this.scene.momentum);
+                    if (canDash) {
+                        // dash: aéreo sin CD, terrestre requiere CD
+                        const dashCDValue = this._dashCDBase || DASH_CD;
+                        this.dashing = true; this.dashT = 0;
+                        if (!this.jumping) this.dashCD = dashCDValue;
+                        this.wasJumpingWhenDashed = this.jumping;
+                        this.dashInitialSpeed = dashSpeed;
+
+                        // AAA: Berserker — coste de HP
+                        if (fx?.has('AAA')) {
+                            const cost = fx.getAAACost(this);
+                            if (cost > 0) this.health.takeDamage(cost);
+                        }
+
+                        this.dashVx = dashDirX * this.dashInitialSpeed;
+                        this.dashVy = dashDirY * this.dashInitialSpeed;
+                        if (this.jumping) { this.jumpVx = this.dashVx; this.jumpVy = this.dashVy; }
+                        this.facing = Math.atan2(dashDirY, dashDirX);
+
+                        // ABC: Brújula Activa — dar stacks si el dash va en dirección de la brújula
+                        if (fx?.has('ABC')) {
+                            const compass = this.scene?.compass;
+                            if (compass) {
+                                const dot = (dir, vx, vy) => (dir.dx ?? 0) * vx + (dir.dy ?? 0) * vy;
+                                const pd = compass.primaryDir;
+                                const sd = compass.secondaryDir;
+                                if (pd && dot(pd, dashDirX, dashDirY) > 0.7)      fx.onDashInCompassDir(this, this.scene.momentum, true);
+                                else if (sd && dot(sd, dashDirX, dashDirY) > 0.7) fx.onDashInCompassDir(this, this.scene.momentum, false);
+                            }
+                        }
+
+                        // BBB: dash aéreo activa Modo Demonio
+                        if (this.jumping) fx?.onAerialDash(this, this.scene.momentum);
+                    }
                 }
                 } // end else (builder skip)
             }

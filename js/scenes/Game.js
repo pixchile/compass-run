@@ -190,7 +190,7 @@ export default class Game extends Phaser.Scene {
 
         if (!this.gameOver && !this.player.isDead) {
             const now = this.time.now;
-            const tickInterval = this.momentum?.level === 3 ? 2000 : 1000;
+            const tickInterval = 1000;
             if (now - this.lastTimeUpdate >= tickInterval) {
                 this.timeRemaining--;
                 this.lastTimeUpdate = now;

@@ -1,6 +1,6 @@
 // js/systems/CombatSystem.js
 
-import { SLAM } from '../constants.js';
+import { SLAM, DASH_PIERCE_BASE, MOMENTUM3_HIT_COOLDOWN } from '../constants.js';
 
 export default class CombatSystem {
   constructor(manager, scene) {
@@ -9,6 +9,8 @@ export default class CombatSystem {
     
     this.damagedThisDash = new Set();
     this.wasDashing = false;
+    this.dashPierceCount = 0;
+    this.dashPierceMax = 0;
 
     // Objetos Zero-Allocation
     this._dashAttackObj   = { type: 'dash', baseDamage: 0, now: 0, radius: 0 };
@@ -28,6 +30,10 @@ export default class CombatSystem {
     if (dashJustStarted) {
       this.damagedThisDash.clear();
       if (fx) { fx.lockGGGForAttack(); }
+      
+      const dashSpeed = player.dashInitialSpeed || 0;
+      this.dashPierceMax = DASH_PIERCE_BASE + Math.max(0, Math.floor((dashSpeed - 500) / 100));
+      this.dashPierceCount = 0;
     }
 
     // BBC: si el jugador aterrizó (jumping pasó de true a false) sin rebotar → resetear cadena
@@ -102,8 +108,24 @@ export default class CombatSystem {
 
     if (attackPayload && isInAttackRange) {
         if (player.dashing && this.damagedThisDash.has(enemy)) return false;
-        enemyDied = this._damageEnemy(enemy, attackPayload.type, attackPayload.baseDamage, attackPayload.radius, now, attackPayload.trueDamage || 0);
-        if (player.dashing && !enemyDied) this.damagedThisDash.add(enemy);
+
+        if (attackPayload.type === 'momentum3') {
+            const lastHit = enemy._lastMomentum3Hit || 0;
+            if (now - lastHit < MOMENTUM3_HIT_COOLDOWN) return false;
+            enemy._lastMomentum3Hit = now;
+        }
+
+        if (player.dashing && this.dashPierceCount >= this.dashPierceMax) {
+            enemyDied = false;
+        } else {
+            const multiplier = enemy.damageMultipliers?.[attackPayload.type] ?? 1.0;
+            enemyDied = this._damageEnemy(enemy, attackPayload.type, attackPayload.baseDamage, attackPayload.radius, now, attackPayload.trueDamage || 0);
+            
+            if (player.dashing && multiplier > 0) {
+                this.dashPierceCount++;
+            }
+            if (player.dashing && !enemyDied) this.damagedThisDash.add(enemy);
+        }
     }
     else if (!player.isInvincible && !isInAttackRange && !enemy.isGrabbed && !player._stickState) {
         this._applyDamageToPlayer(enemy, player, now);

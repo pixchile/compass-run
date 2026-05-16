@@ -1,4 +1,5 @@
-import { WALL_JUMP } from '../constants.js';
+// js/scenes/PlayerWallJump.js
+import { WALL_JUMP, WALL_JUMP_EXIT_MULT, WALL_JUMP_DASH_MOMENTUM_COST } from '../constants.js';
 
 export class WallJumpSystem {
     constructor(scene, player) {
@@ -10,6 +11,7 @@ export class WallJumpSystem {
         this.wallNormalAngle = 0;
         this.wallStickStartTime = 0;
         this.impactSpeed = 0;
+        this.preCollisionSpeed = 0;
     }
 
     reset() {
@@ -19,14 +21,16 @@ export class WallJumpSystem {
         this.wallNormalAngle = 0;
         this.wallStickStartTime = 0;
         this.impactSpeed = 0;
+        this.preCollisionSpeed = 0;
     }
 
     canStick(jumping, cooldown) {
         return jumping && !this.wallStick && cooldown <= 0;
     }
 
-    stick(wallNormalAngle, currentSpeed) {
-        this.impactSpeed = currentSpeed;
+    stick(wallNormalAngle, preCollisionSpeed) {
+        this.preCollisionSpeed = preCollisionSpeed;
+        this.impactSpeed = preCollisionSpeed;
         this.wallStick = true;
         this.wallStickTimer = WALL_JUMP.STICK_DURATION;
         this.wallNormalAngle = wallNormalAngle;
@@ -82,8 +86,7 @@ export class WallJumpSystem {
         const dot = moveDirActual.x * nx + moveDirActual.y * ny;
         if (dot < -0.2) return false;
 
-        const level = momentum.level || 1;
-        let jumpDistance = WALL_JUMP.SPEEDS[level] || 400;
+        let jumpDistance = this.preCollisionSpeed * WALL_JUMP_EXIT_MULT;
 
         if (isMovingInCompassDirectionFn(momentum)) {
             jumpDistance *= WALL_JUMP.COMPASS_BONUS;
@@ -91,15 +94,6 @@ export class WallJumpSystem {
 
         const penaltyFactor = this.getPenaltyFactor(now);
         jumpDistance *= penaltyFactor;
-
-        if (momentum && !this.scene.itemEffects?.bbcActive) {
-            const bonusStacks = WALL_JUMP.STACK_BONUS[level] ?? 3;
-if (typeof momentum.addStacks === 'function') {
-    momentum.addStacks(bonusStacks);
-} else {
-    momentum.stacks = Math.min(90, momentum.stacks + bonusStacks);
-}
-        }
 
         let dirX = moveDirActual.x;
         let dirY = moveDirActual.y;
@@ -124,6 +118,21 @@ if (typeof momentum.addStacks === 'function') {
         this._release();
         this.player._fromWallJump = true;
         return { success: true, vx, vy };
+    }
+
+    tryDashOffWall(momentum) {
+        if (!this.wallStick) return false;
+        
+        if (!momentum.consumeStacks(WALL_JUMP_DASH_MOMENTUM_COST)) {
+            return false;
+        }
+
+        const nx = Math.cos(this.wallNormalAngle);
+        const ny = Math.sin(this.wallNormalAngle);
+
+        this._release();
+
+        return { success: true, nx, ny };
     }
 
     _release() {

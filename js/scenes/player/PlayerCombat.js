@@ -1,3 +1,4 @@
+// js/scenes/player/PlayerCombat.js
 import { SLAM, ATTACK_RADIOS } from '../../constants.js';
 
 export default class PlayerCombat {
@@ -17,11 +18,7 @@ export default class PlayerCombat {
     performSlam(speed, skipCooldown = false) {
         this.preSlamSpeed = speed;
         const isHighSpeed = speed >= SLAM.HIGH_SPEED_THRESHOLD;
-        const slamSelfDmg = this.player.scene?.itemEffects?.has('ADD')
-            ? Math.floor(SLAM.SELF_DAMAGE * 0.6)
-            : SLAM.SELF_DAMAGE;
-        const canPayHealth = this.player.health.hp > slamSelfDmg;
-        const applyKnockback = isHighSpeed && canPayHealth;
+        const applyKnockback = isHighSpeed;
 
         // BBC: limpiar stick si se hace slam durante stick
         if (this.player._stickState) {
@@ -30,8 +27,6 @@ export default class PlayerCombat {
             this.player._stickTimer = 0;
             this.player._stickEnemy = null;
         }
-
-        if (applyKnockback) this.player.health.takeDamage(slamSelfDmg);
 
         // AAA: costo extra de 3 HP en slam
         const fx = this.player.scene?.itemEffects;

@@ -1,10 +1,10 @@
 export const W = 880, H = 620;
 export const ARENA = { x: 55, y: 58, w: 4000, h: 4000 };
 export const TRAIL_MAX = 16;
-export const L2 = 40, L3 = 50, SMAX = 90;
+export const L2 = 50, L3 = 80, SMAX = 90;
 
 export const MAX_SPD = [0, 250,  350,  400];
-export const TURN_K  = [0, 0.24, 0.12, 0.06];
+export const TURN_K  = [0, 0.1, 0.06, 0.03];
 export const STOP_K  = [0, 0.24, 0.12, 0.06];
 
 // Jump params [_, L1, L2, L3]
@@ -40,12 +40,29 @@ export const C = {
   hpHigh: 0x44dd77, hpMid: 0xffcc22, hpLow: 0xff3322,
 };
 
+// ============================================================
+// NUEVO: Gated Player Progression — Momentum & Dash Piercing
+// ============================================================
+export const MOMENTUM_GAIN_PER_250_SPEED = 2;        // stacks/sec per 250 max speed
+export const MOMENTUM_GAIN_SPEED_THRESHOLD = 0.98;   // must be at 95%+ of cap to gain
+export const WALL_JUMP_MOMENTUM_COST = 5;            // stacks consumed on wall jump
+export const WALL_JUMP_DASH_MOMENTUM_COST = 3;       // stacks consumed on dash from wall jump
+export const MOMENTUM3_HIT_COOLDOWN = 500;           // ms between momentum3 passive hits on same enemy
+export const WALL_JUMP_EXIT_MULT = 0.9;              // exit speed = recorded speed * 0.9
+export const DASH_PIERCE_BASE = 2;                   // enemies pierced at ≤500 speed
+export const DASH_PIERCE_PER_100 = 1;                // +1 pierce per 100 speed above 500
+export const DASH_WALL_DAMAGE_SPEED_MIN = 900;       // min impact speed to damage walls
+export const SPEED_BUFFER_SIZE = 5;                  // frames of speed history (~83ms at 60fps)
+
 // Wall Jump Configuration
 export const WALL_JUMP = {
   STICK_DURATION: 2000,
   GRACE_WINDOW: 100, // período de gracia en el que no pierdes velocidad por esperar en la pared
   PENALTY_MIN_FACTOR: 0.8, // reducción de velocidad por tardar mucho en la pared.
   COMPASS_BONUS: 1.5, // si saltar desde un muro coincide con la dirección del compass, saltas más.
+  // [DEPRECATED] SPEEDS y STACK_BONUS ya no se usan — la velocidad de salida ahora
+  // se deriva de la velocidad pre-colisión * WALL_JUMP_EXIT_MULT, y los wall jumps
+  // ya no otorgan stacks de momentum.
   SPEEDS: [0, 500, 600, 700],
   STACK_BONUS: [0, 4, 2, 0], // momentum obtenido por walljump por nivel.
   STICK_DAMAGE_THRESHOLD: 940, // a partir de esta velocidad, llegar a una pared con un salto lastima al jugador.
@@ -82,7 +99,7 @@ export const REWARDS = {
 
   CREDIT_BASE_PER_SEC:     1,
   CREDIT_TICK_RATE:      100,
-  CREDIT_SPEED_FACTOR: 0.0001,
+  CREDIT_SPEED_FACTOR: 0.0002,
 
 };
 

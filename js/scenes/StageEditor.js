@@ -88,6 +88,9 @@ export default class StageEditor extends Phaser.Scene {
     for (const e of this.enemies) {
       if (e.spawnTime > maxT) maxT = e.spawnTime;
     }
+    for (const inst of this.squadInstances) {
+      if (inst.spawnTime > maxT) maxT = inst.spawnTime;
+    }
     return Math.max(maxT + 30, 60);
   }
 

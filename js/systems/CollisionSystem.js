@@ -1,4 +1,4 @@
-import { HP_DMG_DASH_WALL, DASH_WALL_STUN_DUR, DASH_WALL_DAMAGE_FACTOR, WALL_DEFAULT_HP } from '../constants.js';
+import { HP_DMG_DASH_WALL, DASH_WALL_STUN_DUR, DASH_WALL_DAMAGE_FACTOR, WALL_DEFAULT_HP, DASH_WALL_DAMAGE_SPEED_MIN } from '../constants.js';
 import { closestPointOnLine } from './GeometryUtils.js';
 
 export default class CollisionSystem {
@@ -75,7 +75,7 @@ export default class CollisionSystem {
                         line.hp = WALL_DEFAULT_HP;
                         line._origHp = WALL_DEFAULT_HP;
                     }
-                    if (line.hp !== undefined && line.hp !== null) {
+                    if (line.hp !== undefined && line.hp !== null && impactSpeed >= DASH_WALL_DAMAGE_SPEED_MIN) {
                         const damageMult = hasBuilder ? 2 : 1;
                         const damage = impactSpeed * DASH_WALL_DAMAGE_FACTOR * damageMult;
                         line.hp -= damage;

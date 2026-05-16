@@ -1,5 +1,5 @@
 // js/scenes/MomentumSystem.js
-import { L2, L3, SMAX, MAX_SPD, ATTACK_RADIOS } from '../constants.js';
+import { L2, L3, SMAX, MAX_SPD, ATTACK_RADIOS, MOMENTUM_GAIN_PER_250_SPEED } from '../constants.js';
 
 export default class MomentumSystem {
   constructor() {
@@ -13,8 +13,8 @@ export default class MomentumSystem {
   }
 
   // ─── Getters de nivel ───────────────────────────────────────
-  get l2Min() { return 40 - (this._l2Margin - 5); }
-  get l2Max() { return 50 + (this._l2Margin - 5); }
+  get l2Min() { return 50 - (this._l2Margin - 5); }
+  get l2Max() { return 80 + (this._l2Margin - 5); }
 
   get level() {
     if (this.stacks > this.l2Max) return 3;
@@ -60,6 +60,21 @@ export default class MomentumSystem {
     this._decayAccum = 0;
   }
 
+  gainFromSpeed(delta, currentSpeed, maxSpeed) {
+    if (currentSpeed >= maxSpeed * 0.95) {
+      const gain = MOMENTUM_GAIN_PER_250_SPEED * (maxSpeed / 250) * (delta / 1000);
+      this.stacks = Math.min(SMAX, this.stacks + gain);
+      this._lastActionTime = Date.now();
+      this._decayAccum = 0;
+    }
+  }
+
+  consumeStacks(amount) {
+    if (this.stacks < amount) return false;
+    this.stacks = Math.max(0, Math.min(SMAX, this.stacks - amount));
+    return true;
+  }
+
   halveStacks() {
     this.stacks = Math.max(0, Math.floor(this.stacks / 1.5));
   }
@@ -73,7 +88,7 @@ export default class MomentumSystem {
   // ─── Pérdida pasiva por inactividad ────────────────────────
   updateDecay(delta, now = Date.now()) {
     const inactivity = now - this._lastActionTime;
-    if (inactivity >= 5000 && this.stacks > 0) {
+    if (inactivity >= 50 && this.stacks > 0) {
       this._decayAccum += delta;
       while (this._decayAccum >= 1000) {
         this.stacks = Math.max(0, this.stacks - 2);
