@@ -37,6 +37,9 @@ export default class StageEditor extends Phaser.Scene {
     this.spawners     = [];
     this.timeLimit    = 300;
 
+    // Boss (único por stage, opcional)
+    this.bossConfig   = null; // { type, spawnTime, x, y } o null
+
     this.maxBase      = 20;
     this.maxPerMin    = 5;
     this.minBase      = 0;
@@ -87,9 +90,6 @@ export default class StageEditor extends Phaser.Scene {
     let maxT = this.timeLimit || 60;
     for (const e of this.enemies) {
       if (e.spawnTime > maxT) maxT = e.spawnTime;
-    }
-    for (const inst of this.squadInstances) {
-      if (inst.spawnTime > maxT) maxT = inst.spawnTime;
     }
     return Math.max(maxT + 30, 60);
   }
@@ -489,6 +489,25 @@ export default class StageEditor extends Phaser.Scene {
 
     this.input.keyboard.on('keydown-G', () => { this.showGrid = !this.showGrid; });
 
+    // B = colocar/configurar boss
+    this.input.keyboard.on('keydown-B', () => {
+      const bossTypes = ['toro', 'centinela'];
+      const current   = this.bossConfig?.type || bossTypes[0];
+      const typeStr   = prompt(
+        `Tipo de boss (disponibles: ${bossTypes.join(', ')})`,
+        current
+      );
+      if (!typeStr) return;
+      const spawnTime = parseFloat(prompt('Tiempo de spawn (segundos)', this.bossConfig?.spawnTime ?? 30));
+      this.bossConfig = {
+        type:      typeStr,
+        spawnTime: isNaN(spawnTime) ? 30 : spawnTime,
+        x:         this.bossConfig?.x ?? (this.currentMap?.arena?.x || 0) + (this.currentMap?.arena?.w || 2000) / 2,
+        y:         this.bossConfig?.y ?? (this.currentMap?.arena?.y || 0) + (this.currentMap?.arena?.h || 2000) / 2,
+      };
+      this.ui?.toast?.(`Boss "${typeStr}" configurado en t=${spawnTime}s`, 'ok');
+    });
+
     // Zoom con rueda
     this.input.on('wheel', (ptr, _, __, deltaY) => {
       deltaY > 0 ? this.camera.zoomOut(0.05) : this.camera.zoomIn(0.05);
@@ -508,6 +527,7 @@ export default class StageEditor extends Phaser.Scene {
       spawners:      this.spawners,
       squads:        this.squads,
       squadInstances: this.squadInstances,
+      boss:          this.bossConfig || null,
       density: {
         maxBase:     this.maxBase,
         maxPerMin:   this.maxPerMin,
@@ -614,6 +634,8 @@ export default class StageEditor extends Phaser.Scene {
     this.enemies        = stage.enemies  || [];
     this.spawners       = stage.spawners || [];
     this.squads         = stage.squads || [];
+    this.squadInstances = stage.squadInstances || [];
+    this.bossConfig     = stage.boss || null;
     this.squadInstances = stage.squadInstances || [];
     const d = stage.density || {};
     this.maxBase    = d.maxBase   ?? 20;

@@ -107,12 +107,27 @@ export default class EnemyManager {
     }
   }
 
-  killEnemy(index, enemy, fatalSource) {
-    if (typeof enemy.kill === 'function') enemy.kill(fatalSource);
+  /**
+   * Agrega un BossAttackEnemy al array de enemigos.
+   * Separado semánticamente de addEnemy para claridad y para permitir
+   * caps futuros (máx 80 attack enemies simultáneos).
+   */
+  addBossAttack(bossAttackEnemy) {
+    if (!bossAttackEnemy) return;
+    // Hard cap: evitar que los arrays se inflen en combate intenso
+    const attackCount = this.enemies.filter(e => e._isBossAttack).length;
+    if (attackCount >= 80) return;
+    this.enemies.push(bossAttackEnemy);
+  }
 
-    const playerSources = ['dash', 'aerialDash', 'wallJumpDash', 'momentum3', 'slam', 'slam3', 'wallCrash', 'stomp', 'explosion', 'fire'];
-    const byPlayer = playerSources.includes(fatalSource);
-    this.scene?.runStats?.recordEnemyKilled(byPlayer);
+  killEnemy(index, enemy, fatalSource) {
+    // Boss attack enemies: solo sacar del array, sin rewards ni eventos
+    if (enemy._isBossAttack) {
+      this.enemies.splice(index, 1);
+      return;
+    }
+
+    if (typeof enemy.kill === 'function') enemy.kill(fatalSource);
 
     const noRewards = fatalSource === 'void' || fatalSource === 'hater';
 
@@ -126,9 +141,6 @@ export default class EnemyManager {
         this.scene.momentum.addMaxSpeed(1);
       }
       if (this.rewardSystem) this.rewardSystem.onEnemyKilled(enemy.type);
-
-      // Pozos de muerte (slow + daño temporal)
-      this.scene?.deathPuddles?.onEnemyDeath(enemy.x, enemy.y);
 
       // Drop de componente (chance global baja)
       if (this.scene?.shopSystem) {
@@ -158,7 +170,8 @@ export default class EnemyManager {
     this.combatSystem.clear();
   }
 
-  getEnemies() {
+  getEnemies({ excludeBossAttacks = false } = {}) {
+    if (excludeBossAttacks) return this.enemies.filter(e => !e._isBossAttack);
     return this.enemies;
   }
 }

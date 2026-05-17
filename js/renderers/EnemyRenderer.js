@@ -4,7 +4,13 @@ export default class EnemyRenderer {
   render(graphics, enemies) {
     for (let i = 0, len = enemies.length; i < len; i++) {
       const enemy = enemies[i];
-      
+
+      // BossAttackEnemy: visual simplificado (translúcido, borde de color boss)
+      if (enemy._isBossAttack) {
+        this._renderBossAttack(graphics, enemy);
+        continue;
+      }
+
       // OPTIMIZACIÓN: Solo usamos datos del Editor V2
       const hpPct = Math.max(0, enemy.hp / enemy.maxHp);
       const color = enemy.color; 
@@ -93,5 +99,29 @@ export default class EnemyRenderer {
         }
       }
     }
+  }
+
+  _renderBossAttack(graphics, enemy) {
+    const alpha     = typeof enemy.getAlpha === 'function' ? enemy.getAlpha() : 0.7;
+    const bossColor = enemy.bossColor || 0xff4400;
+    const r         = enemy.radius || 12;
+    const pct       = enemy._despawnTimer / (enemy._maxDespawnMs || 2000);
+    const pulse     = 0.55 + 0.2 * Math.sin(Date.now() * 0.008);
+
+    // Sombra
+    graphics.fillStyle(0x000000, 0.2 * alpha);
+    graphics.fillCircle(enemy.x, enemy.y + 3, r);
+
+    // Cuerpo translúcido con color del boss
+    graphics.fillStyle(bossColor, 0.45 * alpha * pulse);
+    graphics.fillCircle(enemy.x, enemy.y, r);
+
+    // Borde brillante del color del boss
+    graphics.lineStyle(2.5, bossColor, 0.9 * alpha);
+    graphics.strokeCircle(enemy.x, enemy.y, r);
+
+    // Aro interior blanco (amenaza visual)
+    graphics.lineStyle(1, 0xffffff, 0.3 * alpha);
+    graphics.strokeCircle(enemy.x, enemy.y, r * 0.55);
   }
 }

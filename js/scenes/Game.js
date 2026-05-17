@@ -15,8 +15,8 @@ import ShopSystem from '../systems/ShopSystem.js';
 import ShopUI from './ShopUI.js';
 import ItemEffects from '../systems/ItemEffects.js';
 import { registerAllCustomEnemies } from '../enemies/definitions/index.js';
-import DeathPuddleSystem from '../systems/DeathPuddleSystem.js';
-import RunStats from '../RunStats.js';
+import BossManager from '../boss/BossManager.js';
+import bossRegistry from '../boss/BossDefinitions.js';
 
 export default class Game extends Phaser.Scene {
     constructor() {
@@ -43,12 +43,6 @@ export default class Game extends Phaser.Scene {
             this.currentMap = { arena: { x: 50, y: 50, w: 2000, h: 2000 }, lines: [], zones: [] };
         }
 
-        // Snapshot del estado original de cada línea (hp puede ser null en muros normales)
-        for (const line of (this.currentMap.lines || [])) {
-            line._snapHp     = line.hp;      // null o número
-            line._snapOrigHp = line._origHp; // null o número
-        }
-
         // Spatial grid para consultas de muros O(1)
         this.wallGrid = new SpatialGrid(250);
         this.wallGrid.build(this.currentMap.lines || []);
@@ -64,6 +58,7 @@ export default class Game extends Phaser.Scene {
                     this.currentMap.density = stage.density || null;
                     this.currentMap.squads = stage.squads || [];
                     this.currentMap.squadInstances = stage.squadInstances || [];
+                    this.currentMap.boss = stage.boss || null;
                     if (stage.timeLimit) this.currentMap.timeLimit = stage.timeLimit;
                 }
             } catch (e) { console.warn("Error loading stage:", e); }
@@ -111,16 +106,27 @@ export default class Game extends Phaser.Scene {
         this.compass.setReferences(this.momentum, this.rewardSystem, this);
         this.enemyManager.setMomentumSystem(this.momentum);
 
-        // ─── Tienda / Zonas ──────────────────────────────────────
+        // ─── Boss System ──────────────────────────────────────────
+        const bossArena = this.currentMap.arena || { x: 55, y: 58, w: 4000, h: 4000 };
+        this.bossManager = new BossManager(this, bossArena, this.enemyManager);
+
+        // Si el stage tiene un boss definido, registrarlo en el spawner para activación por timeline
+        if (this.currentMap.boss) {
+            const bossDef = bossRegistry.get(this.currentMap.boss.type);
+            if (bossDef) {
+                this._pendingBossSpawn = {
+                    def:  bossDef,
+                    time: this.currentMap.boss.spawnTime || 0,
+                    x:    this.currentMap.boss.x || (bossArena.x + bossArena.w / 2),
+                    y:    this.currentMap.boss.y || (bossArena.y + bossArena.h / 2),
+                    spawned: false,
+                };
+            }
+        }
         this.shopSystem.reset();
         this.shopSystem.setScene(this);
         this.itemEffects = new ItemEffects(this);
         this.shopUI = new ShopUI(this);
-        this.deathPuddles = new DeathPuddleSystem(this);
-
-        this.runStats = new RunStats();
-        this.runStats.startRun(this.time.now, this.rewardSystem.credits);
-        this.collisionSystem.runStats = this.runStats;
 
         // Inicializar solo las tiendas que existen en el mapa
         const shopIds = this._collectShopIds(this.currentMap.zones || []);
@@ -190,7 +196,7 @@ export default class Game extends Phaser.Scene {
 
         if (!this.gameOver && !this.player.isDead) {
             const now = this.time.now;
-            const tickInterval = 1000;
+            const tickInterval = this.momentum?.level === 3 ? 2000 : 1000;
             if (now - this.lastTimeUpdate >= tickInterval) {
                 this.timeRemaining--;
                 this.lastTimeUpdate = now;
@@ -203,11 +209,6 @@ export default class Game extends Phaser.Scene {
 
         if (this.gameOver || this.player.isDead) {
             if (this.player.isDead) { this.gameOver = true; this.gameOverReason = 'death'; }
-            if (!this._statsFinalized) {
-                this.runStats.finalize(this.time.now, this.rewardSystem.credits);
-                this._statsFinalized = true;
-                console.log('Run stats:', JSON.stringify(this.runStats.getSummary(), null, 2));
-            }
             this.gameOverAlpha = Math.min(1, this.gameOverAlpha + delta / 500);
             if (Phaser.Input.Keyboard.JustDown(this.restartKey) || this._gamepadAJustPressed())
               this.restartGame();
@@ -238,10 +239,23 @@ export default class Game extends Phaser.Scene {
         this._visibleLines = (this.currentMap.lines || []).filter(l => !l._broken);
 
         this.enemyManager.update(delta, this.time.now, this.player, this._visibleLines);
+        this.bossManager?.update(delta, this.player);
+
+        // Spawn de boss por timeline
+        if (this._pendingBossSpawn && !this._pendingBossSpawn.spawned) {
+            const elapsed = this.time.now / 1000;
+            if (elapsed >= this._pendingBossSpawn.time) {
+                this._pendingBossSpawn.spawned = true;
+                this.bossManager.spawn(
+                    this._pendingBossSpawn.def,
+                    this._pendingBossSpawn.x,
+                    this._pendingBossSpawn.y
+                );
+            }
+        }
         this.itemEffects?.update(delta, this.player, this.momentum, this.enemyManager);
         this.rewardSystem.update(delta, this.player);
         this.orbManager.update(delta, this.player);
-        this.deathPuddles?.update(delta);
 
         this.enemyManager.processPlayerInteractions(this.player, delta, this.time.now, this.momentum);
         this.enemyManager.cleanupDead();
@@ -286,7 +300,6 @@ export default class Game extends Phaser.Scene {
         }
 
         const playerSpeed = Math.hypot(this.player.vx, this.player.vy);
-        this.runStats.recordMaxSpeed(playerSpeed);
         this.camera.update(this.player.px, this.player.py, playerSpeed);
         this.renderer.setCustomLines(this._visibleLines);
         this.renderer.render(this.player, this.compass, false, 0, this.gameOverReason, this.timeRemaining, delta);
@@ -333,8 +346,6 @@ export default class Game extends Phaser.Scene {
         this.compass = new CompassSystem();
         this.compass.setReferences(this.momentum, this.rewardSystem, this);
         this.rewardSystem.reset();
-        this.runStats.startRun(this.time.now, this.rewardSystem.credits);
-        this._statsFinalized = false;
         this.orbManager.reset();
         this.shopSystem.reset();
         this.itemEffects?.reset();
@@ -347,13 +358,10 @@ export default class Game extends Phaser.Scene {
         this.camera.x = this.camera.viewWidth / 2; this.camera.y = this.camera.viewHeight / 2;
         this.camera.zoom = 1.0; this.camera.targetZoom = 1.0;
 
-        // Limpiar zonas dinamicas (fuego CCC, pozos de muerte) y restaurar muros al estado inicial
-        this.deathPuddles?.reset();
-        this.currentMap.zones = this.currentMap.zones.filter(z => !z._isFire && !z._isPuddle);
+        // Limpiar zonas dinamicas (fuego CCC) y restaurar muros destruidos
+        this.currentMap.zones = this.currentMap.zones.filter(z => !z._isFire);
         for (const line of this.currentMap.lines) {
-            line._broken  = false;
-            line.hp       = line._snapHp     !== undefined ? line._snapHp     : line._origHp;
-            line._origHp  = line._snapOrigHp !== undefined ? line._snapOrigHp : line._origHp;
+            if (line._broken) { line._broken = false; line.hp = line._origHp; }
         }
         this.renderer?.setCustomZones(this.currentMap.zones);
         this.renderer?.setCustomLines(this.currentMap.lines);
@@ -363,6 +371,12 @@ export default class Game extends Phaser.Scene {
         this.enemyManager.clearAll();
         this.enemyManager.setSpawnList(this.currentMap.enemies || []);
         this.enemyManager.setMomentumSystem(this.momentum);
+        // Reset BossManager
+        if (this.bossManager) {
+            const bossArena = this.currentMap.arena || { x: 55, y: 58, w: 4000, h: 4000 };
+            this.bossManager = new BossManager(this, bossArena, this.enemyManager);
+        }
+        if (this._pendingBossSpawn) this._pendingBossSpawn.spawned = false;
         if (this.renderer && this.renderer.clearGameOver) this.renderer.clearGameOver();
     }
 }

@@ -68,7 +68,7 @@ export default class EnemySpawner {
 
     const elapsedSeconds = (currentTime - this.gameStartTime) / 1000;
     const elapsedMin = elapsedSeconds / 60;
-    const currentEnemiesCount = this.manager.enemies.length;
+    const currentEnemiesCount = this.manager.enemies.filter(e => !e._isBossAttack).length;
 
     const hardcap = this.density
       ? Math.min(Math.floor((this.density.maxBase || 20) + (this.density.maxPerMin || 0) * elapsedMin), 300)

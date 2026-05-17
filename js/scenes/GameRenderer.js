@@ -173,15 +173,14 @@ export default class GameRenderer {
       this.mapRenderer.renderZones(g, this.customZones);
     }
 
-    // Pozos de muerte — se renderizan sobre el mapa, bajo el jugador
-    this.gameScene.deathPuddles?.render(g, now);
-
     if (this.customLines && this.customLines.length > 0) {
       this.mapRenderer.renderLines(g, this.customLines);
     }
 
     this.trailRenderer.render(g, player);
 
+    // ── Telegrafías del boss (debajo de enemies y del boss) ──
+    this.gameScene.bossManager?.renderTelegraph(g);
 
     this.playerRenderer.render(g, player, momentum, time);
     this.enemyRenderer.render(g, this.gameScene.enemyManager.getEnemies());
@@ -201,6 +200,17 @@ export default class GameRenderer {
     this.compass.render(g, player, compassSystem, this.camera);
 
     this.camera.restore(g);
+
+    // ── Boss HP bar (coordenadas de pantalla, sobre todo lo demás) ──
+    this.gameScene.bossManager?.renderHUD(g);
+
+    // ── Boss name flash ──
+    if (this.gameScene.bossManager?.hasBoss) {
+      const nameAlpha = this.gameScene.bossManager.bossNameAlpha;
+      if (nameAlpha > 0) {
+        this._renderBossName(g, this.gameScene.bossManager.bossName, nameAlpha);
+      }
+    }
 
     this.healthBar.render(g, player, time);
     this.momentumBar.render(g, momentum, time);
@@ -228,5 +238,22 @@ export default class GameRenderer {
 
   toggleAttackRadiusDebug() {
     this.showAttackRadius = !this.showAttackRadius;
+  }
+
+  _renderBossName(g, name, alpha) {
+    // Texto del nombre del boss centrado en pantalla — usando Phaser Text
+    // Solo creamos el objeto una vez y lo reusamos
+    if (!this._bossNameTextObj) {
+      this._bossNameTextObj = this.scene.add.text(440, 52, '', {
+        fontFamily: 'monospace',
+        fontSize: '20px',
+        color: '#ff6633',
+        stroke: '#000000',
+        strokeThickness: 4,
+        align: 'center',
+      }).setOrigin(0.5, 0.5).setDepth(100);
+    }
+    this._bossNameTextObj.setText(name);
+    this._bossNameTextObj.setAlpha(alpha);
   }
 }

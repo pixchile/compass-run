@@ -1,10 +1,10 @@
 export const W = 880, H = 620;
 export const ARENA = { x: 55, y: 58, w: 4000, h: 4000 };
 export const TRAIL_MAX = 16;
-export const L2 = 50, L3 = 80, SMAX = 90;
+export const L2 = 40, L3 = 50, SMAX = 90;
 
 export const MAX_SPD = [0, 250,  350,  400];
-export const TURN_K  = [0, 0.1, 0.06, 0.03];
+export const TURN_K  = [0, 0.24, 0.12, 0.06];
 export const STOP_K  = [0, 0.24, 0.12, 0.06];
 
 // Jump params [_, L1, L2, L3]
@@ -40,40 +40,32 @@ export const C = {
   hpHigh: 0x44dd77, hpMid: 0xffcc22, hpLow: 0xff3322,
 };
 
-// ============================================================
-// NUEVO: Gated Player Progression — Momentum & Dash Piercing
-// ============================================================
-export const MOMENTUM_GAIN_PER_250_SPEED = 2;        // stacks/sec per 250 max speed
-export const MOMENTUM_GAIN_SPEED_THRESHOLD = 0.98;   // must be at 95%+ of cap to gain
-export const WALL_JUMP_MOMENTUM_COST = 5;            // stacks consumed on wall jump
-export const WALL_JUMP_DASH_MOMENTUM_COST = 3;       // stacks consumed on dash from wall jump
-export const MOMENTUM3_HIT_COOLDOWN = 500;           // ms between momentum3 passive hits on same enemy
-export const WALL_JUMP_EXIT_MULT = 0.9;              // exit speed = recorded speed * 0.9
-export const DASH_PIERCE_BASE = 2;                   // enemies pierced at ≤500 speed
-export const DASH_PIERCE_PER_100 = 1;                // +1 pierce per 100 speed above 500
-export const DASH_WALL_DAMAGE_SPEED_MIN = 900;       // min impact speed to damage walls
-export const SPEED_BUFFER_SIZE = 5;                  // frames of speed history (~83ms at 60fps)
-
 // Wall Jump Configuration
 export const WALL_JUMP = {
   STICK_DURATION: 2000,
   GRACE_WINDOW: 100, // período de gracia en el que no pierdes velocidad por esperar en la pared
   PENALTY_MIN_FACTOR: 0.8, // reducción de velocidad por tardar mucho en la pared.
   COMPASS_BONUS: 1.5, // si saltar desde un muro coincide con la dirección del compass, saltas más.
-  // [DEPRECATED] SPEEDS y STACK_BONUS ya no se usan — la velocidad de salida ahora
-  // se deriva de la velocidad pre-colisión * WALL_JUMP_EXIT_MULT, y los wall jumps
-  // ya no otorgan stacks de momentum.
   SPEEDS: [0, 500, 600, 700],
   STACK_BONUS: [0, 4, 2, 0], // momentum obtenido por walljump por nivel.
   STICK_DAMAGE_THRESHOLD: 940, // a partir de esta velocidad, llegar a una pared con un salto lastima al jugador.
   STICK_DAMAGE_AMOUNT: 3 // daño por aferrarse con mucha velocidad a las paredes.
 };
 
+export const WALL_JUMP_EXIT_MULT = 1.0;        // multiplicador de velocidad al salir de la pared
+export const WALL_JUMP_DASH_MOMENTUM_COST = 1; // stacks de momentum que cuesta hacer dash desde pared
+export const WALL_JUMP_MOMENTUM_COST = 1;      // stacks de momentum que cuesta un wall jump normal
+export const SPEED_BUFFER_SIZE = 10;           // tamaño del buffer circular para promediar velocidad
+export const MOMENTUM_GAIN_PER_250_SPEED = 2;  // stacks ganados por segundo al ir a velocidad máxima
+export const DASH_PIERCE_BASE = 1;             // cuántos enemigos atraviesa un dash por defecto
+export const MOMENTUM3_HIT_COOLDOWN = 100;     // ms entre hits del ataque de momentum nivel 3
+export const DASH_WALL_DAMAGE_SPEED_MIN = 200; // velocidad mínima para dañar un muro en dash
+
 
 export const ATTACK_RADIOS = {
     1: 50,
-    2: 60,
-    3: 70
+    2: 55,
+    3: 60
 };
 
 
@@ -99,7 +91,7 @@ export const REWARDS = {
 
   CREDIT_BASE_PER_SEC:     1,
   CREDIT_TICK_RATE:      100,
-  CREDIT_SPEED_FACTOR: 0.0002,
+  CREDIT_SPEED_FACTOR: 0.00015,
 
 };
 
@@ -167,8 +159,52 @@ export const BUFF_COLORS = {
 // Valores por tick (primaria = 1x, secundaria = 2x)
 export const BUFF_VALUES = {
   heal:       { primary: 0.2, secondary: 0.4 },
-  credit:     { primary: 0.6, secondary: 1.2 },
+  credit:     { primary: 0.7, secondary: 1.4 },
   momentum:   { primary: 0.5, secondary: 1 },
   dashCd:     { primary: 0.1, secondary: 0.2 },
   trueDamage: { primary: 0.03, secondary: 0.06 },
+};
+
+// ============================================================
+// BOSS SYSTEM
+// ============================================================
+
+export const BOSS = {
+  MAX_ACTIVE:            1,      // solo 1 boss activo a la vez
+  MAX_ATTACK_ENEMIES:   80,      // hard cap de BossAttackEnemy simultáneos
+  INTRO_INVULN_MS:    1500,      // ms de invulnerabilidad al spawnear
+  PHASE_TRANSITION_MS:  500,     // ms de invuln + flash al cambiar fase
+
+  // HP bar (pantalla superior)
+  HP_BAR: {
+    x: 200, y: 18, w: 480, h: 14,
+    bgColor:     0x220000,
+    borderColor: 0xff6633,
+    fillHigh:    0xff3300,
+    fillMid:     0xff6600,
+    fillLow:     0xffaa00,
+  },
+
+  // Telegrafías: duración por defecto (ms)
+  TELEGRAPH: {
+    CHARGE:   600,
+    RADIAL:   600,
+    CONE:     500,
+    GROUND:   800,
+    BARRAGE:  400,
+    LINE:     500,
+    COLOR:          0xff6600,
+    COLOR_DANGER:   0xff0000,
+    ALPHA:          0.45,
+  },
+
+  // Arenas
+  ARENA_MARGIN: 80,   // px que el boss puede salirse del arena
+
+  // BossAI
+  AI: {
+    STRAFE_SWITCH_MS: 3000,   // cada cuánto cambia dirección en strafe
+    CHARGE_SPEED:      900,   // px/s durante un charge
+    PURSUE_INERTIA:    0.08,  // factor de giro suave en pursue
+  },
 };
