@@ -12,6 +12,7 @@ import wasp from './wasp.js';
 import dummy from './dummy.js';
 import bee from './bee.js';
 import zancudo from './zancudo.js';
+import bird from './bird.js';
 // import myEnemy from './myEnemy.js';
 
 const customEnemies = [
@@ -25,6 +26,7 @@ const customEnemies = [
     dummy,
     bee,
     zancudo,
+    bird,
     // myEnemy,
 ];
 

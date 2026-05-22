@@ -17,9 +17,11 @@ export default class AADEffect {
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
       if (Math.hypot(e.x - x, e.y - y) <= 120) {
-        if (e.receiveDamage) e.receiveDamage({ type: 'explosion', baseDamage: 30, now: this.scene?.time?.now ?? Date.now() });
-        e._willExplode = true;
-        exploded = true;
+        const died = e.receiveDamage && e.receiveDamage({ type: 'explosion', baseDamage: 30, now: this.scene?.time?.now ?? Date.now() });
+        if (died) {
+          e._willExplode = true;
+          exploded = true;
+        }
       }
     }
     if (exploded) this.explosions++;

@@ -1,6 +1,6 @@
 // js/scenes/PlayerRenderer.js
 
-import { DASH_DUR, L2, SMAX, C } from '../constants.js';
+import { DASH_DUR, L2, SMAX } from '../constants.js';
 
 // OPTIMIZACIÓN: Precalculamos los senos y cosenos del ángulo del triángulo (2.2 radianes)
 const COS_2_2 = Math.cos(2.2); // -0.5885

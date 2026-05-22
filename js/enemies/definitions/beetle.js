@@ -35,9 +35,9 @@ export default {
             hpPercentage: 0
         },
         locomotion: "ground",
-        intention: "chase",
+        intention: "wander",
         fleeOn: {
-            damaged: true,
+            damaged: false,
             lowHp: 0,
             chaseOnDamaged: false
         },
@@ -45,18 +45,9 @@ export default {
         erraticTime: 2000,
         ignoreWalls: false,
         isPhantom: false,
-        reactionRadius: 100,
-        disengageRadius: 100,
-        reactions: [
-            {
-                event: "enemyHit",
-                action: "flee",
-                radius: 300,
-                duration: 5000,
-                speed: 150,
-                allyType: "beetle"
-            }
-        ],
+        reactionRadius: 0,
+        disengageRadius: 0,
+        reactions: [],
         dash: {
             speedMultiplier: 2.5,
             windupTime: 400,
@@ -66,7 +57,7 @@ export default {
         }
     },
     damageMultipliers: {
-        dash: 0,
+        dash: 1,
         aerialDash: 0,
         wallJumpDash: 0,
         momentum3: 1,
@@ -100,9 +91,9 @@ export default {
         seeThroughWalls: false,
         attack: {
             type: "contact",
-            effect: "slow",
+            effects: ["flip"],
             damage: 1,
-            cooldown: 500
+            cooldown: 6000
         },
         defense: {
             invulnerableAura: false,

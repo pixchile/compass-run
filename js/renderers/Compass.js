@@ -23,6 +23,9 @@ export default class Compass {
     const secondaryDir = compassSystem.secondaryDir;
     if (!primaryDir || !secondaryDir) return;
 
+    const heat = compassSystem.heat ?? 0;
+    const visualAlpha = 0.2 + heat * 0.8;
+
     this._targetPrimaryColor = compassSystem.getPrimaryColor();
     this._targetSecondaryColor = compassSystem.getSecondaryColor();
 
@@ -40,13 +43,13 @@ export default class Compass {
     const primAngle = Math.atan2(primaryDir.dy, primaryDir.dx);
     const primArrowX = cx + Math.cos(primAngle) * this.distance;
     const primArrowY = cy + Math.sin(primAngle) * this.distance;
-    this.drawArrow(graphics, primArrowX, primArrowY, primAngle, this._currentPrimaryColor, 0.95, this.arrowSize);
+    this.drawArrow(graphics, primArrowX, primArrowY, primAngle, this._currentPrimaryColor, 0.95 * visualAlpha, this.arrowSize);
 
     // Flecha secundaria
     const secAngle = Math.atan2(secondaryDir.dy, secondaryDir.dx);
     const secArrowX = cx + Math.cos(secAngle) * this.distance;
     const secArrowY = cy + Math.sin(secAngle) * this.distance;
-    this.drawArrow(graphics, secArrowX, secArrowY, secAngle, this._currentSecondaryColor, 0.9, this.arrowSize * 0.65);
+    this.drawArrow(graphics, secArrowX, secArrowY, secAngle, this._currentSecondaryColor, 0.9 * visualAlpha, this.arrowSize * 0.65);
 
     // Labels — convert world coords to screen coords so text sticks with arrows
     const labelDist = this.distance + this.arrowSize + 8;

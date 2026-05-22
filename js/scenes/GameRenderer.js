@@ -1,6 +1,6 @@
 // js/scenes/GameRenderer.js
 
-import { W, H, ARENA, SMAX, L2, L3, DASH_CD, C, HP_MAX, SLAM, ATTACK_RADIOS } from '../constants.js';
+import { W, H, ARENA, SMAX, L2, L3, DASH_CD, HP_MAX, SLAM, ATTACK_RADIOS } from '../constants.js';
 
 import HealthBar from '../renderers/HealthBar.js';
 import MomentumBar from '../renderers/MomentumBar.js';
@@ -35,9 +35,13 @@ export default class GameRenderer {
 
     this.customLines = [];
     this.customZones = [];
+    this._bgImage = null;
 
     this.slamEffects = [];
     this.showAttackRadius = false;
+
+    this._spawnerTimerTexts = new Map();
+    this._spawnerTimerPool = [];
   }
 
   setCustomLines(lines) {
@@ -46,6 +50,43 @@ export default class GameRenderer {
 
   setCustomZones(zones) {
     this.customZones = zones || [];
+  }
+
+  loadBackground(path) {
+    if (this._bgImage) {
+      this._bgImage.destroy();
+      this._bgImage = null;
+    }
+    const key = 'mapbg';
+    if (this.scene.textures.exists(key)) {
+      this.scene.textures.remove(key);
+    }
+    const a = this.gameScene?.currentMap?.arena || { x: 55, y: 58, w: 4000, h: 4000 };
+    const img = new window.Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const scaleX = a.w / img.width;
+      const scaleY = a.h / img.height;
+      const worldScale = Math.min(scaleX, scaleY);
+      const drawW = Math.floor(img.width * worldScale);
+      const drawH = Math.floor(img.height * worldScale);
+
+      const cvs = document.createElement('canvas');
+      cvs.width = drawW;
+      cvs.height = drawH;
+      const ctx = cvs.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, drawW, drawH);
+
+      if (this.scene.textures.exists(key)) this.scene.textures.remove(key);
+      this.scene.textures.addCanvas(key, cvs);
+      this.scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.LINEAR);
+
+      this._bgImage = this.scene.add.image(0, 0, key).setOrigin(0, 0).setDepth(-1);
+      this._bgImage._worldScale = 1;
+    };
+    img.src = path;
   }
 
   addSlamEffect(x, y, isHighSpeed, maxRadius) {
@@ -146,7 +187,7 @@ export default class GameRenderer {
     }
   }
 
-  render(player, compassSystem, gameOver = false, gameOverAlpha = 0, gameOverReason = null, timeRemaining = null, delta = 16) {
+  render(player, compassSystem, gameOver = false, gameOverAlpha = 0, gameOverReason = null, timeRemaining = null, delta = 16, elapsedSeconds = 0) {
     const g = this.g;
     const now = this.scene.time.now;
 
@@ -155,6 +196,15 @@ export default class GameRenderer {
 
     this.updateSlamEffects(delta);
     this.damageNumbers.update(delta);
+
+    // Sync background image with custom camera
+    if (this._bgImage) {
+      const a = this.gameScene.currentMap?.arena || { x: 55, y: 58, w: 4000, h: 4000 };
+      const screenOrigin = this.camera.worldToScreen(a.x, a.y);
+      this._bgImage.setPosition(screenOrigin.x, screenOrigin.y);
+      const ws = this._bgImage._worldScale || 1;
+      this._bgImage.setScale(ws * this.camera.zoom);
+    }
 
     g.clear();
     const time = {
@@ -167,12 +217,9 @@ export default class GameRenderer {
 
     this.camera.apply(g);
 
-    this.arenaRenderer.render(g, momentum?.level || 1, time);
+    this.arenaRenderer.render(g, momentum?.level || 1, time, !!this._bgImage);
 
-    if (this.customZones && this.customZones.length > 0) {
-      this.mapRenderer.renderZones(g, this.customZones);
-    }
-
+    // Zones are invisible in-game — they're collision-only, visuals come from the background image
     if (this.customLines && this.customLines.length > 0) {
       this.mapRenderer.renderLines(g, this.customLines);
     }
@@ -198,6 +245,8 @@ export default class GameRenderer {
 
     // Brújula nueva: pasar compassSystem
     this.compass.render(g, player, compassSystem, this.camera);
+
+    this._renderSpawnerTimers(elapsedSeconds);
 
     this.camera.restore(g);
 
@@ -240,11 +289,63 @@ export default class GameRenderer {
     this.showAttackRadius = !this.showAttackRadius;
   }
 
+  _renderSpawnerTimers(elapsedSeconds) {
+    const timers = this.gameScene.enemyManager.getSpawnerTimers(elapsedSeconds);
+    const usedKeys = new Set();
+
+    for (const t of timers) {
+      const key = `${t.x}_${t.y}`;
+      usedKeys.add(key);
+
+      let textObj = this._spawnerTimerTexts.get(key);
+      if (!textObj) {
+        if (this._spawnerTimerPool.length > 0) {
+          textObj = this._spawnerTimerPool.pop();
+          textObj.setVisible(true);
+        } else {
+          textObj = this.scene.add.text(0, 0, '', {
+            fontFamily: 'monospace',
+            fontSize: '11px',
+            color: '#cccccc',
+            stroke: '#000000',
+            strokeThickness: 3,
+            align: 'center',
+          }).setOrigin(0.5, 0).setDepth(5);
+        }
+        this._spawnerTimerTexts.set(key, textObj);
+      }
+
+      let label;
+      if (t.state === 'max_alive') {
+        label = 'MAX';
+      } else if (t.state === 'waiting_start') {
+        label = `${Math.ceil(t.remainingMs / 1000)}s`;
+      } else {
+        const sec = Math.max(0, t.remainingMs / 1000);
+        label = sec >= 1 ? `${sec.toFixed(1)}s` : 'NOW';
+      }
+
+      textObj.setText(label);
+      const screen = this.camera.worldToScreen(t.x, t.y);
+      textObj.setPosition(screen.x, screen.y - 18 * this.camera.zoom);
+      textObj.setScale(this.camera.zoom);
+      textObj.setAlpha(0.8);
+    }
+
+    for (const [key, textObj] of this._spawnerTimerTexts) {
+      if (!usedKeys.has(key)) {
+        textObj.setVisible(false);
+        this._spawnerTimerTexts.delete(key);
+        this._spawnerTimerPool.push(textObj);
+      }
+    }
+  }
+
   _renderBossName(g, name, alpha) {
     // Texto del nombre del boss centrado en pantalla — usando Phaser Text
     // Solo creamos el objeto una vez y lo reusamos
     if (!this._bossNameTextObj) {
-      this._bossNameTextObj = this.scene.add.text(440, 52, '', {
+      this._bossNameTextObj = this.scene.add.text(440, 110, '', {
         fontFamily: 'monospace',
         fontSize: '20px',
         color: '#ff6633',

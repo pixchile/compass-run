@@ -1,6 +1,6 @@
 // js/systems/CombatSystem.js
 
-import { SLAM, DASH_PIERCE_BASE, MOMENTUM3_HIT_COOLDOWN } from '../constants.js';
+import { SLAM, MOMENTUM3_HIT_COOLDOWN, DASH_PIERCE_BASE, ENEMY_ATTACK } from '../constants.js';
 
 export default class CombatSystem {
   constructor(manager, scene) {
@@ -8,9 +8,8 @@ export default class CombatSystem {
     this.scene = scene;
     
     this.damagedThisDash = new Set();
+    this._dashPierceCount = 0;
     this.wasDashing = false;
-    this.dashPierceCount = 0;
-    this.dashPierceMax = 0;
 
     // Objetos Zero-Allocation
     this._dashAttackObj   = { type: 'dash', baseDamage: 0, now: 0, radius: 0 };
@@ -29,11 +28,8 @@ export default class CombatSystem {
     const dashJustStarted = player.dashing && !this.wasDashing;
     if (dashJustStarted) {
       this.damagedThisDash.clear();
+      this._dashPierceCount = 0;
       if (fx) { fx.lockGGGForAttack(); }
-      
-      const dashSpeed = player.dashInitialSpeed || 0;
-      this.dashPierceMax = DASH_PIERCE_BASE + Math.max(0, Math.floor((dashSpeed - 500) / 100));
-      this.dashPierceCount = 0;
     }
 
     // BBC: si el jugador aterrizó (jumping pasó de true a false) sin rebotar → resetear cadena
@@ -46,15 +42,26 @@ export default class CombatSystem {
 
     const attackPayload = player.getCurrentAttackPayload(momentumSystem.level);
 
-    // AAG: One-Two — signal dash start
+    // AAG: One-Two — record base damage on dash start
     if (dashJustStarted && attackPayload) {
-      fx?.onDashStarted();
+      fx?.onDashStarted(attackPayload.baseDamage);
     }
     const enemies = this.manager.enemies;
     const auraEmitters = enemies.filter(e => e.invulnerableAura && e.hp > 0);
 
     for (let i = enemies.length - 1; i >= 0; i--) {
       const enemy = enemies[i];
+
+      // El boss entity lo maneja BossManager directamente
+      if (enemy._isBossEntity) continue;
+      // BossAttackEnemies solo dañan al player — no reciben daño del player
+      if (enemy._isBossAttack) {
+        if (!player.isInvincible && !player._stickState) {
+          this._applyDamageToPlayer(enemy, player, now);
+        }
+        continue;
+      }
+
       const distToPlayer = Math.hypot(enemy.x - player.px, enemy.y - player.py);
       const inAttackRange = attackPayload && distToPlayer <= attackPayload.radius;
       const died = this._processSingleInteraction(enemy, player, attackPayload, auraEmitters, now, momentumSystem);
@@ -78,11 +85,12 @@ export default class CombatSystem {
     const distToPlayer = Math.hypot(enemy.x - player.px, enemy.y - player.py);
     const isInAttackRange = attackPayload && (distToPlayer <= attackPayload.radius);
     
+    const contactGrace = (enemy.customConfig?.ambitious?.attack?.type || 'contact') === 'contact' ? 10 : 0;
     let isColliding = false;
     if (typeof enemy.collidesWith === 'function') {
-        isColliding = enemy.collidesWith(player.px, player.py, playerRadius);
+        isColliding = enemy.collidesWith(player.px, player.py, playerRadius + contactGrace);
     } else {
-        isColliding = distToPlayer < (enemy.radius || 12) + playerRadius;
+        isColliding = distToPlayer < (enemy.radius || 12) + playerRadius + contactGrace;
     }
 
     if (!isInAttackRange && !isColliding) return false;
@@ -108,26 +116,19 @@ export default class CombatSystem {
 
     if (attackPayload && isInAttackRange) {
         if (player.dashing && this.damagedThisDash.has(enemy)) return false;
-
-        if (attackPayload.type === 'momentum3') {
-            const lastHit = enemy._lastMomentum3Hit || 0;
-            if (now - lastHit < MOMENTUM3_HIT_COOLDOWN) return false;
-            enemy._lastMomentum3Hit = now;
+        if (player.dashing) {
+          const pierceMax = DASH_PIERCE_BASE + Math.max(0, Math.floor((currentSpeed - 500) / 100));
+          if (this._dashPierceCount >= pierceMax) return false;
         }
-
-        if (player.dashing && this.dashPierceCount >= this.dashPierceMax) {
-            enemyDied = false;
-        } else {
-            const multiplier = enemy.damageMultipliers?.[attackPayload.type] ?? 1.0;
-            enemyDied = this._damageEnemy(enemy, attackPayload.type, attackPayload.baseDamage, attackPayload.radius, now, attackPayload.trueDamage || 0);
-            
-            if (player.dashing && multiplier > 0) {
-                this.dashPierceCount++;
-            }
-            if (player.dashing && !enemyDied) this.damagedThisDash.add(enemy);
+        if (attackPayload.type === 'momentum3' && Date.now() - (enemy._lastMomentum3Hit || 0) < MOMENTUM3_HIT_COOLDOWN) return false;
+        enemyDied = this._damageEnemy(enemy, attackPayload.type, attackPayload.baseDamage, attackPayload.radius, now, attackPayload.trueDamage || 0);
+        if (attackPayload.type === 'momentum3') enemy._lastMomentum3Hit = Date.now();
+        if (player.dashing) {
+          this._dashPierceCount++;
+          if (!enemyDied) this.damagedThisDash.add(enemy);
         }
     }
-    else if (!player.isInvincible && !isInAttackRange && !enemy.isGrabbed && !player._stickState) {
+    else if (!player.isInvincible && !player.dashing && !isInAttackRange && !enemy.isGrabbed && !player._stickState) {
         this._applyDamageToPlayer(enemy, player, now);
     }
 
@@ -135,36 +136,24 @@ export default class CombatSystem {
   }
 
   _damageEnemy(enemy, type, damage, radius, now, trueDamage = 0) {
-    // If the enemy is immune to this attack type (multiplier <= 0), skip all damage including true damage
-    const multiplier = enemy.damageMultipliers?.[type] ?? 1.0;
-    if (multiplier <= 0) return false;
+    if ((enemy.damageMultipliers?.[type] ?? 1) <= 0) return false;
 
-    const isDashType = type === 'dash' || type === 'aerialDash' || type === 'wallJumpDash';
-
-    // AAG: accumulate damage dealt during record dash
-    if (isDashType && damage > 0) {
-      this.scene?.itemEffects?.accumulateAAGDamage(damage);
-    }
-
-    // AAG: bonus true damage on first enemy hit during bonus dash
-    const aagBonus = isDashType
+    // AAG: One-Two — bonus damage on first enemy hit during bonus dash
+    const aagBonus = (type === 'dash' || type === 'aerialDash' || type === 'wallJumpDash')
       ? (this.scene?.itemEffects?.consumeAAGBonus() || 0) : 0;
+    const totalDamage = damage + aagBonus;
 
-    // DBB (Paciencia) also multiplies AAG bonus true damage
-    const aagWithDBB = aagBonus * (this.scene?.itemEffects?.getDBBTrueDamageMultiplier() ?? 1);
-
-    if (damage > 0) this.scene?.compass?.recordHitDamage(damage);
+    if (totalDamage > 0) this.scene?.compass?.recordHitDamage(totalDamage);
     const hpBefore = enemy.hp;
     let died;
     if (typeof enemy.receiveDamage === 'function') {
-        died = enemy.receiveDamage({ type, baseDamage: damage, radius, now });
+        died = enemy.receiveDamage({ type, baseDamage: totalDamage, radius, now });
     } else {
-        enemy.hp = (enemy.hp || 1) - damage;
+        enemy.hp = (enemy.hp || 1) - totalDamage;
         died = enemy.hp <= 0;
     }
     const actualDamage = hpBefore - enemy.hp;
     if (actualDamage > 0) {
-        this.scene?.runStats?.recordDamageDealt(actualDamage);
         this.manager.addEvent('enemyHit', enemy.x, enemy.y, enemy.type, { damage: actualDamage, sourceId: enemy.id });
         const colorKey = (type === 'slam' || type === 'slam3') ? 'slamDamage' : 'enemyDamage';
         this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, actualDamage, colorKey);
@@ -172,23 +161,33 @@ export default class CombatSystem {
         if (p) this.scene?.itemEffects?.applyGGGCreditEffect(p.px, p.py);
     }
 
-    // True damage (incl. AAG bonus) — bypasses enemy type multipliers
-    const totalTrueDamage = trueDamage + aagWithDBB;
-    if (totalTrueDamage > 0) {
+    // True damage — bypasses enemy type multipliers, always deals flat amount
+    if (trueDamage > 0) {
       if (!died) {
-        enemy.hp = (enemy.hp || 1) - totalTrueDamage;
+        enemy.hp = (enemy.hp || 1) - trueDamage;
         if (enemy.hp <= 0) died = true;
       }
-      this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, totalTrueDamage, 'trueDamage');
-      this.scene?.runStats?.recordTrueDamage(totalTrueDamage);
+      this.scene?.spawnDamageNumber?.(enemy.x, enemy.y, trueDamage, 'trueDamage');
     }
 
     return died;
   }
 
   _applyDamageToPlayer(enemy, player, now) {
-      if (player._undetectable) return;
+      if (player._undetectable || player._inShop) return;
       if (!enemy.state) enemy.state = {};
+
+      // BossAttackEnemy: usa su propio damage y cooldown de 500ms
+      if (enemy._isBossAttack) {
+          if (now - (enemy.state.lastAttackTime || 0) < 500) return;
+          const dist = Math.hypot(player.px - enemy.x, player.py - enemy.y);
+          if (dist > (enemy.radius || 12) + 12) return;
+          enemy.state.lastAttackTime = now;
+          player.takeEnemyDamage(enemy._attackDamage ?? 10);
+          if (!enemy._lingering) enemy.hp = 0; // despawn al tocar
+          return;
+      }
+
       const cooldown = enemy.customConfig?.ambitious?.attack?.cooldown ?? 100;
       if (now - (enemy.state.lastAttackTime || 0) < cooldown) return;
 
@@ -212,15 +211,42 @@ export default class CombatSystem {
       const dmgMult = enemy.customConfig?.ambitious?.attack?.damage ?? 1;
       player.takeEnemyDamage(dmgMult);
 
-      const effect = enemy.customConfig?.ambitious?.attack?.effect;
-      if (effect === 'slow' && !player._demonMode) {
-          player.slowTimer = (player.slowTimer || 0) + 1500;
-      } else if (effect === 'push') {
+      const attackCfg = enemy.customConfig?.ambitious?.attack;
+      const effect = attackCfg?.effect;
+      const effects = attackCfg?.effects || [];
+      const has = (name) => effect === name || effects.includes(name);
+
+      if (has('slow') && !player._demonMode) {
+          player.slowTimer = Math.max(player.slowTimer || 0, ENEMY_ATTACK.SLOW_DURATION);
+      }
+      if (has('push')) {
           const angle = Math.atan2(player.py - enemy.y, player.px - enemy.x);
-          player.vx += Math.cos(angle) * 300;
-          player.vy += Math.sin(angle) * 300;
-      } else if (effect === 'noJump') {
-          player.noJumpTimer = (player.noJumpTimer || 0) + 2000;
+          player.vx += Math.cos(angle) * ENEMY_ATTACK.PUSH_FORCE;
+          player.vy += Math.sin(angle) * ENEMY_ATTACK.PUSH_FORCE;
+      }
+      if (has('noJump')) {
+          player.noJumpTimer = Math.max(player.noJumpTimer || 0, ENEMY_ATTACK.NO_JUMP_DURATION);
+      }
+      if (has('flip')) {
+          const fdx = enemy.x - player.px;
+          const fdy = enemy.y - player.py;
+          const fdist = Math.hypot(fdx, fdy);
+          if (fdist > 0.01) {
+              const fdirX = fdx / fdist;
+              const fdirY = fdy / fdist;
+              player.vx = fdirX * ENEMY_ATTACK.FLIP_HORIZONTAL_FORCE;
+              player.vy = fdirY * ENEMY_ATTACK.FLIP_HORIZONTAL_FORCE - ENEMY_ATTACK.FLIP_UPWARD_FORCE;
+          }
+          player.jumping = true;
+          player.jumpT = 0;
+          player.jumpDur = 800;
+          player.jumpVx = player.vx;
+          player.jumpVy = player.vy;
+          player.noJumpTimer = Math.max(player.noJumpTimer || 0, ENEMY_ATTACK.FLIP_STUN_DURATION);
+          player.dashCD = Math.max(player.dashCD || 0, ENEMY_ATTACK.FLIP_STUN_DURATION);
+          if (player.combat) player.combat.hasSlammedThisJump = false;
+          // Beetle recoil: can't chase for 1s after flipping
+          enemy._flipRecoil = 1000;
       }
   }
 
@@ -301,7 +327,7 @@ export default class CombatSystem {
   }
 
   checkSolidCollision(player, playerRadius = 12) {
-    if (player._undetectable) return false;
+    if (player._undetectable || player._inShop) return false;
     let collided = false;
     for (const enemy of this.manager.enemies) {
       if (enemy.isPhantom) continue;
@@ -327,7 +353,7 @@ export default class CombatSystem {
   }
 
   checkImpenetrableCollision(player, playerRadius = 12) {
-    if (player._undetectable) return;
+    if (player._undetectable || player._inShop) return;
     for (const enemy of this.manager.enemies) {
       if (!enemy.impenetrable || enemy.isPhantom) continue;
       const r = enemy.radius || 12;

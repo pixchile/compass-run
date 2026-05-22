@@ -7,13 +7,15 @@ export default class AAAEffect {
   }
 
   getMultiplier(player) {
+    const maxHp = player.health.maxHp || 50;
     const hp = player.health.hp || 0;
-    const missing = Math.max(0, 100 - hp);
-    return 1 + Math.min(1, missing / 75);
+    const missing = Math.max(0, maxHp - hp);
+    return 1 + Math.min(1, missing / (maxHp * 0.75));
   }
 
   getCost(player) {
-    return (player.health.hp || 0) >= 25 ? 3 : 0;
+    const maxHp = player.health.maxHp || 50;
+    return (player.health.hp || 0) >= maxHp * 0.5 ? 3 : 0;
   }
 
   reset() {}

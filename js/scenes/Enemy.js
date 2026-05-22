@@ -48,6 +48,8 @@ export default class Enemy {
             lastX: x,
             lastY: y
         };
+
+        this.facingAngle = Math.PI * -0.5;
     }
 
     collidesWith(playerX, playerY, playerRadius = 12) {

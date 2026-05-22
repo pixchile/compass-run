@@ -23,11 +23,26 @@ export default class ZoneSystem {
 
     _isInsideZone(px, py, zone) {
         const geo = zone.geometry;
-        const bbox = geo?.bbox || geo || zone;
-        const bx = bbox.x ?? zone.x;
-        const by = bbox.y ?? zone.y;
-        const bw = bbox.w ?? zone.w;
-        const bh = bbox.h ?? zone.h;
+        let bx, by, bw, bh;
+
+        // Compute bbox from vertices if missing
+        const verts = geo?.vertices || zone.vertices;
+        if (verts && verts.length >= 3) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const v of verts) {
+                if (v.x < minX) minX = v.x;
+                if (v.y < minY) minY = v.y;
+                if (v.x > maxX) maxX = v.x;
+                if (v.y > maxY) maxY = v.y;
+            }
+            bx = minX; by = minY; bw = maxX - minX; bh = maxY - minY;
+        } else {
+            const bbox = geo?.bbox || zone;
+            bx = bbox.x;
+            by = bbox.y;
+            bw = bbox.w;
+            bh = bbox.h;
+        }
 
         if (bx === undefined || by === undefined) return false;
 
@@ -35,8 +50,8 @@ export default class ZoneSystem {
         if (px < bx || px > bx + bw || py < by || py > by + bh) return false;
 
         // If zone has polygon vertices, do accurate point-in-polygon
-        const verts = geo?.vertices;
-        if (verts && verts.length >= 3) return this._pointInPolygon(px, py, verts);
+        const verts2 = geo?.vertices;
+        if (verts2 && verts2.length >= 3) return this._pointInPolygon(px, py, verts2);
 
         return true; // simple rect
     }
@@ -57,10 +72,15 @@ export default class ZoneSystem {
                 case 'shop':
                 case 'pit_stop': {
                     playerInShop = true;
+                    player._inShop = true;
                     const shopId = zone.tags?.join('_') || 'shop_default';
                     const ui = this._scene.shopUI;
                     if (ui && !ui.visible && !ui.manuallyClosed) {
-                        ui.open(shopId);
+                        this._shopEnterTimer = (this._shopEnterTimer || 0) + delta;
+                        if (this._shopEnterTimer >= 1000) {
+                            ui.open(shopId);
+                            this._shopEnterTimer = 0;
+                        }
                     }
                     break;
                 }
@@ -92,10 +112,12 @@ export default class ZoneSystem {
 
         // Al salir del área: cerrar shop si estaba abierto, y limpiar flag manual
         if (!playerInShop) {
+            this._shopEnterTimer = 0;
             if (this._inShopZone && this._scene.shopUI?.visible) {
                 this._scene.shopUI.close();
             }
             if (this._scene.shopUI) this._scene.shopUI.manuallyClosed = false;
+            player._inShop = false;
         }
         this._inShopZone = playerInShop;
 
@@ -107,6 +129,7 @@ export default class ZoneSystem {
                 for (let j = enemies.length - 1; j >= 0; j--) {
                     const e = enemies[j];
                     if (e.ignoreWalls) continue;
+                    if (e._isBossEntity || e._isBossAttack) continue;
                     if (this._isInsideZone(e.x, e.y, z)) {
                         const hpBefore = e.hp;
                         const died = e.receiveDamage

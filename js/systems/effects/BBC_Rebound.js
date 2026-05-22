@@ -1,7 +1,7 @@
 // js/systems/effects/BBC_Rebound.js
 // B+B+C: Landing on enemies sticks player, Space + direction bounces off with damage
 
-import { WALL_JUMP } from '../../constants.js';
+import { BBC_REBOUND_SPEEDS } from '../../constants.js';
 
 export default class BBCEffect {
   constructor(scene) {
@@ -73,7 +73,7 @@ export default class BBCEffect {
     enemy._frozen = false;
 
     const lv = momentumSystem?.level ?? 1;
-    const jumpSpd = WALL_JUMP.SPEEDS[lv] || 400;
+    const jumpSpd = BBC_REBOUND_SPEEDS[lv] || 400;
     player.jumping = true;
     player.jumpT = 0;
     player.jumpDur = 400;

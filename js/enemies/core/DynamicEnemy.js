@@ -235,6 +235,12 @@ export default class DynamicEnemy extends Enemy {
             this.speed = this.baseSpeed;
         }
 
+        // Flip recoil: brief slowdown after throwing the player
+        if (this._flipRecoil > 0) {
+            this._flipRecoil -= delta;
+            this.speed = Math.min(this.speed, this.baseSpeed * 0.25);
+        }
+
         // --- EVENT REACTIONS: reaccion a eventos cercanos ---
         // Throttled al mismo ciclo que hate (4Hz) — los eventos no son urgentes frame a frame.
         if (this.reactions.length > 0 && !this._activeReaction && this._hateCheckTimer === 0) {
@@ -327,7 +333,7 @@ export default class DynamicEnemy extends Enemy {
         }
 
         // --- UNDETECTABLE PLAYER ---
-        if (player._undetectable && effectiveIntention !== 'wander') {
+        if ((player._undetectable || player._inShop) && effectiveIntention !== 'wander') {
             effectiveIntention = 'wander';
         }
 
@@ -383,6 +389,11 @@ export default class DynamicEnemy extends Enemy {
             }
         }
 
+        // Steer away from nearby enemies
+        const steer = this._steerAwayFromNearbyEnemies();
+        moveX += steer.x * (delta / 1000);
+        moveY += steer.y * (delta / 1000);
+
         // Aplicar movimiento
         this.x += moveX;
         this.y += moveY;
@@ -414,6 +425,22 @@ export default class DynamicEnemy extends Enemy {
         this.state.lastX = this.x;
         this.state.lastY = this.y;
         this.trapped = false;
+
+        const dx = moveX;
+        const dy = moveY;
+        const moved = Math.hypot(dx, dy) > 0.5;
+
+        if (effectiveIntention === 'chase' || effectiveIntention === 'seek' || effectiveIntention === 'orbit') {
+          const tx = (this._hateTarget ? this._hateTarget.x : player.px) - this.x;
+          const ty = (this._hateTarget ? this._hateTarget.y : player.py) - this.y;
+          this.facingAngle = Math.atan2(ty, tx);
+        } else if (effectiveIntention === 'flee') {
+          const tx = this.x - player.px;
+          const ty = this.y - player.py;
+          this.facingAngle = Math.atan2(ty, tx);
+        } else if (moved) {
+          this.facingAngle = Math.atan2(dy, dx);
+        }
     }
 
     handleWallCollisions(lines, player, delta) {
@@ -463,10 +490,36 @@ export default class DynamicEnemy extends Enemy {
         if (!hitWall) this._wallStuckFrames = 0;
     }
 
-    // ─── ENEMY-ENEMY SEPARATION ──────────────────────────────
+    // ─── ENEMY-ENEMY STEERING ─────────────────────────────────
+
+    _steerAwayFromNearbyEnemies() {
+        const enemies = this.scene?.enemyManager?.enemies;
+        if (!enemies || enemies.length < 2) return { x: 0, y: 0 };
+
+        let steerX = 0, steerY = 0;
+        const isPhantom = !!this.ignoreWalls;
+
+        for (const other of enemies) {
+            if (other === this || other.hp <= 0) continue;
+            const dx = this.x - other.x;
+            const dy = this.y - other.y;
+            const dist = Math.hypot(dx, dy);
+            const minDist = this.radius + (other.radius || 16) + 4;
+            if (dist < minDist && dist > 0.01) {
+                const strength = (minDist - dist) / minDist; // 0..1
+                const factor = isPhantom ? 0.3 : 1.0;
+                const speed = this.speed || this.baseSpeed || 50;
+                steerX += (dx / dist) * strength * speed * factor;
+                steerY += (dy / dist) * strength * speed * factor;
+            }
+        }
+
+        return { x: steerX, y: steerY };
+    }
+
+    // ─── ENEMY-ENEMY SEPARATION (safety net for extreme overlaps) ───
 
     _separateFromNearbyEnemies() {
-        // Los phantoms (ignoreWalls) pueden solaparse — atraviesan todo
         if (this.ignoreWalls) return;
 
         const enemies = this.scene?.enemyManager?.enemies;
@@ -474,16 +527,15 @@ export default class DynamicEnemy extends Enemy {
 
         for (const other of enemies) {
             if (other === this || other.hp <= 0) continue;
-            // Si el otro es phantom, no lo empujamos (atraviesa)
             if (other.ignoreWalls) continue;
             const dx = this.x - other.x;
             const dy = this.y - other.y;
             const dist = Math.hypot(dx, dy);
-            const minDist = this.radius + (other.radius || 16) + 4;
+            const minDist = (this.radius + (other.radius || 16)) * 0.5;
             if (dist < minDist && dist > 0.01) {
                 const overlap = minDist - dist;
-                this.x += (dx / dist) * overlap * 0.5;
-                this.y += (dy / dist) * overlap * 0.5;
+                this.x += (dx / dist) * overlap * 0.3;
+                this.y += (dy / dist) * overlap * 0.3;
             }
         }
     }
@@ -580,8 +632,16 @@ export default class DynamicEnemy extends Enemy {
             this._advanceWaypoint(path, mode, idx, false);
         } else {
             const speed = this.speed ?? this.baseSpeed ?? 200;
-            this.x += (dx / dist) * speed * (delta / 1000);
-            this.y += (dy / dist) * speed * (delta / 1000);
+            const steer = this._steerAwayFromNearbyEnemies();
+            const wx = (dx / dist) * speed;
+            const wy = (dy / dist) * speed;
+            const totalX = wx + steer.x;
+            const totalY = wy + steer.y;
+            const totalLen = Math.hypot(totalX, totalY);
+            if (totalLen > 0.001) {
+                this.x += (totalX / totalLen) * speed * (delta / 1000);
+                this.y += (totalY / totalLen) * speed * (delta / 1000);
+            }
         }
         return true;
     }
@@ -662,8 +722,16 @@ export default class DynamicEnemy extends Enemy {
             }
         } else {
             const speed = this.speed ?? this.baseSpeed ?? 200;
-            this.x += (dx / dist) * speed * (delta / 1000);
-            this.y += (dy / dist) * speed * (delta / 1000);
+            const steer = this._steerAwayFromNearbyEnemies();
+            const wx = (dx / dist) * speed;
+            const wy = (dy / dist) * speed;
+            const totalX = wx + steer.x;
+            const totalY = wy + steer.y;
+            const totalLen = Math.hypot(totalX, totalY);
+            if (totalLen > 0.001) {
+                this.x += (totalX / totalLen) * speed * (delta / 1000);
+                this.y += (totalY / totalLen) * speed * (delta / 1000);
+            }
         }
         return true;
     }

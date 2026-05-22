@@ -26,8 +26,8 @@ export default {
     },
     movement: {
         mobile: true,
-        speed: 200,
-        activeSpeed: 250,
+        speed: 600,
+        activeSpeed: 220,
         scaling: {
             timeBase: true,
             timeMultiplier: 1.3,
@@ -45,8 +45,8 @@ export default {
         erraticTime: 2000,
         ignoreWalls: true,
         isPhantom: true,
-        reactionRadius: 300,
-        disengageRadius: 600,
+        reactionRadius: 800,
+        disengageRadius: 1000,
         reactions: [],
         dash: {
             speedMultiplier: 2.5,

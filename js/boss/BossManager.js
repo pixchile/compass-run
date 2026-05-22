@@ -95,8 +95,16 @@ export default class BossManager {
         // Agregar al array de enemigos del EnemyManager para que reciba daño
         this.enemyManager.addEnemy(this._boss);
 
-        // Mostrar nombre
-        this._showBossName(definition.name || definition.id);
+        // DEBUG: interceptar cambios de hp para ver quién mata al boss
+        let _hp = this._boss.hp;
+        Object.defineProperty(this._boss, 'hp', {
+            get: () => _hp,
+            set: (v) => {
+                if (v < _hp) console.warn(`[Boss HP] ${_hp} → ${v}`, new Error().stack.split('\n').slice(1,4).join(' | '));
+                _hp = v;
+            },
+            configurable: true,
+        });
 
         console.log(`[BossManager] Spawned boss "${definition.id}" at (${x}, ${y})`);
     }
@@ -125,6 +133,7 @@ export default class BossManager {
                     this._boss._invulnerable = false;
                     this._enterPhase(0);
                     this._state = 'active';
+                    this._showBossName(this._definition.name || this._definition.id);
                 }
                 break;
 

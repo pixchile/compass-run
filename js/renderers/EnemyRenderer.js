@@ -28,37 +28,48 @@ export default class EnemyRenderer {
       // Color de la barra según porcentaje de HP
       const barColor = hpPct > 0.5 ? 0x44ff44 : (hpPct > 0.25 ? 0xffaa44 : 0xff4444);
 
+      const angle = enemy.facingAngle ?? enemy._facingAngle ?? Math.PI * -0.5;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+
       // --- DIBUJADO DEL CUERPO ---
-      if (shape === 'rectangle') {
+      if (shape === 'triangle') {
+        const r = enemy.radius;
+
+        const tipX = enemy.x + cos * r;
+        const tipY = enemy.y + sin * r;
+        const backX = enemy.x - cos * r * 0.7;
+        const backY = enemy.y - sin * r * 0.7;
+        const perpX = -sin * r * 0.7;
+        const perpY = cos * r * 0.7;
+
+        graphics.fillStyle(color, 0.95);
+        graphics.fillTriangle(tipX, tipY, backX + perpX, backY + perpY, backX - perpX, backY - perpY);
+
+        graphics.lineStyle(2, 0x000000, 0.3);
+        graphics.strokeTriangle(tipX, tipY, backX + perpX, backY + perpY, backX - perpX, backY - perpY);
+      } else if (shape === 'rectangle') {
         const diam = enemy.radius * 2;
         const cx = enemy.x - enemy.radius;
         const cy = enemy.y - enemy.radius;
 
-        // Sombra
-        graphics.fillStyle(0x000000, 0.25);
-        graphics.fillRect(cx, cy + 3, diam, diam); 
-        
         // Cuerpo principal (Color del Editor)
         graphics.fillStyle(color, 0.95);
         graphics.fillRect(cx, cy, diam, diam); 
-        
-        // Brillo (esquina superior izquierda)
-        graphics.fillStyle(0xffffff, 0.15);
-        graphics.fillRect(cx + 2, cy + 2, diam * 0.35, diam * 0.35); 
+
+        // Direccional frontal (arco brillante)
+        this._drawFacingArc(graphics, enemy, color, cos, sin);
         
         // Borde oscuro
         graphics.lineStyle(2, 0x000000, 0.3);
         graphics.strokeRect(cx, cy, diam, diam); 
       } else {
         // Por defecto: Círculo
-        graphics.fillStyle(0x000000, 0.25);
-        graphics.fillCircle(enemy.x, enemy.y + 3, enemy.radius);
-        
         graphics.fillStyle(color, 0.95);
         graphics.fillCircle(enemy.x, enemy.y, enemy.radius);
         
-        graphics.fillStyle(0xffffff, 0.15);
-        graphics.fillCircle(enemy.x - 2, enemy.y - 2, enemy.radius * 0.35);
+        // Direccional frontal (arco brillante)
+        this._drawFacingArc(graphics, enemy, color, cos, sin);
         
         graphics.lineStyle(2, 0x000000, 0.3);
         graphics.strokeCircle(enemy.x, enemy.y, enemy.radius);
@@ -99,6 +110,26 @@ export default class EnemyRenderer {
         }
       }
     }
+  }
+
+  _drawFacingArc(graphics, enemy, color, cos, sin) {
+    const r = enemy.radius * 0.65;
+    const cx = enemy.x + cos * r * 0.55;
+    const cy = enemy.y + sin * r * 0.55;
+
+    const isBright = this._isBrightColor(color);
+    const arcColor = isBright ? 0x000000 : 0xffffff;
+    const alpha = isBright ? 0.55 : 0.65;
+
+    graphics.fillStyle(arcColor, alpha);
+    graphics.fillCircle(cx, cy, r * 0.55);
+  }
+
+  _isBrightColor(hex) {
+    const r = (hex >> 16) & 0xff;
+    const g = (hex >> 8) & 0xff;
+    const b = hex & 0xff;
+    return (r * 0.299 + g * 0.587 + b * 0.114) > 140;
   }
 
   _renderBossAttack(graphics, enemy) {

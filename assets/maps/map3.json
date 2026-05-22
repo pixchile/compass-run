@@ -1,0 +1,11 @@
+{
+  "arena": {
+    "x": 55,
+    "y": 58,
+    "w": 4000,
+    "h": 4000
+  },
+  "lines": [],
+  "zones": [],
+  "background": "default5.png"
+}

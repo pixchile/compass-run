@@ -1,4 +1,4 @@
-import { HP_MAX, HP_DMG_ENEMY_HIT, HP_DMG_VOID, HP_REGEN_DELAY, HP_REGEN_RATE, W, H } from '../../constants.js';
+import { HP_MAX, HP_DMG_VOID, HP_REGEN_DELAY, HP_REGEN_RATE, W, H } from '../../constants.js';
 
 export default class PlayerHealth {
     constructor(player) {
@@ -38,13 +38,13 @@ export default class PlayerHealth {
         this.hp = Math.max(0, newHp);
         this.hpRegenT = 0;
         this.isInvincible = true;
-        this.invincibleTimer = 50;
+        this.invincibleTimer = 200;
         // DBB: notificar daño recibido
         this.player?.scene?.itemEffects?.onPlayerTookDamage();
         this.player?.scene?.spawnDamageNumber?.(this.player.px, this.player.py, amount, 'playerDamage');
     }
 
-    takeEnemyDamage(mult = 1) { this.takeDamage(HP_DMG_ENEMY_HIT * mult); }
+    takeEnemyDamage(mult = 1) { this.takeDamage(1 * mult); }
 
     heal(amount) {
         const before = this.hp;

@@ -5,7 +5,7 @@ import GameRenderer from './GameRenderer.js';
 import Camera from './Camera.js';
 import enemyRegistry from '../enemies/EnemyRegistry.js';
 import EnemyManager from './EnemyManager.js';
-import SVGMapLoader from '../systems/SVGMapLoader.js';
+import JSONMapLoader from '../systems/JSONMapLoader.js';
 import RewardSystem from './RewardSystem.js';
 import OrbManager from './OrbManager.js';
 import CollisionSystem from '../systems/CollisionSystem.js';
@@ -36,9 +36,10 @@ export default class Game extends Phaser.Scene {
 
     async create() {
         registerAllCustomEnemies(enemyRegistry);
-        this.mapLoader = new SVGMapLoader();
+        this.mapLoader = new JSONMapLoader();
 
-        this.currentMap = await this.mapLoader.loadMapFromURL(`assets/maps/${this.mapName}.svg`);
+        this.currentMap = await this.mapLoader.loadMapFromURL(`assets/maps/${this.mapName}.json`);
+        
         if (!this.currentMap) {
             this.currentMap = { arena: { x: 50, y: 50, w: 2000, h: 2000 }, lines: [], zones: [] };
         }
@@ -93,6 +94,11 @@ export default class Game extends Phaser.Scene {
         this.renderer.setCustomLines(this.currentMap.lines || []);
         this.renderer.setCustomZones(this.currentMap.zones || []);
 
+        // Load background image if specified
+        if (this.currentMap.background) {
+            this.renderer.loadBackground(`assets/maps/backgrounds/${this.currentMap.background}`);
+        }
+
         this.restartKey = this.input.keyboard.addKey('SPACE');
         this.menuKey = this.input.keyboard.addKey('M');
         this.pauseKey = this.input.keyboard.addKey('ESC');
@@ -116,9 +122,9 @@ export default class Game extends Phaser.Scene {
             if (bossDef) {
                 this._pendingBossSpawn = {
                     def:  bossDef,
-                    time: this.currentMap.boss.spawnTime || 0,
-                    x:    this.currentMap.boss.x || (bossArena.x + bossArena.w / 2),
-                    y:    this.currentMap.boss.y || (bossArena.y + bossArena.h / 2),
+                    time: this.currentMap.boss.spawnTime ?? 0,
+                    x:    this.currentMap.boss.x ?? (bossArena.x + bossArena.w / 2),
+                    y:    this.currentMap.boss.y ?? (bossArena.y + bossArena.h / 2),
                     spawned: false,
                 };
             }
@@ -194,9 +200,9 @@ export default class Game extends Phaser.Scene {
     update(t, delta) {
         if (!this.currentMap) return;
 
-        if (!this.gameOver && !this.player.isDead) {
+        if (!this.gameOver && !this.player.isDead && !this.shopUI?.visible) {
             const now = this.time.now;
-            const tickInterval = this.momentum?.level === 3 ? 2000 : 1000;
+            const tickInterval = 1000;
             if (now - this.lastTimeUpdate >= tickInterval) {
                 this.timeRemaining--;
                 this.lastTimeUpdate = now;
@@ -231,6 +237,16 @@ export default class Game extends Phaser.Scene {
         }
         if (this.isPaused) return;
 
+        // Zonas (daño, void, tienda...) - siempre correr para detectar salida de shop
+        this.zoneSystem.checkZones(this.player, this.currentMap.zones, delta);
+
+        if (this.shopUI?.visible) {
+            this.shopUI.update();
+            const elapsedSeconds = (this.time.now - (this.enemyManager.spawner.gameStartTime || this.time.now)) / 1000;
+            this.renderer.render(this.player, this.compass, false, 0, this.gameOverReason, this.timeRemaining, delta, elapsedSeconds);
+            return;
+        }
+
         // Capturar posición antes del movimiento para el sweep de colisión
         this.player.update(delta, this.momentum);
         this.compass.update(delta, this.player, this.time.now);
@@ -243,9 +259,10 @@ export default class Game extends Phaser.Scene {
 
         // Spawn de boss por timeline
         if (this._pendingBossSpawn && !this._pendingBossSpawn.spawned) {
-            const elapsed = this.time.now / 1000;
+            const elapsed = this.timeLimit - this.timeRemaining;
             if (elapsed >= this._pendingBossSpawn.time) {
                 this._pendingBossSpawn.spawned = true;
+                console.log(`[Game] Spawning boss at elapsed=${elapsed}s, pos=(${this._pendingBossSpawn.x}, ${this._pendingBossSpawn.y})`);
                 this.bossManager.spawn(
                     this._pendingBossSpawn.def,
                     this._pendingBossSpawn.x,
@@ -288,10 +305,6 @@ export default class Game extends Phaser.Scene {
             this.collisionSystem.checkLineCollisions(this.player, this.momentum, playerWallLines, this.itemEffects);
         }
 
-        // Zonas (daño, void, tienda...)
-        this.zoneSystem.checkZones(this.player, this.currentMap.zones, delta);
-        this.shopUI?.update();
-
         this.enemyManager.checkImpenetrableCollision(this.player, 12);
 
         if (this.player.activeSlam) {
@@ -302,7 +315,8 @@ export default class Game extends Phaser.Scene {
         const playerSpeed = Math.hypot(this.player.vx, this.player.vy);
         this.camera.update(this.player.px, this.player.py, playerSpeed);
         this.renderer.setCustomLines(this._visibleLines);
-        this.renderer.render(this.player, this.compass, false, 0, this.gameOverReason, this.timeRemaining, delta);
+        const elapsedSeconds = (this.time.now - (this.enemyManager.spawner.gameStartTime || this.time.now)) / 1000;
+        this.renderer.render(this.player, this.compass, false, 0, this.gameOverReason, this.timeRemaining, delta, elapsedSeconds);
     }
 
     _gamepadAJustPressed() {
@@ -377,6 +391,10 @@ export default class Game extends Phaser.Scene {
             this.bossManager = new BossManager(this, bossArena, this.enemyManager);
         }
         if (this._pendingBossSpawn) this._pendingBossSpawn.spawned = false;
+        // Reload background image on restart
+        if (this.currentMap.background) {
+            this.renderer.loadBackground(`assets/maps/backgrounds/${this.currentMap.background}`);
+        }
         if (this.renderer && this.renderer.clearGameOver) this.renderer.clearGameOver();
     }
 }

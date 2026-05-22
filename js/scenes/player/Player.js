@@ -67,17 +67,6 @@ export default class Player {
         return this.speedBuffer[0].speed;
     }
 
-    isMovingInCompassDirection(momentum, currentSpeed) {
-        if (currentSpeed < 15) return false;
-        const compass = this.scene?.compass;
-        if (!compass) return false;
-        const pd = compass.primaryDir;
-        if (!pd) return false;
-        let diff = Math.abs(Math.atan2(this.vy, this.vx) - Math.atan2(pd.dy, pd.dx));
-        if (diff > Math.PI) diff = Math.PI * 2 - diff;
-        return (diff * (180 / Math.PI)) <= 22.5;
-    }
-
     stickToWall(wallNormalAngle, currentSpeed, wallLine) {
         if (this.wallJump.wallStickCooldown > 0 || !this.wallJump.canStick(this.jumping, this.wallJump.wallStickCooldown)) return false;
 
@@ -178,8 +167,7 @@ export default class Player {
             if (this.wallJump.wallStick) {
                 if (momentum.consumeStacks(WALL_JUMP_MOMENTUM_COST)) {
                     const jumpResult = this.wallJump.tryJump(
-                        this.moveDir, momentum, () => this.moveDir,
-                        (m) => this.isMovingInCompassDirection(m, currentSpeed), now
+                        this.moveDir, momentum, () => this.moveDir, now
                     );
                     if (jumpResult?.success) {
                         this.vx = jumpResult.vx; this.vy = jumpResult.vy;
@@ -221,7 +209,8 @@ export default class Player {
                 if (currentSpeed > 8) {
                     this.jumpVx = this.vx * JUMP_DIST_K[lv]; this.jumpVy = this.vy * JUMP_DIST_K[lv];
                 } else {
-                    this.jumpVx = Math.cos(this.facing) * MAX_SPD[1] * 0.45; this.jumpVy = Math.sin(this.facing) * MAX_SPD[1] * 0.45;
+                    const baseSpd = momentum.getEffectiveMaxSpeed(1) * 0.6;
+                    this.jumpVx = Math.cos(this.facing) * baseSpd; this.jumpVy = Math.sin(this.facing) * baseSpd;
                 }
                 this.combat.hasSlammedThisJump = false;
                 this.scene?.runStats?.recordJumpStart(this.px, this.py);

@@ -1,0 +1,10 @@
+{
+  "name": "default5",
+  "version": 5,
+  "arena": { "x": 55, "y": 58, "w": 4000, "h": 4000 },
+  "lines": [],
+  "zones": [],
+  "triggers": [],
+  "objects": [],
+  "background": null
+}

@@ -137,6 +137,7 @@ export default class EnemyManager {
       this.totalKills++;
       this.scene?.itemEffects?.spawnVampireOrb(enemy.x, enemy.y);
       this.scene?.itemEffects?.onEnemyKilled();
+      this.scene?.compass?.onEnemyKilled();
       if (this.scene?.momentum) {
         this.scene.momentum.addMaxSpeed(1);
       }
@@ -150,6 +151,8 @@ export default class EnemyManager {
         }
       }
     }
+
+    if (this.spawner) this.spawner._onEnemyKilled(enemy);
 
     this.enemies.splice(index, 1);
   }
@@ -168,6 +171,10 @@ export default class EnemyManager {
     this.spawner.clear();
     this.director.reset();
     this.combatSystem.clear();
+  }
+
+  getSpawnerTimers(elapsedSeconds) {
+    return this.spawner.getSpawnerTimers(elapsedSeconds);
   }
 
   getEnemies({ excludeBossAttacks = false } = {}) {

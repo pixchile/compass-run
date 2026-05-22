@@ -506,7 +506,7 @@ class EnemyEditor {
             this.setVal('seeThroughWalls', config.ambitious.seeThroughWalls ?? false);
             if (config.ambitious.attack) {
                 this.setVal('attackType', config.ambitious.attack.type);
-                this.setVal('attackEffect', config.ambitious.attack.effect);
+                this.setVal('attackEffect', config.ambitious.attack.effect || (config.ambitious.attack.effects || [])[0] || 'none');
                 this.setVal('attackDamage', config.ambitious.attack.damage ?? 1.0);
                 this.setVal('attackCooldown', config.ambitious.attack.cooldown ?? 250);
             }

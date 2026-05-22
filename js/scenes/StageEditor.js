@@ -1,7 +1,7 @@
 // StageEditor.js — Editor de stages con línea de tiempo
 import enemyRegistry from '../enemies/EnemyRegistry.js';
 import { registerAllCustomEnemies } from '../enemies/definitions/index.js';
-import SVGMapLoader from '../systems/SVGMapLoader.js';
+import JSONMapLoader from '../systems/JSONMapLoader.js';
 import MapRenderer from '../renderers/MapRenderer.js';
 import Camera from './Camera.js';
 import StageEditorUI from './StageEditorUI.js';
@@ -13,7 +13,7 @@ export default class StageEditor extends Phaser.Scene {
   create() {
     registerAllCustomEnemies(enemyRegistry);
     this.camera   = new Camera();
-    this.svgLoader = new SVGMapLoader();
+    this.jsonLoader = new JSONMapLoader();
     this.mapRenderer = new MapRenderer();
 
     this.input.mouse.disableContextMenu();
@@ -370,7 +370,7 @@ export default class StageEditor extends Phaser.Scene {
       }
 
       if (this.placingSpawner) {
-        this.spawners.push({ x: wp.x, y: wp.y, types: [], interval: 0, waveInterval: 0, waveCount: 0, waveDelay: 0, startTime: 0, expireTime: 0, path: [], pathMode: 'loop', pathCycles: 0, waypointWait: 0 });
+        this.spawners.push({ x: wp.x, y: wp.y, types: [], interval: 0, waveInterval: 0, waveCount: 0, waveDelay: 0, maxAlive: 0, startTime: 0, expireTime: 0, showTimer: false, path: [], pathMode: 'loop', pathCycles: 0, waypointWait: 0 });
         this.ui.refreshTimeline();
         return;
       }
@@ -489,8 +489,13 @@ export default class StageEditor extends Phaser.Scene {
 
     this.input.keyboard.on('keydown-G', () => { this.showGrid = !this.showGrid; });
 
-    // B = colocar/configurar boss
-    this.input.keyboard.on('keydown-B', () => {
+    // B = colocar/configurar boss, Shift+B = eliminar
+    this.input.keyboard.on('keydown-B', (event) => {
+      if (event.shiftKey) {
+        this.bossConfig = null;
+        this.ui?.toast?.('Boss eliminado del stage', 'ok');
+        return;
+      }
       const bossTypes = ['toro', 'centinela'];
       const current   = this.bossConfig?.type || bossTypes[0];
       const typeStr   = prompt(
@@ -592,8 +597,8 @@ export default class StageEditor extends Phaser.Scene {
     reader.onload = (e) => {
       try {
         const stage = JSON.parse(e.target.result);
-        if (!stage.name || !stage.svgContent) {
-          this.ui.toast('Archivo inválido: falta name o svgContent', 'err');
+        if (!stage.name) {
+          this.ui.toast('Archivo inválido: falta name', 'err');
           return;
         }
         const all = this._getAllStages();
@@ -628,7 +633,22 @@ export default class StageEditor extends Phaser.Scene {
     this.svgName    = stage.svgName;
     this.svgContent = stage.svgContent || null;
     if (this.svgContent && this.svgName) {
-      this.currentMap = this.svgLoader.parseSVG(this.svgContent, this.svgName);
+      if (this.svgName.endsWith('.json')) {
+        const json = JSON.parse(this.svgContent);
+        this.currentMap = {
+          name: this.svgName,
+          version: 5,
+          arena: json.arena || { x: 55, y: 58, w: 4000, h: 4000 },
+          lines: json.lines || [],
+          zones: json.zones || [],
+          triggers: json.triggers || [],
+          objects: json.objects || [],
+          background: json.background || null
+        };
+      } else {
+        this.currentMap = null;
+        console.warn('SVG maps are no longer supported, skipping map load');
+      }
     }
     this.timeLimit      = stage.timeLimit || 300;
     this.enemies        = stage.enemies  || [];
@@ -642,7 +662,7 @@ export default class StageEditor extends Phaser.Scene {
     this.maxPerMin  = d.maxPerMin ?? 5;
     this.minBase    = d.minBase   ?? 0;
     this.minPerMin  = d.minPerMin ?? 0;
-    this.fillTypes  = d.fillTypes || [];
+    this.fillTypes  = (d.fillTypes || []).map(f => typeof f === 'string' ? { type: f, startSec: 0 } : f);
     this._fillRoundRobin = 0;
 
     this.ui.syncAll();

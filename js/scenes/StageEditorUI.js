@@ -19,8 +19,8 @@ export default class StageEditorUI {
         <div class="se-section">
           <div class="se-label">STAGE</div>
           <input id="se-stage-name" class="se-input" value="${this.editor.stageName}" placeholder="nombre del stage">
-          <button class="se-btn se-btn-load" id="se-load-svg">📂 Cargar SVG</button>
-          <input type="file" id="se-file-input" accept=".svg" style="display:none">
+          <button class="se-btn se-btn-load" id="se-load-svg">📂 Cargar Mapa</button>
+          <input type="file" id="se-file-input" accept=".json,.svg" style="display:none">
           <div id="se-svg-name" class="se-dim">sin mapa</div>
         </div>
 
@@ -156,6 +156,8 @@ export default class StageEditorUI {
       .se-fill-item:hover { border-color:#4488ff; }
       .se-fill-check { width:10px; height:10px; border:1px solid #4488ff; flex-shrink:0; }
       .se-fill-item.active .se-fill-check { background:#ffaa22; border-color:#ffaa22; }
+      .se-fill-time { display:flex; align-items:center; gap:4px; margin-left:auto; font-size:9px; }
+      .se-fill-time input { width:38px; }
 
       /* Línea de tiempo */
       #se-timeline-bar {
@@ -237,7 +239,7 @@ export default class StageEditorUI {
   _bindEvents() {
     const ed = this.editor;
 
-    // Cargar SVG
+    // Cargar mapa (SVG o JSON)
     document.getElementById('se-load-svg')?.addEventListener('click', () => {
       document.getElementById('se-file-input')?.click();
     });
@@ -246,10 +248,33 @@ export default class StageEditorUI {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = async e => {
-        ed.currentMap = ed.svgLoader.parseSVG(e.target.result, file.name);
-        ed.svgName = file.name;
-        ed.svgContent = e.target.result;
-        document.getElementById('se-svg-name').textContent = file.name;
+        if (file.name.endsWith('.json')) {
+          // Parse JSON map file
+          try {
+            const json = JSON.parse(e.target.result);
+            ed.svgName = file.name;
+            ed.svgContent = e.target.result;
+            ed.currentMap = {
+              name: file.name,
+              version: json.version || 5,
+              arena: json.arena || { x: 55, y: 58, w: 4000, h: 4000 },
+              lines: json.lines || [],
+              zones: json.zones || [],
+              triggers: json.triggers || [],
+              objects: json.objects || [],
+              background: json.background || null
+            };
+            document.getElementById('se-svg-name').textContent = file.name;
+          } catch (err) {
+            this.toast('Error al leer el archivo JSON', 'err');
+          }
+        } else {
+          // Legacy SVG path
+          ed.currentMap = ed.svgLoader.parseSVG(e.target.result, file.name);
+          ed.svgName = file.name;
+          ed.svgContent = e.target.result;
+          document.getElementById('se-svg-name').textContent = file.name;
+        }
       };
       reader.readAsText(file);
       ev.target.value = '';
@@ -290,9 +315,10 @@ export default class StageEditorUI {
 
     // Guardar / cargar / salir
     document.getElementById('se-play')?.addEventListener('click', () => {
-      if (!ed.svgName) { this.toast('Carga un SVG primero', 'err'); return; }
+      if (!ed.svgName) { this.toast('Carga un mapa primero', 'err'); return; }
       ed._save();
-      const mapName = ed.svgName.replace('.svg', '');
+      // Derive map name from the loaded file (strip extension)
+      const mapName = ed.svgName.replace(/\.(svg|json)$/, '');
       ed.scene.start('Game', { mapName, stageName: ed.stageName });
     });
 
@@ -354,24 +380,42 @@ export default class StageEditorUI {
     const container = document.getElementById('se-fill-list');
     if (!container) return;
     const types = enemyRegistry.getAllTypes();
+    const fillMap = {};
+    for (const entry of this.editor.fillTypes) {
+      const t = typeof entry === 'string' ? entry : entry.type;
+      fillMap[t] = typeof entry === 'string' ? { type: t, startSec: 0 } : entry;
+    }
     container.innerHTML = types.map(t => {
-      const active = this.editor.fillTypes.includes(t);
+      const entry = fillMap[t];
+      const active = !!entry;
+      const startSec = entry?.startSec ?? 0;
       const color  = '#' + (enemyRegistry.getTypeColor(t) >>> 0).toString(16).padStart(6,'0').slice(-6);
       return `<div class="se-fill-item ${active ? 'active' : ''}" data-type="${t}">
         <div class="se-fill-check"></div>
         <div class="se-type-dot" style="background:${color}"></div>
         <span class="se-type-name">${t}</span>
+        ${active ? `<div class="se-fill-time"><span class="se-dim">inicia</span><input class="se-input se-input-sm se-fill-startsec" type="number" value="${startSec}" min="0" max="3600" step="5"><span class="se-dim">s</span></div>` : ''}
       </div>`;
     }).join('');
 
     container.querySelectorAll('.se-fill-item').forEach(el => {
-      el.addEventListener('click', () => {
+      el.addEventListener('click', (ev) => {
+        if (ev.target.classList.contains('se-fill-startsec')) return;
         const t = el.dataset.type;
-        const idx = this.editor.fillTypes.indexOf(t);
-        if (idx === -1) this.editor.fillTypes.push(t);
+        const idx = this.editor.fillTypes.findIndex(e => (typeof e === 'string' ? e : e.type) === t);
+        if (idx === -1) this.editor.fillTypes.push({ type: t, startSec: 0 });
         else this.editor.fillTypes.splice(idx, 1);
         this.editor._fillRoundRobin = 0;
         this.refreshFillList();
+      });
+    });
+
+    container.querySelectorAll('.se-fill-startsec').forEach(input => {
+      input.addEventListener('click', ev => ev.stopPropagation());
+      input.addEventListener('input', ev => {
+        const t = ev.target.closest('.se-fill-item').dataset.type;
+        const entry = this.editor.fillTypes.find(e => (typeof e === 'string' ? e : e.type) === t);
+        if (entry) entry.startSec = parseInt(ev.target.value) || 0;
       });
     });
   }
@@ -784,6 +828,12 @@ export default class StageEditorUI {
           <span class="se-dim">ms</span>
         </div>
         <div class="se-dim" style="font-size:9px;color:#2a4060;margin-top:3px">Retraso 0 = todos a la vez</div>
+        <div class="se-row" style="margin:3px 0">
+          <span class="se-dim">Max vivos</span>
+          <input id="se-max-alive" class="se-input se-input-sm" type="number"
+            value="${s.maxAlive || 0}" min="0" max="300" step="1">
+          <span class="se-dim">(0 = sin limite)</span>
+        </div>
       </div>
       <div class="se-row" style="margin-top:4px">
         <span class="se-dim">Inicia</span>
@@ -794,6 +844,12 @@ export default class StageEditorUI {
         <input id="se-spawn-expire" class="se-input se-input-sm" type="number"
           value="${s.expireTime || 0}" min="0" max="3600" step="5">
         <span class="se-dim">s</span>
+      </div>
+      <div class="se-row" style="margin-top:4px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:10px;color:#8ab4cc;cursor:pointer">
+          <input type="checkbox" id="se-show-timer" ${s.showTimer ? 'checked' : ''}>
+          Mostrar temporizador en juego
+        </label>
       </div>
       <div class="se-label" style="margin-top:10px">TIPOS PERMITIDOS</div>
       <div id="se-spawner-types">${typesHtml}</div>
@@ -833,12 +889,20 @@ export default class StageEditorUI {
       s.waveDelay = parseInt(ev.target.value) || 0;
     });
 
+    box.querySelector('#se-max-alive')?.addEventListener('input', ev => {
+      s.maxAlive = parseInt(ev.target.value) || 0;
+    });
+
     box.querySelector('#se-spawn-start')?.addEventListener('input', ev => {
       s.startTime = parseInt(ev.target.value) || 0;
     });
 
     box.querySelector('#se-spawn-expire')?.addEventListener('input', ev => {
       s.expireTime = parseInt(ev.target.value) || 0;
+    });
+
+    box.querySelector('#se-show-timer')?.addEventListener('change', ev => {
+      s.showTimer = ev.target.checked;
     });
 
     box.querySelector('#se-path-select')?.addEventListener('change', ev => {

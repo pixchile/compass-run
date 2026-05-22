@@ -72,7 +72,7 @@ export class WallJumpSystem {
         return finalFactor;
     }
 
-    tryJump(moveDir, momentum, getMoveDirectionFn, isMovingInCompassDirectionFn, now) {
+    tryJump(moveDir, momentum, getMoveDirectionFn, now) {
         if (!this.wallStick) return false;
 
         const moveDirActual = getMoveDirectionFn();
@@ -87,10 +87,6 @@ export class WallJumpSystem {
         if (dot < -0.2) return false;
 
         let jumpDistance = this.preCollisionSpeed * WALL_JUMP_EXIT_MULT;
-
-        if (isMovingInCompassDirectionFn(momentum)) {
-            jumpDistance *= WALL_JUMP.COMPASS_BONUS;
-        }
 
         const penaltyFactor = this.getPenaltyFactor(now);
         jumpDistance *= penaltyFactor;

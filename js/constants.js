@@ -3,14 +3,14 @@ export const ARENA = { x: 55, y: 58, w: 4000, h: 4000 };
 export const TRAIL_MAX = 16;
 export const L2 = 40, L3 = 50, SMAX = 90;
 
-export const MAX_SPD = [0, 250,  350,  400];
-export const TURN_K  = [0, 0.24, 0.12, 0.06];
+export const MAX_SPD = [0, 250,  300,  350];
+export const TURN_K  = [0, 0.4, 0.2, 0.12];
 export const STOP_K  = [0, 0.24, 0.12, 0.06];
 
 // Jump params [_, L1, L2, L3]
 export const JUMP_DUR    = [0,  400,  500,  600];
 export const JUMP_HMAX   = [0,   28,   54,   84];
-export const JUMP_DIST_K = [0,  0.72, 0.92, 1.12];
+export const JUMP_DIST_K = [0,  1.0, 1.1, 1.2];
 
 // Dash
 export const DASH_DUR = 500;
@@ -18,48 +18,35 @@ export const DASH_CD  = 2000;
 export const DASH_SPD = 2.0;
 
 // Health
-export const HP_MAX             = 100;
+export const HP_MAX             = 50;
 export const HP_DMG_DASH_WALL   = 0.01;
-export const HP_DMG_ENEMY_HIT   = 1;
 export const HP_DMG_VOID        = 1000;
 export const HP_REGEN_DELAY     = 4000;
 export const HP_REGEN_RATE      = 0.2;
 
-
-// Muros destructibles
 export const WALL_DEFAULT_HP = 300;
-export const WALL_CHUNK_SIZE = 80; // px por segmento al cargar muros (rotura parcial)
-export const DASH_WALL_DAMAGE_FACTOR = 0.1; // 10% de la velocidad de impacto
-export const ENEMY_WALL_DAMAGE_RATE = 15;  // HP/segundo que un enemigo atascado inflige al muro
-export const ENEMY_WALL_BREAK_RANGE = 800; // distancia máxima jugador para que enemigo rompa muros
-export const ENEMY_REACTION_RADIUS = 400; // radio deteccion jugador (histeresis: ×2 para desenganche)
-
-export const C = {
-  L1: 0x4488ff, L2: 0xffaa22, L3: 0xff3322,
-  compass: 0xffff44, arena: 0x0c1020, grid: 0x131825, wall: 0x28384e,
-  hpHigh: 0x44dd77, hpMid: 0xffcc22, hpLow: 0xff3322,
-};
+export const WALL_CHUNK_SIZE = 80;
+export const DASH_WALL_DAMAGE_FACTOR = 0.1;
+export const ENEMY_REACTION_RADIUS = 400;
 
 // Wall Jump Configuration
 export const WALL_JUMP = {
-  STICK_DURATION: 2000,
-  GRACE_WINDOW: 100, // período de gracia en el que no pierdes velocidad por esperar en la pared
-  PENALTY_MIN_FACTOR: 0.8, // reducción de velocidad por tardar mucho en la pared.
-  COMPASS_BONUS: 1.5, // si saltar desde un muro coincide con la dirección del compass, saltas más.
-  SPEEDS: [0, 500, 600, 700],
-  STACK_BONUS: [0, 4, 2, 0], // momentum obtenido por walljump por nivel.
-  STICK_DAMAGE_THRESHOLD: 940, // a partir de esta velocidad, llegar a una pared con un salto lastima al jugador.
-  STICK_DAMAGE_AMOUNT: 3 // daño por aferrarse con mucha velocidad a las paredes.
+  STICK_DURATION: 500,
+  GRACE_WINDOW: 100,
+  PENALTY_MIN_FACTOR: 0.8,
+  STICK_DAMAGE_THRESHOLD: 900,
+  STICK_DAMAGE_AMOUNT: 1
 };
 
-export const WALL_JUMP_EXIT_MULT = 1.0;        // multiplicador de velocidad al salir de la pared
-export const WALL_JUMP_DASH_MOMENTUM_COST = 1; // stacks de momentum que cuesta hacer dash desde pared
-export const WALL_JUMP_MOMENTUM_COST = 1;      // stacks de momentum que cuesta un wall jump normal
+export const BBC_REBOUND_SPEEDS = [0, 500, 600, 700];
+export const WALL_JUMP_EXIT_MULT = 1.1;        // multiplicador de velocidad al salir de la pared
+export const WALL_JUMP_DASH_MOMENTUM_COST = 3; // stacks de momentum que cuesta hacer dash desde pared
+export const WALL_JUMP_MOMENTUM_COST = 5;      // stacks de momentum que cuesta un wall jump normal
 export const SPEED_BUFFER_SIZE = 10;           // tamaño del buffer circular para promediar velocidad
 export const MOMENTUM_GAIN_PER_250_SPEED = 2;  // stacks ganados por segundo al ir a velocidad máxima
-export const DASH_PIERCE_BASE = 1;             // cuántos enemigos atraviesa un dash por defecto
-export const MOMENTUM3_HIT_COOLDOWN = 100;     // ms entre hits del ataque de momentum nivel 3
-export const DASH_WALL_DAMAGE_SPEED_MIN = 200; // velocidad mínima para dañar un muro en dash
+export const DASH_PIERCE_BASE = 2;             // enemigos base que atraviesa un dash (a velocidad <= 500)
+export const MOMENTUM3_HIT_COOLDOWN = 500;     // ms entre hits del ataque de momentum nivel 3
+export const DASH_WALL_DAMAGE_SPEED_MIN = 800; // velocidad mínima para dañar un muro en dash
 
 
 export const ATTACK_RADIOS = {
@@ -82,6 +69,17 @@ export const SLAM = {
     EFFECT_DURATION: 200,
 };
 
+// Enemy attack effects applied on contact
+export const ENEMY_ATTACK = {
+    SLOW_DURATION: 1500,        // ms
+    PUSH_FORCE: 300,            // velocity impulse away from enemy
+    NO_JUMP_DURATION: 2000,     // ms
+    FLIP_HORIZONTAL_FORCE: 300, // velocity toward beetle (to arc over)
+    FLIP_UPWARD_FORCE: 100,     // upward velocity for flip arc
+    FLIP_STUN_DURATION: 2000,    // ms — can't control mid-flip
+    FLIP_COOLDOWN: 6000,        // ms — beetle flip cooldown
+};
+
 export const REWARDS = {
   ORB_DELAY:            550,
   ORB_RADIUS:             20,
@@ -91,7 +89,7 @@ export const REWARDS = {
 
   CREDIT_BASE_PER_SEC:     1,
   CREDIT_TICK_RATE:      100,
-  CREDIT_SPEED_FACTOR: 0.00015,
+  CREDIT_SPEED_FACTOR: 0.0004,
 
 };
 
@@ -158,11 +156,11 @@ export const BUFF_COLORS = {
 
 // Valores por tick (primaria = 1x, secundaria = 2x)
 export const BUFF_VALUES = {
-  heal:       { primary: 0.2, secondary: 0.4 },
-  credit:     { primary: 0.7, secondary: 1.4 },
-  momentum:   { primary: 0.5, secondary: 1 },
-  dashCd:     { primary: 0.1, secondary: 0.2 },
-  trueDamage: { primary: 0.03, secondary: 0.06 },
+  heal:       { primary: 0.5, secondary: 1.0 },
+  credit:     { primary: 1.2, secondary: 2.4 },
+  momentum:   { primary: 0.85, secondary: 1.7 },
+  dashCd:     { primary: 0.17, secondary: 0.34 },
+  trueDamage: { primary: 0.05, secondary: 0.1 },
 };
 
 // ============================================================

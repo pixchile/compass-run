@@ -6,7 +6,7 @@ export default class DDDEffect {
     this.scene = scene;
     this.cd = 0;
     this.decaying = false;
-    this.peakHp = 100;
+    this.peakHp = 50;
     this.freezeTimer = 0;
   }
 
@@ -34,7 +34,7 @@ export default class DDDEffect {
   onLethalDamage(player) {
     if (this.cd > 0) return false;
 
-    player.health.maxHp = (player.health.maxHp || 100) + 10;
+    player.health.maxHp = (player.health.maxHp || 50) + 10;
     player.health.hp = player.health.maxHp;
     this.peakHp = player.health.maxHp;
     this.decaying = true;
@@ -112,7 +112,7 @@ export default class DDDEffect {
   reset() {
     this.cd = 0;
     this.decaying = false;
-    this.peakHp = 100;
+    this.peakHp = 50;
     this.freezeTimer = 0;
   }
 }

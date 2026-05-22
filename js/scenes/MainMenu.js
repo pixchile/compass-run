@@ -12,6 +12,11 @@ export default class MainMenu extends Phaser.Scene {
   }
 
   create() {
+    // Cleanup lingering DOM from previous scenes
+    document.getElementById('me-sidebar')?.remove();
+    document.getElementById('se-root')?.remove();
+    document.getElementById('cr-import-file')?.remove();
+
     this._view = 'main';
     this._mainIndex = 0;
     this._stageIndex = 0;
@@ -79,6 +84,7 @@ export default class MainMenu extends Phaser.Scene {
     const options = [
       { label: '▶  JUGAR',             color: '#44ff88', action: () => this._buildStageSelect() },
       { label: '⚙  EDITOR DE STAGES',  color: '#4488ff', action: () => this.scene.start('StageEditor') },
+      { label: '🗺  EDITOR DE MAPAS',   color: '#aa44ff', action: () => this.scene.start('MapEditor') },
       { label: '📥  IMPORTAR STAGE',    color: '#ff8844', action: () => this._importStage() },
     ];
 
@@ -224,7 +230,7 @@ export default class MainMenu extends Phaser.Scene {
         const gp = gamepads[i];
         if (!gp) continue;
         const stickY = gp.axes[1] || 0;
-        const dpadY = (gp.buttons[12]?.pressed ? 1 : 0) - (gp.buttons[13]?.pressed ? 1 : 0);
+        const dpadY = (gp.buttons[13]?.pressed ? 1 : 0) - (gp.buttons[12]?.pressed ? 1 : 0);
         gpUp    = stickY < -0.3 || dpadY < 0;
         gpDown  = stickY > 0.3  || dpadY > 0;
         gpEnter = gp.buttons[0]?.pressed || false;  // A

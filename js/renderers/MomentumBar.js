@@ -1,4 +1,4 @@
-import { W, H, SMAX, C } from '../constants.js';
+import { W, H, SMAX } from '../constants.js';
 
 export default class MomentumBar {
   constructor(scene) {
@@ -63,7 +63,7 @@ export default class MomentumBar {
     
     // Efecto nivel 3
     if (lv === 3) {
-      graphics.lineStyle(3, C.L3, 0.25 + 0.2 * time.sinNormal);
+      graphics.lineStyle(3, 0xff3322, 0.25 + 0.2 * time.sinNormal);
       graphics.strokeRect(bx - 2, by - 2, bw + 4, bh + 4);
     }
   }

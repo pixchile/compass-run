@@ -1,6 +1,7 @@
 // js/spawn/EnemySpawner.js
 
 import enemyRegistry from '../enemies/EnemyRegistry.js';
+import { ARENA } from '../constants.js';
 
 export default class EnemySpawner {
   constructor(manager, scene) {
@@ -19,6 +20,10 @@ export default class EnemySpawner {
     this.squads = [];
     this.squadInstances = [];
     this._squadSpawned = {};
+
+    this._spawnerAlive = {};
+    this._fillerAlive = 0;
+    this._spawnerWaiting = {};
   }
 
   setDensity(density) {
@@ -28,7 +33,11 @@ export default class EnemySpawner {
   setSpawners(spawners) {
     this.spawners = spawners || [];
     this._spawnerTimers = {};
+    this._spawnerWaveTimers = {};
+    this._spawnerWaveState = {};
     this._spawnerRoundRobin = {};
+    this._spawnerAlive = {};
+    this._spawnerWaiting = {};
   }
 
   setSquads(squads, squadInstances) {
@@ -78,7 +87,7 @@ export default class EnemySpawner {
     this._processTriggerSpawns(player);
     this._processIntervalSpawns(delta, elapsedSeconds, hardcap, player, currentEnemiesCount);
     this._processSquadSpawns(elapsedSeconds, hardcap, player, currentEnemiesCount);
-    this._processDensitySpawns(delta, elapsedSeconds, elapsedMin, hardcap, currentEnemiesCount);
+    this._processDensitySpawns(delta, elapsedSeconds, elapsedMin, hardcap, currentEnemiesCount, player);
   }
 
   _processTimeSpawns(elapsedSeconds, hardcap, player, currentEnemiesCount) {
@@ -125,9 +134,24 @@ export default class EnemySpawner {
         if (s.startTime && s.startTime > 0 && elapsedSeconds < s.startTime) continue;
         if (s.expireTime && s.expireTime > 0 && elapsedSeconds >= s.expireTime) continue;
 
+        // maxAlive gate: wait for all children to die before next wave
+        if (s.maxAlive > 0) {
+          const alive = this._spawnerAlive[i] || 0;
+          if (this._spawnerWaiting[i]) {
+            if (alive > 0) continue;
+            this._spawnerWaiting[i] = false;
+            this._spawnerWaveTimers[i] = 0;
+          }
+        }
+
         // Mid-wave: still spawning staggered enemies
         const ws = this._spawnerWaveState?.[i];
         if (ws && ws.remaining > 0) {
+          // Respect maxAlive mid-wave
+          if (s.maxAlive > 0 && (this._spawnerAlive[i] || 0) >= s.maxAlive) {
+            delete this._spawnerWaveState[i];
+            continue;
+          }
           ws.delayTimer -= delta;
           if (ws.delayTimer <= 0) {
             this._spawnWaveEnemy(s, i);
@@ -137,6 +161,11 @@ export default class EnemySpawner {
             } else {
               delete this._spawnerWaveState[i];
             }
+          }
+          // Check if maxAlive reached mid-wave
+          if (s.maxAlive > 0 && (this._spawnerAlive[i] || 0) >= s.maxAlive) {
+            delete this._spawnerWaveState[i];
+            this._spawnerWaiting[i] = true;
           }
           continue;
         }
@@ -148,7 +177,7 @@ export default class EnemySpawner {
         this._spawnerWaveTimers[i] -= s.waveInterval;
 
         const waveDelay = s.waveDelay || 0;
-        const count = s.waveCount;
+        const count = s.maxAlive > 0 ? Math.min(s.waveCount, s.maxAlive) : s.waveCount;
 
         if (waveDelay <= 0) {
           // All at once
@@ -163,6 +192,10 @@ export default class EnemySpawner {
             this._spawnerWaveState[i] = { remaining: count - 1, delayTimer: waveDelay };
           }
         }
+
+        if (s.maxAlive > 0 && (this._spawnerAlive[i] || 0) >= s.maxAlive) {
+          this._spawnerWaiting[i] = true;
+        }
         continue;
       }
 
@@ -172,6 +205,20 @@ export default class EnemySpawner {
 
       if (s.startTime && s.startTime > 0 && elapsedSeconds < s.startTime) continue;
       if (s.expireTime && s.expireTime > 0 && elapsedSeconds >= s.expireTime) continue;
+
+      // maxAlive gate: wait for all children to die, then restart interval timer
+      if (s.maxAlive > 0) {
+        const alive = this._spawnerAlive[i] || 0;
+        if (this._spawnerWaiting[i]) {
+          if (alive > 0) continue;
+          this._spawnerWaiting[i] = false;
+          this._spawnerTimers[i] = 0;
+        }
+        if (alive >= s.maxAlive) {
+          this._spawnerWaiting[i] = true;
+          continue;
+        }
+      }
 
       this._spawnerTimers[i] = (this._spawnerTimers[i] || 0) + delta;
       if (this._spawnerTimers[i] < s.interval) continue;
@@ -189,6 +236,8 @@ export default class EnemySpawner {
 
       const enemy = enemyRegistry.create(type, s.x, s.y, this.scene);
       if (enemy) {
+        enemy._spawnerIndex = i;
+        this._spawnerAlive[i] = (this._spawnerAlive[i] || 0) + 1;
         this._assignPath(enemy, s);
         this.manager.addEnemy(enemy);
       }
@@ -208,6 +257,8 @@ export default class EnemySpawner {
 
     const enemy = enemyRegistry.create(type, spawner.x, spawner.y, this.scene);
     if (enemy) {
+      enemy._spawnerIndex = idx;
+      this._spawnerAlive[idx] = (this._spawnerAlive[idx] || 0) + 1;
       this._assignPath(enemy, spawner);
       this.manager.addEnemy(enemy);
     }
@@ -350,50 +401,52 @@ export default class EnemySpawner {
     return null;
   }
 
-  _processDensitySpawns(delta, elapsedSeconds, elapsedMin, hardcap, currentEnemiesCount) {
-    if (!this.density || !this.spawners.length) return;
+  _processDensitySpawns(delta, elapsedSeconds, elapsedMin, hardcap, currentEnemiesCount, player) {
+    if (!this.density) return;
 
     const minNow = Math.floor((this.density.minBase || 0) + (this.density.minPerMin || 0) * elapsedMin);
     this._fillCooldown = Math.max(0, (this._fillCooldown || 0) - delta);
 
-    if (currentEnemiesCount >= minNow || currentEnemiesCount >= hardcap || this._fillCooldown > 0) return;
+    // Filler maintains its own population floor, independent of spawner enemies
+    if (this._fillerAlive >= minNow || this._fillCooldown > 0) return;
+    if (!player) return;
 
-    const fillerSpawners = this.spawners.filter(s => {
-      if (s.interval && s.interval > 0) return false;
-      if (s.waveInterval && s.waveCount > 0) return false;
-      if (s.startTime && s.startTime > 0 && elapsedSeconds < s.startTime) return false;
-      if (s.expireTime && s.expireTime > 0 && elapsedSeconds >= s.expireTime) return false;
-      return true;
+    const rawPool = (this.density.fillTypes?.length > 0)
+      ? this.density.fillTypes
+      : enemyRegistry.getAllTypes().map(t => ({ type: t, startMin: 0 }));
+
+    const nowMin = elapsedSeconds / 60;
+    const eligible = rawPool.filter(entry => {
+      if (typeof entry === 'string') return true;
+      return elapsedSeconds >= (entry.startSec || 0);
     });
-    if (!fillerSpawners.length) return;
 
-    const spawner = fillerSpawners[Math.floor(Math.random() * fillerSpawners.length)];
-    const spawnerIdx = this.spawners.indexOf(spawner);
+    if (!eligible.length) return;
 
-    const pool = (spawner.types?.length > 0)
-      ? spawner.types
-      : (this.density.fillTypes?.length > 0)
-        ? this.density.fillTypes
-        : [this.spawnList.find(e => e.type || e.enemyRef)?.type].filter(Boolean);
-
-    if (!pool.length) return;
-
-    const rr = this._spawnerRoundRobin[spawnerIdx] = (this._spawnerRoundRobin[spawnerIdx] || 0) % pool.length;
-    const fillType = pool[rr];
-    this._spawnerRoundRobin[spawnerIdx] = rr + 1;
+    const rr = this._fillRoundRobin = (this._fillRoundRobin || 0) % eligible.length;
+    const entry = eligible[rr];
+    const fillType = typeof entry === 'string' ? entry : entry.type;
+    this._fillRoundRobin = rr + 1;
 
     if (!enemyRegistry.has(fillType)) return;
 
+    // Spawn offscreen in a random direction around the player
     const angle = Math.random() * Math.PI * 2;
-    const offset = 60 + Math.random() * 80;
-    const enemy = enemyRegistry.create(
-      fillType,
-      spawner.x + Math.cos(angle) * offset,
-      spawner.y + Math.sin(angle) * offset,
-      this.scene
-    );
+    const dist = 600 + Math.random() * 200;
+    let sx = player.px + Math.cos(angle) * dist;
+    let sy = player.py + Math.sin(angle) * dist;
+
+    // Clamp to arena bounds
+    sx = Math.max(ARENA.x + 20, Math.min(ARENA.x + ARENA.w - 20, sx));
+    sy = Math.max(ARENA.y + 20, Math.min(ARENA.y + ARENA.h - 20, sy));
+
+    const safe = this._findSafeSpawn(sx, sy, player.px, player.py);
+    if (!safe) return;
+
+    const enemy = enemyRegistry.create(fillType, safe.x, safe.y, this.scene);
     if (enemy) {
-      this._assignPath(enemy, spawner);
+      enemy._isFiller = true;
+      this._fillerAlive++;
       this.manager.addEnemy(enemy);
     }
     this._fillCooldown = 500;
@@ -457,6 +510,36 @@ export default class EnemySpawner {
     }
   }
 
+  getSpawnerTimers(elapsedSeconds) {
+    const result = [];
+    for (let i = 0; i < this.spawners.length; i++) {
+      const s = this.spawners[i];
+      if (!s.showTimer) continue;
+
+      let remainingMs = 0;
+      let state = 'counting';
+
+      if (s.startTime && s.startTime > 0 && elapsedSeconds < s.startTime) {
+        remainingMs = (s.startTime - elapsedSeconds) * 1000;
+        state = 'waiting_start';
+      } else if (s.expireTime && s.expireTime > 0 && elapsedSeconds >= s.expireTime) {
+        continue;
+      } else if (s.maxAlive > 0 && this._spawnerWaiting[i]) {
+        state = 'max_alive';
+        remainingMs = 0;
+      } else if (s.waveInterval > 0 && s.waveCount > 0) {
+        remainingMs = s.waveInterval - (this._spawnerWaveTimers[i] || 0);
+      } else if (s.interval > 0) {
+        remainingMs = s.interval - (this._spawnerTimers[i] || 0);
+      } else {
+        continue;
+      }
+
+      result.push({ x: s.x, y: s.y, remainingMs, state });
+    }
+    return result;
+  }
+
   clear() {
     this.nextSpawnIndex = 0;
     this.gameStartTime = 0;
@@ -465,7 +548,21 @@ export default class EnemySpawner {
     this._spawnerWaveTimers = {};
     this._spawnerWaveState = {};
     this._spawnerRoundRobin = {};
+    this._fillRoundRobin = 0;
     this._squadSpawned = {};
+    this._spawnerAlive = {};
+    this._fillerAlive = 0;
+    this._spawnerWaiting = {};
     for (const enemy of this.spawnList) enemy.active = false;
+  }
+
+  _onEnemyKilled(enemy) {
+    if (enemy._spawnerIndex !== undefined) {
+      const idx = enemy._spawnerIndex;
+      this._spawnerAlive[idx] = Math.max(0, (this._spawnerAlive[idx] || 0) - 1);
+    }
+    if (enemy._isFiller) {
+      this._fillerAlive = Math.max(0, this._fillerAlive - 1);
+    }
   }
 }

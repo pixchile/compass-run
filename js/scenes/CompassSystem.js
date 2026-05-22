@@ -37,6 +37,13 @@ export default class CompassSystem {
     this.momentum  = null;
     this.rewards   = null;
     this.gameScene = null;
+
+    this.heat = 0;
+    this._heatDecayRate = 0.25;
+    this._heatPerKill = 0.4;
+    this._heatMinReward = 0.2;
+    this._heatGraceMs = 0;
+    this._heatGraceDuration = 1000;
   }
 
   setReferences(momentumSystem, rewardSystem, gameScene) {
@@ -109,6 +116,11 @@ export default class CompassSystem {
     this._lastDelta = delta;
     this._totalTime += delta;
 
+    this._heatGraceMs = Math.max(0, this._heatGraceMs - delta);
+    if (this._heatGraceMs <= 0) {
+      this.heat = Math.max(0, this.heat - this._heatDecayRate * (delta / 1000));
+    }
+
     const intervalsPassed = this._totalTime / COMPASS_SPEEDUP_INTERVAL;
     const speedMultiplier = 1 + COMPASS_SPEEDUP_RATE * intervalsPassed;
     const primaryInterval = Math.max(
@@ -153,59 +165,23 @@ export default class CompassSystem {
       const t = (speed - COMPASS_SPEED_BUFF_BASE) / (COMPASS_SPEED_BUFF_MAX - COMPASS_SPEED_BUFF_BASE);
       const mult = 1 + Math.max(0, Math.min(1, t)) * (COMPASS_SPEED_BUFF_MULT_MAX - 1);
 
-      // Bonus por enemigos cercanos: hasta x2 si hay enemigos muy cerca
-      const enemyProximityMult = this._getEnemyProximityMult(player);
-
       const clockMult = this.gameScene?.itemEffects?.has('GGD') ? 2 : 1;
+      const heatMult = this.heat < this._heatMinReward ? this._heatMinReward : this.heat;
 
       if (followPrimary) {
-        this._applyBuff(this.primaryBuff, false, player, now, mult * clockMult * enemyProximityMult);
-        this._primaryAccum += this._getBuffValue(this.primaryBuff, false) * mult * clockMult * enemyProximityMult;
+        this._applyBuff(this.primaryBuff, false, player, now, mult * clockMult * heatMult);
+        this._primaryAccum += this._getBuffValue(this.primaryBuff, false) * mult * clockMult * heatMult;
       }
       if (followSecondary) {
-        this._applyBuff(this.secondaryBuff, true, player, now, mult * clockMult * enemyProximityMult);
-        this._secondaryAccum += this._getBuffValue(this.secondaryBuff, true) * mult * clockMult * enemyProximityMult;
+        this._applyBuff(this.secondaryBuff, true, player, now, mult * clockMult * heatMult);
+        this._secondaryAccum += this._getBuffValue(this.secondaryBuff, true) * mult * clockMult * heatMult;
       }
     }
   }
 
-  // Bonus por riesgo: x1 sin enemigos cerca, hasta x2 con enemigos muy encima
-  // Zona de peligro: < 80px → x2. Zona de tensión: 80-200px → interpolado x1→x2.
-  // Throttled: recalcula cada 250ms para no iterar enemigos cada frame.
-  _getEnemyProximityMult(player) {
-    if (this.primaryBuff !== 'credit' && this.secondaryBuff !== 'credit') return 1;
-
-    this._enemyMultTimer = (this._enemyMultTimer || 0) + (this._lastDelta || 16);
-    if (this._enemyMultTimer < 250 && this._cachedEnemyMult != null) {
-      return this._cachedEnemyMult;
-    }
-    this._enemyMultTimer = 0;
-
-    const enemies = this.gameScene?.enemyManager?.enemies || [];
-    if (enemies.length === 0) { this._cachedEnemyMult = 1; return 1; }
-
-    const DANGER_RADIUS  = 35;
-    const TENSION_RADIUS = 50;
-
-    let minDist = Infinity;
-    for (const e of enemies) {
-      if (e.hp <= 0) continue;
-      const d = Math.hypot(e.x - player.px, e.y - player.py);
-      if (d < minDist) minDist = d;
-    }
-
-    let mult;
-    if (minDist <= DANGER_RADIUS) {
-      mult = 2;
-    } else if (minDist <= TENSION_RADIUS) {
-      const t = 1 - (minDist - DANGER_RADIUS) / (TENSION_RADIUS - DANGER_RADIUS);
-      mult = 1 + t; // x1 → x2
-    } else {
-      mult = 1;
-    }
-
-    this._cachedEnemyMult = mult;
-    return mult;
+  onEnemyKilled() {
+    this.heat = Math.min(1, this.heat + this._heatPerKill);
+    this._heatGraceMs = this._heatGraceDuration;
   }
 
   getPrimaryColor() {

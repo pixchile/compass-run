@@ -25,19 +25,19 @@ export default class PlayerInput {
         this._gpIndex = gp.index;
         this._gpAxes.lx = gp.axes[0] || 0;
         this._gpAxes.ly = gp.axes[1] || 0;
-        // Standard mapping: A=0, X=2, Start=9
-        this._gpButtons.a   = gp.buttons[0]?.pressed || false;
-        this._gpButtons.x   = gp.buttons[2]?.pressed || false;
-        this._gpButtons.start = gp.buttons[9]?.pressed || false;
+        // Standard Xbox mapping: A=0, RT=7, Start=9
+        this._gpButtons.a      = gp.buttons[0]?.pressed || false;
+        this._gpButtons.dash   = gp.buttons[7]?.pressed || false;
+        this._gpButtons.start  = gp.buttons[9]?.pressed || false;
     }
 
     update() {
         this._pollGamepad();
     }
 
-    _padA()  { return this._gpButtons.a; }
-    _padX()  { return this._gpButtons.x; }
-    _padStart() { return this._gpButtons.start; }
+    _padA()    { return this._gpButtons.a; }
+    _padDash() { return this._gpButtons.dash; }
+    _padStart(){ return this._gpButtons.start; }
 
     isSpaceDown() {
         return this.kb.SPACE.isDown || this._padA();
@@ -51,7 +51,7 @@ export default class PlayerInput {
     }
 
     isShiftJustPressed() {
-        const down = this.kb.SHIFT.isDown || this._padX();
+        const down = this.kb.SHIFT.isDown || this._padDash();
         const just = down && !this._prevShift;
         this._prevShift = down;
         return just;

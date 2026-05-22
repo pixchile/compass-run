@@ -61,6 +61,7 @@ export default class MomentumSystem {
   }
 
   gainFromSpeed(delta, currentSpeed, maxSpeed) {
+    if (this.level > 1) return;
     if (currentSpeed >= maxSpeed * 0.95) {
       const gain = MOMENTUM_GAIN_PER_250_SPEED * (maxSpeed / 250) * (delta / 1000);
       this.stacks = Math.min(SMAX, this.stacks + gain);
@@ -88,10 +89,11 @@ export default class MomentumSystem {
   // ─── Pérdida pasiva por inactividad ────────────────────────
   updateDecay(delta, now = Date.now()) {
     const inactivity = now - this._lastActionTime;
-    if (inactivity >= 50 && this.stacks > 0) {
+    if (inactivity >= 3000 && this.stacks > 0) {
       this._decayAccum += delta;
+      const decayRate = this.level === 3 ? 4 : this.level === 2 ? 3 : 2;
       while (this._decayAccum >= 1000) {
-        this.stacks = Math.max(0, this.stacks - 2);
+        this.stacks = Math.max(0, this.stacks - decayRate);
         this._decayAccum -= 1000;
       }
     }
